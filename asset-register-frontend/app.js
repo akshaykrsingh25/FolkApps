@@ -22,7 +22,7 @@
         }
       });
       const stack = root.querySelector(".screen-stack");
-      if (stack) stack.scrollTo({ top: 0, behavior: "instant" });
+      if (stack) stack.scrollTop = 0;
       picker.value = name;
       root.querySelectorAll(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.go === name || (name === "asset-detail" && tab.dataset.go === "inventory") || (name === "scanner" && tab.dataset.go === "home") || (name.startsWith("map-") && tab.dataset.go === "map-india") || (name === "unused-map" && tab.dataset.go === "map-india") || (name === "asset-report" && tab.dataset.go === "reports") || (name === "missing-assets" && tab.dataset.go === "verification")));
       if (name === "scanner") {
