@@ -732,3 +732,121 @@ body { background:#f3f6f9; }
   #asset-register-prototype .primary-button:hover,
   #asset-register-prototype .scan-fab:hover { transform:none; }
 }
+
+/* Camera and navigation controls: visible icons, clear mode selection, and a stable bottom action bar. */
+#asset-register-prototype .prototype-phone {
+  height:min(100svh,920px);
+  min-height:0;
+  overflow:hidden;
+}
+#asset-register-prototype .screen-stack {
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scroll-padding-block:12px;
+  scrollbar-width:thin;
+  scrollbar-color:#cbd2e8 transparent;
+}
+#asset-register-prototype i[data-lucide] {
+  display:inline-flex;
+  flex:none;
+  align-items:center;
+  justify-content:center;
+  font-style:normal;
+  vertical-align:middle;
+}
+#asset-register-prototype i[data-lucide] > svg[data-lucide-icon] {
+  display:block;
+  width:100%;
+  height:100%;
+  overflow:visible;
+}
+#asset-register-prototype .camera-meta span { min-height:40px; padding:0 12px; gap:7px; }
+#asset-register-prototype .camera-meta span > i { width:16px; height:16px; color:#4056ed; }
+#asset-register-prototype .camera-meta .camera-switch {
+  width:42px;
+  height:40px;
+  border:1px solid #e2e7f5;
+  border-radius:14px;
+  background:linear-gradient(145deg,#f1f2ff,#fff);
+  box-shadow:0 3px 9px #223b6610;
+}
+#asset-register-prototype .camera-meta .camera-switch i { width:18px; height:18px; }
+#asset-register-prototype .capture-controls {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) 72px;
+  align-items:center;
+  gap:9px;
+  margin:12px 4px 18px;
+}
+#asset-register-prototype .capture-mode {
+  display:flex;
+  min-width:0;
+  min-height:56px;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:4px;
+  padding:6px 4px;
+  border:1px solid #e2e7f1;
+  border-radius:16px;
+  background:#fff;
+  color:#65748a;
+  font-size:12px;
+  font-weight:600;
+  transition:background .18s ease,border-color .18s ease,transform .18s ease;
+}
+#asset-register-prototype .capture-mode i { width:19px; height:19px; }
+#asset-register-prototype .capture-mode.active {
+  border-color:#bdc7ff;
+  background:linear-gradient(145deg,#eef0ff,#f9f8ff);
+  color:#4056ed;
+  box-shadow:inset 0 0 0 1px #e0e3ff,0 4px 12px #4056ed12;
+}
+#asset-register-prototype .capture-mode.active i { color:#4056ed; }
+#asset-register-prototype .capture-shutter {
+  width:62px;
+  height:62px;
+  justify-self:center;
+  border:4px solid #fff;
+  outline:4px solid #e7eaff;
+  background:linear-gradient(145deg,#4056ed,#7450db);
+  color:#fff;
+  box-shadow:0 6px 16px #4056ed40;
+  transition:transform .18s ease,box-shadow .18s ease;
+}
+#asset-register-prototype .capture-shutter i { width:23px; height:23px; }
+#asset-register-prototype .capture-shutter:active,
+#asset-register-prototype .capture-shutter.is-captured { transform:scale(.91); box-shadow:0 2px 7px #4056ed38; }
+#asset-register-prototype .bottom-toolbar {
+  position:sticky;
+  bottom:0;
+  z-index:40;
+  flex:0 0 auto;
+  margin-top:10px;
+  padding-bottom:max(7px,env(safe-area-inset-bottom));
+  background:#fffffff2;
+}
+#asset-register-prototype .nav-tab i { width:20px; height:20px; }
+#asset-register-prototype .scan-fab { min-width:72px; min-height:48px; gap:6px; }
+#asset-register-prototype .scan-fab i { width:18px; height:18px; }
+@media (max-width:520px) {
+  #asset-register-prototype .prototype-phone { height:min(100svh,920px); min-height:0; }
+  #asset-register-prototype .screen-stack { min-height:0; }
+  #asset-register-prototype .camera-meta { gap:6px; }
+  #asset-register-prototype .camera-meta span { padding-inline:9px; }
+  #asset-register-prototype .capture-controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 68px; gap:7px; }
+  #asset-register-prototype .capture-shutter { width:58px; height:58px; }
+  #asset-register-prototype .bottom-toolbar { padding-bottom:max(7px,env(safe-area-inset-bottom)); }
+}
+@media (max-width:360px) {
+  #asset-register-prototype .capture-controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 60px; gap:5px; }
+  #asset-register-prototype .capture-mode { font-size:11px; }
+  #asset-register-prototype .capture-shutter { width:54px; height:54px; }
+  #asset-register-prototype .camera-meta span { font-size:10px; }
+}
+@media (prefers-reduced-motion:reduce) {
+  #asset-register-prototype .capture-mode,
+  #asset-register-prototype .capture-shutter { transition:none; }
+}
