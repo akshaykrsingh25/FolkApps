@@ -21,6 +21,8 @@
           window.setTimeout(() => screen.classList.remove("is-entering"), 360);
         }
       });
+      const stack = root.querySelector(".screen-stack");
+      if (stack) stack.scrollTo({ top: 0, behavior: "instant" });
       picker.value = name;
       root.querySelectorAll(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.go === name || (name === "asset-detail" && tab.dataset.go === "inventory") || (name === "scanner" && tab.dataset.go === "home") || (name.startsWith("map-") && tab.dataset.go === "map-india") || (name === "unused-map" && tab.dataset.go === "map-india") || (name === "asset-report" && tab.dataset.go === "reports") || (name === "missing-assets" && tab.dataset.go === "verification")));
       if (name === "scanner") {
@@ -120,6 +122,13 @@
         mode.setAttribute("aria-pressed", String(active));
       });
     }));
+    const shutter = root.querySelector(".capture-shutter");
+    shutter.addEventListener("click", () => {
+      shutter.classList.add("is-captured");
+      const photoMode = [...root.querySelectorAll(".capture-mode")].some((mode) => mode.classList.contains("active") && mode.textContent.trim() === "Photo");
+      announce(photoMode ? "Photo captured · reviewing smart match" : "Code captured · opening the matching asset");
+      window.setTimeout(() => { shutter.classList.remove("is-captured"); showScreen(photoMode ? "camera-match" : "asset-detail"); }, 260);
+    });
     const scanFab = root.querySelector(".scan-fab");
     scanFab.addEventListener("click", () => {
       showScreen("scanner");
