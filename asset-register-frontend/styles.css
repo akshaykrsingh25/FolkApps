@@ -1034,3 +1034,89 @@ body { background:#f3f6f9; }
   #asset-register-prototype .scan-fab:hover,
   #asset-register-prototype .capture-shutter:hover { transform:none; }
 }
+
+/* Brand signature details */
+#asset-register-prototype .mark { border-radius:8px; background:#174b40; color:#d8bf83; }
+#asset-register-prototype .mark i { width:19px; height:19px; }
+#asset-register-prototype .mark svg[data-lucide-icon] { stroke:#e0c586; stroke-width:1.6; }
+#asset-register-prototype .wordmark { color:#172522; font-family:"Avenir Next",Avenir,Inter,"Segoe UI",sans-serif; font-size:13px; font-weight:700; letter-spacing:1.35px; text-transform:uppercase; }
+#asset-register-prototype .wordmark-strong { color:#174b40; font-weight:750; }
+#asset-register-prototype .section-heading h2::before { display:inline-block; width:12px; height:2px; margin:0 8px 4px 0; background:#a85b40; content:""; }
+#asset-register-prototype .list-caption { color:#7b6254; letter-spacing:1.15px; }
+
+/* Incuspaze brand system · official indigo/orange palette and original wordmark. */
+#asset-register-prototype {
+  --ink:#202344;
+  --muted:#62677f;
+  --primary:#202344;
+  --on-primary:#fff;
+  --primary-soft:#f0f0f5;
+  --secondary:#F37F20;
+  --secondary-soft:#fff0e3;
+  --tertiary:#3B9F94;
+  --tertiary-soft:#e5f5f2;
+  --surface:#fff;
+  --surface-low:#f5f5f6;
+  --outline:#c9c9ce;
+  --divider:#e6e6e9;
+  font-family:Montserrat,Arial,sans-serif;
+  color:var(--ink);
+}
+#asset-register-prototype .prototype-phone,
+#asset-register-prototype .prototype-phone :is(button,input,select,textarea) { font-family:Montserrat,Arial,sans-serif; }
+#asset-register-prototype .appbar { min-height:56px; padding-bottom:8px; }
+#asset-register-prototype .brand-lockup { display:flex; align-items:center; gap:10px; min-width:0; }
+#asset-register-prototype .incuspaze-logo { display:block; width:128px; height:auto; object-fit:contain; }
+#asset-register-prototype .brand-divider { width:1px; height:25px; background:#dedee4; }
+#asset-register-prototype .product-name { color:#202344; font-size:9px; font-weight:700; letter-spacing:1.2px; }
+#asset-register-prototype .wordmark,#asset-register-prototype .wordmark-strong { color:#202344; }
+#asset-register-prototype .mark { background:#202344; }
+#asset-register-prototype .primary-button,
+#asset-register-prototype .scan-fab { background:#F37F20; color:#202344; box-shadow:0 4px 14px #f37f2029; }
+#asset-register-prototype .primary-button:hover,
+#asset-register-prototype .scan-fab:hover { background:#e86d10; }
+#asset-register-prototype .primary-button svg,
+#asset-register-prototype .scan-fab svg { stroke:#202344!important; }
+#asset-register-prototype .capture-shutter { outline-color:#F37F20; background:#F37F20; color:#202344; box-shadow:0 4px 12px #20234426; }
+#asset-register-prototype .capture-shutter svg { stroke:#202344!important; }
+#asset-register-prototype .capture-mode.active,
+#asset-register-prototype .filter-chip.active,
+#asset-register-prototype .source-choice.is-selected,
+#asset-register-prototype .report-type.is-selected { border-color:#F37F20; background:#fff0e3; color:#202344; box-shadow:inset 0 -2px #F37F20; }
+#asset-register-prototype .location-mark,
+#asset-register-prototype .gps-icon,
+#asset-register-prototype .permission-note { background:#e5f5f2; color:#246f68; }
+#asset-register-prototype .permission-note strong { color:#246f68; }
+#asset-register-prototype .saved,
+#asset-register-prototype .status-ok,
+#asset-register-prototype .status-pill { color:#277f74; }
+#asset-register-prototype .quick-grid i,
+#asset-register-prototype .map-summary b,
+#asset-register-prototype .centre-stats b,
+#asset-register-prototype .crumbs b,
+#asset-register-prototype .state-list i { color:#F37F20; }
+#asset-register-prototype .india-map-wrap,
+#asset-register-prototype .unused-map-canvas { background:#f6f6f8; }
+#asset-register-prototype .india-map path:first-child,
+#asset-register-prototype .india-map .island,
+#asset-register-prototype .state-shape path { fill:#d8efeb; stroke:#3B9F94; }
+#asset-register-prototype .india-map circle,
+#asset-register-prototype .city-pin circle:first-child { fill:#F37F20; stroke:#fff; }
+#asset-register-prototype .city-pin .pin-pulse { stroke:#F37F20; }
+#asset-register-prototype .map-pin b,
+#asset-register-prototype .centre-index { background:#202344; color:#fff; }
+#asset-register-prototype .eyebrow { color:#a44b06; letter-spacing:1.25px; }
+#asset-register-prototype .hero .subhead { font-family:Playfair,Georgia,serif; font-style:italic; }
+#asset-register-prototype .section-heading h2::before { background:#F37F20; }
+#asset-register-prototype .list-caption { color:#62677f; }
+#asset-register-prototype .prototype-phone :is(.inventory-item,.asset-row,.report-row,.centre-directory-item,.centre-card):hover { border-color:#f2b27f; background:#fffaf6; }
+#asset-register-prototype i[data-lucide] > svg[data-lucide-icon] { stroke:#202344; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+#asset-register-prototype .capture-shutter i > svg[data-lucide-icon],
+#asset-register-prototype .primary-button i > svg[data-lucide-icon],
+#asset-register-prototype .scan-fab i > svg[data-lucide-icon] { stroke:#202344; }
+#asset-register-prototype :is(button,a,[role="button"]):focus-visible { outline:3px solid #F37F2070; outline-offset:2px; }
+@media(max-width:420px) {
+  #asset-register-prototype .incuspaze-logo { width:112px; }
+  #asset-register-prototype .brand-lockup { gap:7px; }
+  #asset-register-prototype .product-name { font-size:8px; letter-spacing:.8px; }
+}
