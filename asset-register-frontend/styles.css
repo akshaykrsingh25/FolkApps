@@ -850,3 +850,187 @@ body { background:#f3f6f9; }
   #asset-register-prototype .capture-mode,
   #asset-register-prototype .capture-shutter { transition:none; }
 }
+
+/* IncuAsset fieldbook art direction: precise, tactile, and deliberately unlike a stock dashboard. */
+#asset-register-prototype {
+  --ink:#172522;
+  --muted:#65736e;
+  --primary:#174b40;
+  --on-primary:#fff;
+  --primary-soft:#edf3ef;
+  --secondary:#a85b40;
+  --secondary-soft:#f7eee9;
+  --tertiary:#9a783f;
+  --tertiary-soft:#f6f1e6;
+  --surface:#fff;
+  --surface-low:#f6f8f6;
+  --outline:#697771;
+  --divider:#e1e7e2;
+  --accent-coral:#a85b40;
+  --accent-lilac:#52746a;
+  background:#fff;
+  color:var(--ink);
+  font-family:"Avenir Next",Avenir,Inter,"Segoe UI",sans-serif;
+}
+#asset-register-prototype .prototype-phone {
+  border:1px solid #e3e8e4;
+  border-radius:24px;
+  background:#fff;
+  box-shadow:0 14px 38px #1725220b;
+}
+#asset-register-prototype .progress-hero {
+  padding:16px 16px 15px;
+  border:1px solid #dfe7e1;
+  border-left:4px solid #a85b40;
+  border-radius:14px;
+  background:#fff;
+}
+#asset-register-prototype .progress-hero::after { content:none; }
+#asset-register-prototype .progress-hero-copy .eyebrow { color:#a85b40; }
+#asset-register-prototype .live-dot { background:#4e826e; box-shadow:0 0 0 3px #4e826e1c; }
+#asset-register-prototype .progress-hero h1 { color:#172522; letter-spacing:-.035em; }
+#asset-register-prototype .progress-block {
+  border:1px solid #dfe6e1;
+  border-top:2px solid #174b40;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:none;
+}
+#asset-register-prototype .remaining-count strong { color:#174b40; }
+#asset-register-prototype .remaining-count b { color:#697770; }
+#asset-register-prototype .saved { border:1px solid #d4e5da; background:#f0f6f1; color:#28634e; }
+#asset-register-prototype .wave-value { stroke:#174b40; }
+#asset-register-prototype .eyebrow { color:#9b654a; font-family:"SFMono-Regular",Consolas,monospace; font-size:10px; font-weight:650; letter-spacing:1.2px; }
+#asset-register-prototype .section-heading h2 { color:#172522; letter-spacing:-.015em; }
+#asset-register-prototype .quick-grid button,
+#asset-register-prototype .quick-grid button:nth-child(n) {
+  min-height:66px;
+  border:1px solid #e0e6e2;
+  border-radius:13px;
+  background:#fff;
+  box-shadow:none;
+}
+#asset-register-prototype .quick-grid button:hover { transform:translateY(-1px); border-color:#9cb5a7; box-shadow:0 5px 12px #174b4010; }
+#asset-register-prototype .quick-grid i,
+#asset-register-prototype .quick-grid button:nth-child(n) i {
+  width:30px;
+  height:30px;
+  padding:6px;
+  border:1px solid #d8e5dc;
+  border-radius:9px;
+  background:#f1f6f2;
+  color:#174b40;
+}
+#asset-register-prototype .quick-grid button:nth-child(3n+2) i { border-color:#eadbd1; background:#fbf3ee; color:#a85b40; }
+#asset-register-prototype .quick-grid button:nth-child(3n) i { border-color:#e9e1cd; background:#faf7ef; color:#8c6d38; }
+#asset-register-prototype .primary-button {
+  border-radius:11px;
+  background:#174b40;
+  box-shadow:0 4px 10px #174b401c;
+  letter-spacing:.01em;
+}
+#asset-register-prototype .primary-button:hover { background:#103d34; transform:translateY(-1px); }
+#asset-register-prototype .secondary-button { border-color:#e4d6cc; border-radius:11px; background:#fbf5f0; color:#8d4b35; }
+#asset-register-prototype .bottom-toolbar {
+  border:1px solid #e1e7e2;
+  border-radius:17px;
+  background:#fff;
+  box-shadow:0 7px 22px #1725220b;
+  backdrop-filter:none;
+}
+#asset-register-prototype .nav-tab { color:#697770; }
+#asset-register-prototype .nav-tab.active { color:#174b40; }
+#asset-register-prototype .nav-tab.active i { border-radius:5px; background:transparent; }
+#asset-register-prototype .scan-fab {
+  border:1px solid #174b40;
+  border-radius:11px;
+  background:#174b40;
+  box-shadow:none;
+}
+#asset-register-prototype .scan-fab:hover { background:#103d34; }
+#asset-register-prototype .filter-chip { border-color:#dce4de; border-radius:9px; }
+#asset-register-prototype .filter-chip.active { border-color:#174b40; background:#edf3ef; color:#174b40; }
+#asset-register-prototype .source-choice { border-radius:10px; }
+#asset-register-prototype .source-choice.is-selected { border-color:#bdd3c4; border-radius:10px; background:#edf4ef; color:#174b40; box-shadow:inset 0 -2px #174b40; }
+#asset-register-prototype .cycle-card { border-color:#e1e7e2; border-radius:13px; background:#f7f9f7; }
+#asset-register-prototype .cycle-card-head > span:first-child { border:1px solid #d7e3d9; border-radius:9px; background:#edf4ef; color:#174b40; }
+#asset-register-prototype .map-summary span,
+#asset-register-prototype .centre-stats span { border:1px solid #e2e8e3; border-radius:11px; background:#fff; }
+#asset-register-prototype .map-summary b,
+#asset-register-prototype .centre-stats b,
+#asset-register-prototype .map-summary span:nth-child(3n+2) b,
+#asset-register-prototype .centre-stats span:nth-child(3n+2) b,
+#asset-register-prototype .map-summary span:nth-child(3n) b,
+#asset-register-prototype .centre-stats span:nth-child(3n) b { color:#174b40; font-variant-numeric:tabular-nums; }
+#asset-register-prototype .india-state:nth-child(6n+1) path { fill:#dcebe1; }
+#asset-register-prototype .india-state:nth-child(6n+2) path { fill:#e4ece5; }
+#asset-register-prototype .india-state:nth-child(6n+3) path { fill:#e9e5d7; }
+#asset-register-prototype .india-state:nth-child(6n+4) path { fill:#d8e7df; }
+#asset-register-prototype .india-state:nth-child(6n+5) path { fill:#e4e9e1; }
+#asset-register-prototype .india-state:nth-child(6n) path { fill:#eee2d8; }
+#asset-register-prototype .india-state path { stroke:#fff; stroke-width:1.7; }
+#asset-register-prototype .india-state:hover path { filter:brightness(.96); }
+#asset-register-prototype .city-pin circle:first-child { fill:#a85b40; stroke:#fff; }
+#asset-register-prototype .city-pin .pin-pulse { stroke:#a85b40; }
+#asset-register-prototype .status-ok { color:#28634e; }
+#asset-register-prototype .missing-tag,
+#asset-register-prototype .report-type-icon.urgent { border-radius:9px; background:#f8ece7; color:#a34d36; }
+#asset-register-prototype .report-type-icon.repair { border-radius:9px; background:#f6f1e6; color:#8e6d36; }
+#asset-register-prototype .report-type-icon.damaged { border-radius:9px; background:#edf3ef; color:#356650; }
+#asset-register-prototype .warranty-glyph { border:1px solid #d7e5da; border-radius:9px; background:#f0f6f1; color:#28634e; }
+#asset-register-prototype .camera-meta span { border:1px solid #e2e7e3; border-radius:9px; background:#f8faf8; color:#45574e; }
+#asset-register-prototype .camera-meta span > i { color:#174b40; }
+#asset-register-prototype .camera-meta .camera-switch { border:1px solid #dfe6e1; border-radius:9px; background:#fff; box-shadow:none; color:#174b40; }
+#asset-register-prototype .capture-mode {
+  min-height:54px;
+  border-color:#dfe6e1;
+  border-radius:10px;
+  background:#fff;
+  color:#58665f;
+  box-shadow:none;
+}
+#asset-register-prototype .capture-mode.active {
+  border-color:#174b40;
+  background:#edf3ef;
+  color:#174b40;
+  box-shadow:inset 0 -2px #174b40;
+}
+#asset-register-prototype .capture-mode.active i { color:#174b40; }
+#asset-register-prototype .capture-shutter {
+  width:60px;
+  height:60px;
+  border:3px solid #fff;
+  outline:2px solid #174b40;
+  background:#174b40;
+  color:#fff;
+  box-shadow:0 4px 10px #174b4026;
+}
+#asset-register-prototype .capture-shutter:hover { background:#103d34; }
+#asset-register-prototype .capture-shutter i { width:22px; height:22px; }
+#asset-register-prototype .icon-button { border:1px solid #dfe6e1; border-radius:9px; background:#f5f8f5; color:#174b40; }
+#asset-register-prototype .location-mark { border:1px solid #d8e5dc; border-radius:9px; background:#f0f6f1; color:#174b40; }
+#asset-register-prototype .report-type.is-selected { border-color:#174b40; border-radius:10px; background:#edf3ef; color:#174b40; box-shadow:inset 0 -2px #174b40; }
+#asset-register-prototype .report-stats button { border-color:#e1e7e2; border-radius:11px; background:#fff; }
+#asset-register-prototype .report-stats button:nth-child(n) b { color:#174b40; }
+#asset-register-prototype .search-field,
+#asset-register-prototype input,
+#asset-register-prototype select,
+#asset-register-prototype textarea { border-color:#dce4de; border-radius:9px; }
+#asset-register-prototype input:focus,
+#asset-register-prototype select:focus,
+#asset-register-prototype textarea:focus { border-color:#5c8a72; box-shadow:0 0 0 3px #174b4015; }
+#asset-register-prototype .prototype-phone :is(.inventory-item,.asset-row,.report-row,.centre-directory-item,.centre-card) { border-radius:10px; }
+#asset-register-prototype .prototype-phone :is(.inventory-item,.asset-row,.report-row,.centre-directory-item,.centre-card):hover { border-color:#adc1b3; background-color:#fbfdfb; }
+#asset-register-prototype .prototype-phone :is(.section-heading,.list-caption) { font-family:"Avenir Next",Avenir,Inter,"Segoe UI",sans-serif; }
+#asset-register-prototype .prototype-phone :is(code,.centre-index,.asset-code,.list-caption) { font-family:"SFMono-Regular",Consolas,monospace; font-variant-numeric:tabular-nums; }
+#asset-register-prototype i[data-lucide] > svg[data-lucide-icon] { stroke:#174b40; stroke-width:1.65; stroke-linecap:square; stroke-linejoin:round; }
+#asset-register-prototype .capture-shutter i > svg[data-lucide-icon],
+#asset-register-prototype .primary-button i > svg[data-lucide-icon],
+#asset-register-prototype .scan-fab i > svg[data-lucide-icon] { stroke:#fff; }
+#asset-register-prototype .prototype-phone :is(.primary-button,.secondary-button,.scan-fab,.capture-mode,.capture-shutter,.nav-tab) { font-family:"Avenir Next",Avenir,Inter,"Segoe UI",sans-serif; }
+@media (prefers-reduced-motion:reduce) {
+  #asset-register-prototype .quick-grid button:hover,
+  #asset-register-prototype .primary-button:hover,
+  #asset-register-prototype .scan-fab:hover,
+  #asset-register-prototype .capture-shutter:hover { transform:none; }
+}
