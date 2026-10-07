@@ -577,3 +577,158 @@ body { background:#f3f6f9; }
   #asset-register-prototype .prototype-phone { min-height:calc(100svh - 48px); }
   #asset-register-prototype .screen-stack { max-width:760px; }
 }
+
+/* Creative enterprise palette: white canvas, confident blue, and small color cues that clarify state. */
+#asset-register-prototype {
+  --ink:#17243b;
+  --muted:#65748a;
+  --primary:#4056ed;
+  --on-primary:#fff;
+  --primary-soft:#eef0ff;
+  --secondary:#087f70;
+  --secondary-soft:#e3f5ef;
+  --tertiary:#c87517;
+  --tertiary-soft:#fff1d8;
+  --surface:#fff;
+  --surface-low:#f6f8ff;
+  --outline:#7c879b;
+  --divider:#e6eaf2;
+  --accent-coral:#e65b73;
+  --accent-lilac:#8667df;
+  background:radial-gradient(ellipse at 8% 2%,#edf0ff 0,transparent 34%),radial-gradient(ellipse at 96% 18%,#e9faf4 0,transparent 29%),#f7f9fc;
+}
+#asset-register-prototype .prototype-phone {
+  border:1px solid #e4e8f2;
+  background:linear-gradient(160deg,#fff 0%,#fff 75%,#fbfcff 100%);
+  box-shadow:0 24px 72px #20335d1a,0 3px 12px #20335d0a;
+}
+#asset-register-prototype .progress-hero {
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  margin:5px 0 12px;
+  padding:18px 16px 17px;
+  border:1px solid #e0e5ff;
+  border-radius:22px;
+  background:linear-gradient(125deg,#f1f2ff 0%,#f8f8ff 56%,#ebf8f3 100%);
+}
+#asset-register-prototype .progress-hero::after {
+  position:absolute;
+  z-index:-1;
+  top:-44px;
+  right:-21px;
+  width:150px;
+  height:150px;
+  border:1px solid #c8d0ff80;
+  border-radius:50%;
+  box-shadow:0 0 0 16px #ffffff55,0 0 0 34px #d9defa3b;
+  content:"";
+}
+#asset-register-prototype .progress-hero-copy .eyebrow { color:#4c5ed0; }
+#asset-register-prototype .live-dot { background:#0e9b78; box-shadow:0 0 0 4px #0e9b7820; }
+#asset-register-prototype .progress-hero h1 { color:#1b2b4a; letter-spacing:-.045em; }
+#asset-register-prototype .progress-block {
+  border-color:#dfe4fc;
+  background:linear-gradient(135deg,#fff 0%,#f4f5ff 70%,#f0faf6 100%);
+  box-shadow:0 7px 20px #4056ed0b;
+}
+#asset-register-prototype .remaining-count strong { color:#4056ed; }
+#asset-register-prototype .remaining-count b { color:#5a62a8; }
+#asset-register-prototype .saved { color:#087f70; background:#e3f5ef; }
+#asset-register-prototype .wave-value { stroke:#4056ed; }
+#asset-register-prototype .quick-grid button {
+  min-height:68px;
+  border-color:#e6eaf3;
+  border-radius:17px;
+  box-shadow:0 4px 12px #1b2c4b0b;
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+#asset-register-prototype .quick-grid button:nth-child(6n+1) { background:linear-gradient(135deg,#f0f1ff,#fff 82%); }
+#asset-register-prototype .quick-grid button:nth-child(6n+2) { background:linear-gradient(135deg,#e8f7f1,#fff 82%); }
+#asset-register-prototype .quick-grid button:nth-child(6n+3) { background:linear-gradient(135deg,#fff0ed,#fff 82%); }
+#asset-register-prototype .quick-grid button:nth-child(6n+4) { background:linear-gradient(135deg,#f4efff,#fff 82%); }
+#asset-register-prototype .quick-grid button:nth-child(6n+5) { background:linear-gradient(135deg,#fff5e4,#fff 82%); }
+#asset-register-prototype .quick-grid button:nth-child(6n) { background:linear-gradient(135deg,#e9f8fb,#fff 82%); }
+#asset-register-prototype .quick-grid button:hover { transform:translateY(-2px); border-color:#c9d1ff; box-shadow:0 8px 20px #4056ed18; }
+#asset-register-prototype .quick-grid i,
+#asset-register-prototype .match-badge,
+#asset-register-prototype .prediction-spark,
+#asset-register-prototype .warranty-glyph,
+#asset-register-prototype .report-type-icon,
+#asset-register-prototype .location-mark {
+  display:grid;
+  flex:none;
+  place-items:center;
+  border-radius:12px;
+}
+#asset-register-prototype .quick-grid i { width:28px; height:28px; padding:6px; color:#4056ed; background:#e4e8ff; }
+#asset-register-prototype .quick-grid button:nth-child(6n+2) i { color:#087f70; background:#d8f0e7; }
+#asset-register-prototype .quick-grid button:nth-child(6n+3) i { color:#d04d62; background:#ffe1e3; }
+#asset-register-prototype .quick-grid button:nth-child(6n+4) i { color:#7457ca; background:#e9e0ff; }
+#asset-register-prototype .quick-grid button:nth-child(6n+5) i { color:#a6610e; background:#ffebc7; }
+#asset-register-prototype .quick-grid button:nth-child(6n) i { color:#087b91; background:#d9f2f5; }
+#asset-register-prototype .eyebrow { color:#7b5ac2; }
+#asset-register-prototype .section-heading h2 { color:#1c2d49; }
+#asset-register-prototype .primary-button,
+#asset-register-prototype .scan-fab {
+  background:linear-gradient(120deg,#4056ed,#6648db 70%,#8055dc);
+  box-shadow:0 7px 18px #4056ed2b;
+}
+#asset-register-prototype .primary-button:hover,
+#asset-register-prototype .scan-fab:hover { filter:saturate(1.08) brightness(1.03); transform:translateY(-1px); }
+#asset-register-prototype .secondary-button { border-color:#dbddff; background:#f0f0ff; color:#4652c6; }
+#asset-register-prototype .bottom-toolbar {
+  border:1px solid #e5e8f2;
+  background:#ffffffed;
+  box-shadow:0 10px 30px #24365812;
+  backdrop-filter:blur(18px);
+}
+#asset-register-prototype .nav-tab { color:#718096; }
+#asset-register-prototype .nav-tab.active { color:#4056ed; }
+#asset-register-prototype .nav-tab.active i { padding:3px; border-radius:9px; background:#eef0ff; }
+#asset-register-prototype .filter-chip { border-color:#e0e5ef; }
+#asset-register-prototype .filter-chip.active { border-color:#cbd1ff; background:#eef0ff; color:#4056ed; }
+#asset-register-prototype .source-choice.is-selected { border-color:#c2e7d9; background:#e4f6ee; color:#087f70; box-shadow:inset 0 0 0 1px #d2eee3; }
+#asset-register-prototype .cycle-card { border-color:#dce2ff; background:linear-gradient(135deg,#f0f2ff,#fff 70%); }
+#asset-register-prototype .cycle-card-head > span:first-child { display:grid; place-items:center; width:36px; height:36px; border-radius:12px; color:#4056ed; background:#e1e6ff; }
+#asset-register-prototype .map-summary span,
+#asset-register-prototype .centre-stats span { border:1px solid #e9edf5; background:linear-gradient(145deg,#fff,#f7f8ff); }
+#asset-register-prototype .map-summary span:nth-child(3n+2) b,
+#asset-register-prototype .centre-stats span:nth-child(3n+2) b { color:#087f70; }
+#asset-register-prototype .map-summary span:nth-child(3n) b,
+#asset-register-prototype .centre-stats span:nth-child(3n) b { color:#d27818; }
+#asset-register-prototype .india-state:nth-child(6n+1) path { fill:#cfeee1; }
+#asset-register-prototype .india-state:nth-child(6n+2) path { fill:#d9e4ff; }
+#asset-register-prototype .india-state:nth-child(6n+3) path { fill:#f8e5bc; }
+#asset-register-prototype .india-state:nth-child(6n+4) path { fill:#e9dcff; }
+#asset-register-prototype .india-state:nth-child(6n+5) path { fill:#d6f0f4; }
+#asset-register-prototype .india-state:nth-child(6n) path { fill:#f7dfe6; }
+#asset-register-prototype .india-state path { stroke:#fff; stroke-width:1.6; transition:filter .18s ease; }
+#asset-register-prototype .india-state:hover path { filter:saturate(1.18) brightness(.97); }
+#asset-register-prototype .city-pin circle:first-child { fill:#4056ed; stroke:#fff; }
+#asset-register-prototype .city-pin .pin-pulse { stroke:#4056ed; }
+#asset-register-prototype .status-ok { color:#087f70; }
+#asset-register-prototype .missing-tag,
+#asset-register-prototype .report-type-icon.urgent { color:#cf435b; background:#ffe5e7; }
+#asset-register-prototype .report-type-icon.repair { color:#bf731b; background:#fff0d4; }
+#asset-register-prototype .report-type-icon.damaged { color:#7358cf; background:#eee8ff; }
+#asset-register-prototype .warranty-glyph { color:#087f70; background:#e0f4eb; }
+#asset-register-prototype .camera-view { box-shadow:inset 0 0 0 1px #ffffff25,0 12px 26px #17243b20; }
+#asset-register-prototype .camera-view .scan-line { background:linear-gradient(90deg,transparent,#7c8cff,#74e1c1,transparent); box-shadow:0 0 14px #7488ffb0; }
+#asset-register-prototype .icon-button { color:#4056ed; background:#f0f2ff; }
+#asset-register-prototype .location-mark { color:#087f70; background:linear-gradient(145deg,#d8f5e9,#e2eeff); }
+#asset-register-prototype i > svg[data-lucide-icon] { width:100%; height:100%; stroke-width:1.9; }
+#asset-register-prototype .report-type.is-selected { border-color:#c9cdff; background:#f3f2ff; color:#4d4ac0; box-shadow:inset 0 0 0 1px #e2e0ff; }
+#asset-register-prototype .report-stats button { border-color:#e5e9f2; background:linear-gradient(145deg,#fff,#f7f8ff); }
+#asset-register-prototype .report-stats button:nth-child(2) b { color:#c27819; }
+#asset-register-prototype .report-stats button:nth-child(3) b { color:#d34b60; }
+#asset-register-prototype input:focus,
+#asset-register-prototype select:focus,
+#asset-register-prototype textarea:focus { border-color:#7b88f5; box-shadow:0 0 0 3px #4056ed1b; outline:none; }
+@media (prefers-reduced-motion:reduce) {
+  #asset-register-prototype .quick-grid button,
+  #asset-register-prototype .india-state path { transition:none; }
+  #asset-register-prototype .quick-grid button:hover,
+  #asset-register-prototype .primary-button:hover,
+  #asset-register-prototype .scan-fab:hover { transform:none; }
+}
