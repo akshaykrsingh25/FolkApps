@@ -38,6 +38,8 @@ Before pilot, confirm:
 
 All `VITE_*` values are included in the browser bundle. They must contain public configuration only; never put database, object-storage, QR-signing, or identity-provider client secrets there.
 
+The API trims and validates `WEB_ORIGIN` values at startup. Production requires at least one exact HTTPS origin; wildcard origins, localhost, credentials, and URL paths are rejected before the HTTP server starts.
+
 ## Monitoring and alert response
 
 The application currently exposes health probes and structured service logs, but no production metrics endpoint or provider integration. The platform owner must configure monitoring and paging before the pilot. At minimum, alert on:
