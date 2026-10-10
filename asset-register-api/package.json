@@ -24,6 +24,7 @@
     "worker:exports": "node dist/exports/run-export-worker.js",
     "worker:notifications": "node dist/notifications/run-notification-worker.js",
     "test": "vitest run",
+    "test:load": "node scripts/load-test-api.mjs",
     "test:recovery": "bash scripts/test-backup-restore.sh",
     "test:watch": "vitest",
     "db:migrate:verification-escalation-policy": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/013_verification_escalation_policy.sql",

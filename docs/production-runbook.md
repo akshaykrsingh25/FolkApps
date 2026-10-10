@@ -42,6 +42,12 @@ The API trims and validates `WEB_ORIGIN` values at startup. Production requires 
 
 Production startup also fails if database TLS is not set to `sslmode=verify-full`, OIDC issuer/audience/JWKS values are incomplete or insecure, or private evidence storage lacks both a bucket and customer-managed KMS key ID. A custom S3-compatible endpoint must use HTTPS. Supply a provider CA file through the PostgreSQL connection URL when the managed database certificate is not signed by a system-trusted CA. These checks prevent the API from serving a partially configured production deployment; they do not replace provider-side least-privilege, bucket privacy, or MFA configuration.
 
+## Synthetic read-load check
+
+`npm run test:load` runs a read-only HTTP load check against the paginated asset register, overview, map, Watch queue, and audit feed. It reports request rate, p50/p95/p99/max latency, status counts, and failures per route. Defaults are 10 concurrent requests, a five-second warmup, and a 30-second measurement; limits are capped at 100 concurrent users and 15 minutes. It never creates, edits, or deletes application records and never prints the bearer token or response bodies. Use only a non-production environment populated with synthetic or approved redacted data.
+
+Set `ASSET_REGISTER_LOAD_API_URL` to the full `/api/v1` URL, `ASSET_REGISTER_LOAD_TOKEN` to a short-lived test bearer token, and `ASSET_REGISTER_LOAD_ORGANIZATION_ID` to the test tenant. The test identity needs `asset:read` and `audit:read` in the chosen scope. Localhost can use HTTP. A remote target must use HTTPS and requires both `ASSET_REGISTER_LOAD_TARGET=staging` and `ASSET_REGISTER_LOAD_STAGING_ACK=I_ACKNOWLEDGE_STAGING_READ_ONLY_LOAD`; production-looking hosts are blocked. Set `ASSET_REGISTER_LOAD_CONCURRENCY`, `ASSET_REGISTER_LOAD_DURATION_SECONDS`, `ASSET_REGISTER_LOAD_WARMUP_SECONDS`, and `ASSET_REGISTER_LOAD_REQUEST_TIMEOUT_MS` to tune a staging run. Inject the token from a secret manager rather than a shell command or committed file. No latency pass threshold is guessed here; Head Office and platform owners must agree SLOs from the intended workload and deployment size.
+
 ## Monitoring and alert response
 
 The application currently exposes health probes and structured service logs, but no production metrics endpoint or provider integration. The platform owner must configure monitoring and paging before the pilot. At minimum, alert on:
