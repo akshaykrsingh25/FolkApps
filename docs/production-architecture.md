@@ -24,6 +24,13 @@ Start with a modular API service and managed relational database; split services
 - Use an outbox/worker pattern for notifications, warranty reminders, cycle close, exports, and long-running jobs. Notifications should be retried and auditable.
 - Expose a versioned API contract to the frontend. Separate read endpoints optimized for maps/dashboards from write workflows; use server-side role checks on every endpoint, not only hidden UI controls.
 
+## Delivery and recovery controls
+
+- `.github/workflows/ci.yml` runs the API and web test suites and production builds on Node.js 24.21.0. A PostgreSQL 16 service job applies every migration and exercises archive creation, checksum verification, a non-production restore, and tamper rejection with synthetic data.
+- API responses carry a UUID `x-request-id` so support can correlate a client report with infrastructure logs. Treat it as a diagnostic identifier only, never as identity or authorization evidence.
+- `asset-register-api/scripts/backup-db.sh` creates a private custom-format PostgreSQL archive and SHA-256 sidecar outside the source tree. `restore-db.sh` verifies the digest, matches `RESTORE_TARGET_ENV` to a database-level `asset_register.environment` marker (`local` or `staging`), requires exact database-name confirmation, and should target a freshly created non-production database.
+- Use managed encrypted backups, retention, and cross-region replication for production. The local scripts demonstrate archive restore behavior but do not replace provider snapshots, point-in-time recovery, access policies, or a production recovery exercise.
+
 ## Core backend modules
 
 1. Identity, organizations, role assignments, and centre/state scopes.

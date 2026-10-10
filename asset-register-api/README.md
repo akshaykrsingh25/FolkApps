@@ -22,6 +22,13 @@ Production access uses the configured OIDC provider. The app does not issue loca
 Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. For an existing database through migration 005, run `npm run db:migrate:background-exports` after the earlier migrations. Install dependencies, then run `npm run start:dev`.
 
 Run `npm test` for authentication, tenant-membership, location-scope, and PostgreSQL schema checks. The schema tests use an embedded PostgreSQL runtime and do not need a running database service.
+Run `npm run test:recovery` against two disposable PostgreSQL 16 databases to exercise all migrations, checksummed backup, restore, and tamper rejection. The CI workflow runs this drill with synthetic data.
+
+## Database backup and restore exercise
+
+- Create a custom-format archive outside the worktree with `npm run db:backup -- /secure/backup/path`, after supplying `DATABASE_URL` from the operator's secret manager. The command writes a SHA-256 sidecar and restricts both files to the current user. Supply a durable, access-controlled backup path; production retention and cross-region copies belong in the managed database backup policy.
+- Before a restore, mark the isolated target database itself with `ALTER DATABASE <database_name> SET asset_register.environment = 'staging'` (or `local` for a local drill). Restore only into a freshly created, isolated non-production database with `npm run db:restore -- /secure/backup/path/asset-register-<timestamp>-<digest>.dump`, after supplying matching `RESTORE_TARGET_ENV` and `RESTORE_DATABASE_URL` from the operator's secret manager. The checksum and database environment marker are verified, and the script requires the exact target database name before restoring. PostgreSQL replaces matching objects from the archive; unrelated objects already in the target are not removed, so start with a fresh target for a full restore exercise. It refuses production and mismatched/missing environment markers.
+- Use the restore exercise to verify schema and representative synthetic records, then record duration, recovery point, and recovery time against the organization's targets. Keep credentials in the operator's secret manager or shell environment, never in command history or Git.
 
 ## User administration and permissions
 

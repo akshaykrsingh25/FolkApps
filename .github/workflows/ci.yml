@@ -1,0 +1,88 @@
+name: Asset Register CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asset-register-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - asset-register-api
+          - asset-register-frontend
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci --prefix "${{ matrix.package }}"
+
+      - name: Run tests
+        run: npm test --prefix "${{ matrix.package }}"
+
+      - name: Build production package
+        run: npm run build --prefix "${{ matrix.package }}"
+
+  database-recovery:
+    name: Verify PostgreSQL backup and restore
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install PostgreSQL client tools
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+
+      - name: Create disposable test databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          createdb --host 127.0.0.1 --username postgres asset_register_backup_source
+          createdb --host 127.0.0.1 --username postgres asset_register_restore_target
+          psql --host 127.0.0.1 --username postgres --dbname postgres --set ON_ERROR_STOP=1 \
+            --command "ALTER DATABASE asset_register_restore_target SET asset_register.environment = 'local'"
+
+      - name: Run full migration, backup, and restore drill
+        env:
+          SOURCE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/asset_register_backup_source
+          RESTORE_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/asset_register_restore_target
+        run: npm run test:recovery --prefix asset-register-api

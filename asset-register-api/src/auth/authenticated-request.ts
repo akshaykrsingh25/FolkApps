@@ -14,6 +14,7 @@ export interface ActorContext {
 }
 
 export interface AuthenticatedRequest extends Request {
+  requestId?: string;
   auth?: JWTPayload;
   actor?: ActorContext;
 }

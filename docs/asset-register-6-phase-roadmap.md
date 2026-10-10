@@ -4,7 +4,7 @@ Each phase delivers a usable vertical slice. The phase gate is the evidence requ
 
 ## Delivery status
 
-- **Phase 1 — implemented and verified.** Live identity-provider values, production secrets, hosted environments, and restore operations still need organization infrastructure.
+- **Phase 1 — application foundations implemented and verified; organization deployment gate remains open.** OIDC verification and scoped membership, tenant-bound database constraints, response request IDs, Node.js 24.21.0 pinning, CI test/build jobs, database backup/restore scripts, and a PostgreSQL 16 synthetic recovery drill are in place. The organization's actual identity-provider values, managed secrets, hosted environments, deployment target, and recovery objectives still need organization infrastructure.
 - **Phase 2 — implemented and verified.** Location hierarchy, role-scoped asset create/search/detail/edit, opaque QR identity, and print label are connected to the versioned API. Optional Ed25519 QR signing now supports trusted issuance and offline verification when key configuration is present. Head Office now has an audited CSV preview/import API for centres; each row must include an explicit state, and duplicate or incomplete rows block the entire import.
 - **Phase 3 — implemented and verified.** Camera QR/barcode lookup with manual fallback, on-device OCR for asset labels and invoices, reviewable category/product and field suggestions, metadata-based duplicate/similar-record checks, private signed evidence upload/download, idempotent retries, and encrypted offline drafts with encrypted attachments.
 - **Phase 4 — implemented and verified.** Configurable cadence and grace-window policies, scoped cycle access, QR/tag scan events with idempotent sync, encrypted offline scan queue, roll-up progress, and “not yet scanned” / “needs review” states. Missed items are never automatically changed to stolen or missing.
@@ -17,7 +17,7 @@ Each phase delivers a usable vertical slice. The phase gate is the evidence requ
 
 - Settle the identity provider, organization tenancy, role definitions, data retention, and photo/invoice access policy.
 - Build the React + TypeScript installable PWA shell and the NestJS versioned API while preserving the approved Incuspaze UI direction.
-- Set up PostgreSQL migrations, development/staging environments, secrets management, audit conventions, request IDs, backups, and deployment pipeline.
+- Set up PostgreSQL migrations, development/staging environments, secrets management, audit conventions, request IDs, backups, and deployment pipeline. The API now returns a UUID `x-request-id` for support correlation; CI verifies both packages, and PostgreSQL 16 recovery is exercised against disposable synthetic databases. A hosted deployment and managed backup policy still require an approved environment.
 - Implement OIDC sign-in and server-side authorization for Head Office, State Head, Centre Head, custodian, and viewer scopes.
 - Add tenant-safe query patterns and seeded, clearly synthetic development data.
 

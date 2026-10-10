@@ -13,8 +13,11 @@
     "db:migrate:scoped-rbac": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/004_scoped_rbac_and_user_profiles.sql",
     "db:migrate:dual-identifiers": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/005_dual_asset_identifiers.sql",
     "db:migrate:background-exports": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/006_background_asset_exports.sql",
+    "db:backup": "bash scripts/backup-db.sh",
+    "db:restore": "bash scripts/restore-db.sh",
     "worker:exports": "node dist/exports/run-export-worker.js",
     "test": "vitest run",
+    "test:recovery": "bash scripts/test-backup-restore.sh",
     "test:watch": "vitest"
   },
   "dependencies": {
