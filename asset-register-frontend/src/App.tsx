@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
-import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, SessionUser, UserNotification, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
 import { isWithinIndia, parseLatitudeLongitude } from './domain/coordinates';
 import { findTransferReceiptAsset, validateTransferReceiptScans } from './domain/transferReceipt';
 import { isSignedAssetQr, qrIdentityForOfflineLookup, verifySignedAssetQr } from './domain/signedQr';
@@ -13,7 +13,7 @@ import { CodeScanner } from './capture/CodeScanner';
 import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
-type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'exports' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+type View = 'home' | 'alerts' | 'notifications' | 'map' | 'locations' | 'assets' | 'exports' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
@@ -167,6 +167,8 @@ export default function App() {
   const [custodyHistory,setCustodyHistory]=useState<AssetCustody[]>([]);
   const [eligibleCustodians,setEligibleCustodians]=useState<EligibleCustodian[]>([]);
   const [operationalAlerts,setOperationalAlerts]=useState<OperationalAlert[]>([]);
+  const [notifications,setNotifications]=useState<UserNotification[]>([]);
+  const [unreadNotificationCount,setUnreadNotificationCount]=useState(0);
   const [overviewData,setOverviewData]=useState<InsightOverview|null>(null);
   const [mapData,setMapData]=useState<IndiaMapData|null>(null);
   const [indiaGeoJson,setIndiaGeoJson]=useState<IndiaGeoJson|null>(null);
@@ -183,6 +185,8 @@ export default function App() {
   const [managedUsersBusy,setManagedUsersBusy]=useState(false);
   const [userRoleChoice,setUserRoleChoice]=useState<Role>('viewer');
   const [savingManagedUser,setSavingManagedUser]=useState(false);
+
+  useEffect(()=>{setOperationalAlerts([]);setNotifications([]);setUnreadNotificationCount(0);},[organization?.id,user?.subject]);
 
   useEffect(() => {
     let active = true;
@@ -323,13 +327,14 @@ export default function App() {
   },[user,organization,view]);
 
   useEffect(()=>{
-    if(!user||!organization||(view!=='alerts'&&view!=='home'))return;
+    if(!user||!organization||(view!=='alerts'&&view!=='home'&&view!=='notifications'))return;
     if(DEMO_MODE){
-      setOperationalAlerts(assets.filter((asset)=>asset.status==='missing').map((asset)=>({id:`missing:${asset.id}`,kind:'missing',severity:'high',title:'Asset marked missing',description:'Review the last known location and record the investigation outcome.',assetId:asset.id,assetTag:asset.assetTag,assetName:asset.name,locationName:asset.locationName,occurredAt:asset.createdAt,relatedId:null})));
+      const rows=assets.filter((asset)=>asset.status==='missing').map((asset)=>({id:`missing:${asset.id}`,kind:'missing',severity:'high' as const,title:'Asset marked missing',description:'Review the last known location and record the investigation outcome.',assetId:asset.id,assetTag:asset.assetTag,assetName:asset.name,locationName:asset.locationName,occurredAt:asset.createdAt,relatedId:null}));
+      setOperationalAlerts(rows);setNotifications(rows.map((row)=>({...row,sourceAlertId:row.id,createdAt:row.occurredAt,readAt:null})));setUnreadNotificationCount(rows.length);
       return;
     }
     let active=true;
-    void api.alerts(user.accessToken,organization.id).then((rows)=>{if(active)setOperationalAlerts(rows);}).catch((reason)=>{if(active)setError(errorMessage(reason));});
+    void Promise.all([api.alerts(user.accessToken,organization.id),api.notifications(user.accessToken,organization.id)]).then(([rows,inbox])=>{if(active){setOperationalAlerts(rows);setNotifications(inbox.items);setUnreadNotificationCount(inbox.unreadCount);}}).catch((reason)=>{if(active)setError(errorMessage(reason));});
     return()=>{active=false;};
   },[user,organization,view,assets]);
 
@@ -780,6 +785,16 @@ export default function App() {
     }catch(reason){setError(errorMessage(reason));}
   }
 
+  async function markNotificationRead(notification:UserNotification) {
+    if(DEMO_MODE){setNotifications((items)=>items.map((item)=>item.id===notification.id?{...item,readAt:new Date().toISOString()}:item));setUnreadNotificationCount((count)=>Math.max(0,count-(notification.readAt?0:1)));return;}
+    if(!user||!organization)return;
+    try{
+      const updated=await api.markNotificationRead(user.accessToken,organization.id,notification.id);
+      setNotifications((items)=>items.map((item)=>item.id===updated.id?{...item,readAt:updated.readAt}:item));
+      setUnreadNotificationCount((count)=>Math.max(0,count-(notification.readAt?0:1)));
+    }catch(reason){setError(errorMessage(reason));}
+  }
+
   async function createAsset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!user || !organization) return;
     const data = readForm(event.currentTarget);
@@ -988,6 +1003,7 @@ export default function App() {
         <div className="workspace-controls">
           {DEMO_MODE && <span className="demo-pill">DEMO · browser only</span>}
           {organizations.length > 1 && <label className="org-select-label"><span className="sr-only">Organization</span><select value={organization?.id} onChange={(event) => setOrganization(organizations.find((item) => item.id === event.target.value) || null)}>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+          <button className="notification-button" onClick={()=>setView('notifications')} aria-label={`Notifications, ${unreadNotificationCount} unread`} title="Notifications"><Icon name="bell"/>{unreadNotificationCount>0&&<span>{unreadNotificationCount>99?'99+':unreadNotificationCount}</span>}</button>
           <span className="user-initial" aria-label={`Signed in as ${user.name}`}>{user.name.slice(0,1).toUpperCase()}</span>
           <button className="quiet-button" onClick={signOut}>Sign out</button>
         </div>
@@ -1017,6 +1033,13 @@ export default function App() {
             <button className="home-alert-link" onClick={()=>setView('alerts')}><span className="home-alert-icon"><Icon name="watch"/></span><span><strong>Exceptions & review items</strong><small>Missing records, overdue scans, duplicate serials, and stalled handovers</small></span><b>{operationalAlerts.length||overviewData?.missingCount||0}</b><Icon name="arrow"/></button>
             <div className="operations-watch" aria-label="Operational watch"><button onClick={()=>setView('verify')}><span>Verification cycles</span><strong>{overviewData?.activeCycleCount ?? 0}</strong><small>{overviewData?.scanCompletionPercent ?? 0}% scanned · active scope <b>→</b></small></button><button onClick={()=>setView('transfers')}><span>Transfers in motion</span><strong>{overviewData?.openTransferCount ?? 0}</strong><small>awaiting the next step <b>→</b></small></button><button onClick={()=>setView('assets')}><span>Coverage ending soon</span><strong>{overviewData?.warrantyExpiringCount ?? 0}</strong><small>warranty or service <b>→</b></small></button></div>
             <div className="home-columns"><section className="panel"><div className="panel-heading"><div><p className="eyebrow">RECENTLY RECORDED</p><h2>Latest assets</h2></div><button className="text-button" onClick={() => setView('assets')}>Browse register →</button></div><AssetRows assets={assets.slice(0,4)} onSelect={(asset) => { setSelectedAsset(asset); setView('asset-detail'); }} /></section><section className="panel location-teaser"><p className="eyebrow">THE NETWORK</p><h2>Every centre has a place.</h2><p>Browse state, centre, building, floor, and area records. Precise centre pins can be confirmed by the people who know the space.</p><button className="text-button" onClick={() => setView('locations')}>Manage locations →</button></section></div>
+          </section>}
+
+          {view === 'notifications' && <section className="view-panel lifecycle-view alert-view notification-view">
+            <p className="eyebrow">YOUR INBOX · PRIVATE TO YOUR ACCOUNT</p>
+            <div className="view-title-row"><div><h1>Notifications.</h1><p className="view-lead">Signals saved for your account. Items follow your current asset access and remain here after you read them.</p></div><button className="quiet-button" onClick={()=>setView('alerts')}>Open Watch →</button></div>
+            <div className="alert-queue-summary"><span><strong>{unreadNotificationCount}</strong> unread · {notifications.length} recent notifications</span><small>In-app only · signals sync when you open or refresh the app</small></div>
+            {notifications.length===0?<section className="panel verify-empty"><Icon name={DEMO_MODE?'bell':'check'}/><h2>{DEMO_MODE?'No sample alerts in this workspace.':'You’re all caught up.'}</h2><p>{DEMO_MODE?'The sample workspace has no active review signals. Sign in to see notifications scoped to your organization and centres.':'New missing-asset, overdue-scan, transfer, duplicate-record, and urgent-report signals will appear here.'}</p></section>:<div className="alert-list">{notifications.map((item)=><article className={`panel alert-row notification-row ${item.readAt?'is-read':''} severity-${item.severity}`} key={item.id}><span className="alert-mark"><Icon name={item.kind==='verification_overdue'?'history':item.kind==='duplicate_serial'?'asset':item.kind==='transfer_stalled'||item.kind==='transfer_discrepancy'?'arrow':'watch'}/></span><div className="alert-main"><div className="alert-title-line"><h2>{item.title}</h2><span className={`status-chip alert-severity-${item.severity}`}>{item.readAt?'Read':item.severity==='high'?'Review soon':'Check'}</span></div><strong>{item.assetName} · {item.assetTag}</strong><small>{item.locationName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small><p>{item.description}</p><div className="notification-actions"><button className="text-button" onClick={()=>void openAlertAsset(item)}>{item.kind==='verification_overdue'?'Review asset and scan cycle':item.kind==='transfer_stalled'?'Open asset movement':item.kind==='urgent_report'?'Open repair report':'Open asset record'} <span aria-hidden="true">→</span></button>{!item.readAt&&<button className="text-button notification-read-action" onClick={()=>void markNotificationRead(item)}>Mark as read</button>}</div></div></article>)}</div>}
           </section>}
 
           {view === 'alerts' && <section className="view-panel lifecycle-view alert-view">

@@ -43,6 +43,7 @@ describe('phase two: location and asset workflows', () => {
     legacyRfidAssetId = legacyAsset.rows[0].id;
     await db.exec(await readFile(new URL('../../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8'));
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(

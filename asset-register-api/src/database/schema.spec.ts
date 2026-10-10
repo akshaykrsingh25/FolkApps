@@ -26,6 +26,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(rfidBindingMigration);
     const physicalAddressMigration = await readFile(new URL('../../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8');
     await db.exec(physicalAddressMigration);
+    const notificationInboxMigration = await readFile(new URL('../../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8');
+    await db.exec(notificationInboxMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -35,7 +37,7 @@ describe('initial PostgreSQL schema', () => {
       `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name`,
     );
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
-      'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence',
+      'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence', 'notification_inbox',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
       'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
     ]));

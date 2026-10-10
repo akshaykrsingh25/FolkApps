@@ -61,6 +61,7 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -387,6 +388,26 @@ describe('phase two API integration', () => {
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'disposed',statusChangeReason:'Written off'},organizationId,'PATCH')).status).toBe(403);
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing',statusChangeReason:'Checked with centre head; item not located.'},organizationId,'PATCH')).status).toBe(200);
     await db.query(`INSERT INTO verification_cycles (organization_id,scope_location_id,starts_at,grace_ends_at,status,created_by) VALUES ($1,$2,now()-interval '70 days',now()-interval '10 days','open',$3)`,[organizationId,centre.id,headOfficeId]);
+    const urgentNoticeReport=await call('/reports',centreToken,{assetId:duplicateAsset.id,kind:'other',urgency:'urgent',description:'The missing asset requires an urgent centre review.'});
+    expect(urgentNoticeReport.status).toBe(201);
+    const inboxResponse=await call('/notifications',centreToken);
+    expect(inboxResponse.status).toBe(200);
+    const inbox=await inboxResponse.json() as {items:{id:string;kind:string;title:string;readAt:string|null}[];unreadCount:number};
+    const urgentNotification=inbox.items.find((item)=>item.kind==='urgent_report');
+    expect(urgentNotification).toBeDefined();
+    expect(urgentNotification).toMatchObject({title:'Urgent asset report is unresolved',readAt:null});
+    expect(inbox.unreadCount).toBeGreaterThan(0);
+    const repeatInbox=await call('/notifications',centreToken);
+    const repeated=await repeatInbox.json() as {items:{id:string}[];unreadCount:number};
+    expect(repeated.unreadCount).toBe(inbox.unreadCount);
+    expect(repeated.items.filter((item)=>item.id===urgentNotification!.id)).toHaveLength(1);
+    expect((await call(`/notifications/${urgentNotification?.id}/read`,centreToken,{},organizationId,'PATCH')).status).toBe(200);
+    const readInbox=await (await call('/notifications',centreToken)).json() as {items:{id:string;readAt:string|null}[];unreadCount:number};
+    expect(readInbox.unreadCount).toBe(inbox.unreadCount-1);
+    expect(readInbox.items.find((item)=>item.id===urgentNotification!.id)?.readAt).toEqual(expect.any(String));
+    const otherScopeInbox=await (await call('/notifications',centreBToken)).json() as {items:{id:string}[];unreadCount:number};
+    expect(otherScopeInbox.items.some((item)=>item.id===urgentNotification!.id)).toBe(false);
+    expect((await call(`/notifications/${urgentNotification?.id}/read`,centreBToken,{},organizationId,'PATCH')).status).toBe(404);
     const alertsResponse=await call('/insights/alerts',centreToken);
     expect(alertsResponse.status).toBe(200);
     const alerts=await alertsResponse.json() as {kind:string;description:string}[];

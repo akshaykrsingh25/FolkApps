@@ -5,5 +5,5 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 import { InsightsController } from './insights.controller';
 import { InsightsService } from './insights.service';
 
-@Module({imports:[AuthModule,DatabaseModule,AuthorizationModule],controllers:[InsightsController],providers:[InsightsService]})
+@Module({imports:[AuthModule,DatabaseModule,AuthorizationModule],controllers:[InsightsController],providers:[InsightsService],exports:[InsightsService]})
 export class InsightsModule {}

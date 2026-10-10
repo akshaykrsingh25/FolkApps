@@ -74,6 +74,13 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - Head Office can preview the CSV with `POST /api/v1/locations/import/preview` and import it with `POST /api/v1/locations/import`, passing the CSV text in `{ "csv": "..." }`. The import creates state, centre, and direct floor records in one transaction. Duplicate codes, missing states, and invalid parent references stop the import.
 - Floors can be direct children of a centre or of a building. A city does not produce a map pin; exact centre coordinates remain unconfirmed until an authorized person verifies them. The centre import accepts an optional `Physical Address` column, but imported addresses stay unverified. A centre head can confirm an address and coordinates for their centre; State Head and Head Office confirmations are marked verified. Address and coordinate changes are written to the audit log. Run `npm run db:migrate:physical-addresses` on an existing database, or `npm run db:migrate` for a fresh setup.
 
+## In-app notifications
+
+- `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns the latest 200 items with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Before nationwide high-volume production, move signal fan-out to a durable outbox worker and add inbox pagination.
+- `PATCH /api/v1/notifications/:id/read` marks one of the caller's notifications read. Both reads and updates are tenant/user scoped and re-check the asset's current location access, so moving an asset or changing a user's role removes stale access to its prior alert history.
+- The inbox captures signals when the signed-in app loads or refreshes. It does not send push, email, or WhatsApp notifications while the app is closed; those require an approved scheduler/provider and delivery policy.
+- Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
+
 ## Production boundary
 
 GitHub stores application source and reviewed migrations only. Asset data, employee data, invoices, camera images, QR secrets, and exports belong in the production database and private object storage. Uploads use short-lived signed URLs and checksum verification. In production, object uploads request SSE-KMS; set `OBJECT_STORAGE_KMS_KEY_ID` to use the organization-managed key, and keep the bucket private with public access blocked. Queued offline writes need stable client-generated IDs and server acknowledgement before being shown as centrally saved.
