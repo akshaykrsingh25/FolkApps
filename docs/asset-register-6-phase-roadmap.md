@@ -1,0 +1,97 @@
+# Incuspaze Asset Register — 6-phase delivery roadmap
+
+Each phase delivers a usable vertical slice. The phase gate is the evidence required before expanding scope; later phases build on the earlier data and security foundations.
+
+## Delivery status
+
+- **Phase 1 — implemented and verified.** Live identity-provider values, production secrets, hosted environments, and restore operations still need organization infrastructure.
+- **Phase 2 — implemented and verified.** Location hierarchy, role-scoped asset create/search/detail/edit, opaque QR identity, and print label are connected to the versioned API. Center source-data onboarding is still pending and will be handled in the rollout work in phase 6.
+- **Phase 3 — implemented and verified.** Camera QR/barcode lookup with manual fallback, on-device OCR for asset labels and invoices, reviewable category/product and field suggestions, metadata-based duplicate/similar-record checks, private signed evidence upload/download, idempotent retries, and encrypted offline drafts with encrypted attachments.
+- **Phase 4 — implemented and verified.** Configurable cadence and grace-window policies, scoped cycle access, QR/tag scan events with idempotent sync, encrypted offline scan queue, roll-up progress, and “not yet scanned” / “needs review” states. Missed items are never automatically changed to stolen or missing.
+- **Phase 5 — implemented and verified.** Condition and repair reports with audit/outbox records, scoped approval → dispatch → receipt transfers that only update location on receipt, warranty/guarantee/AMC records, and an unused stock status/filter.
+- **Phase 6 — application implementation delivered; production rollout gate remains open.** The responsive India map and state-to-centre-to-floor/area navigation are implemented, and the 64-centre reference list supplied for the prototype is visible in the demo directory. Centre pins are shown only after coordinate confirmation. Scoped overview metrics include asset counts, scan completion, missing assets, repairs, unused stock, open reports, expiring coverage, active verification cycles, and transfers in motion. Asset and map-place lists use cursor pagination. Desktop and phone-width map flows, web build/tests, and API build/tests have passed.
+
+## Phase 1 — Platform, identity, and governance
+
+**Goal:** establish a safe production base before any real company data is entered.
+
+- Settle the identity provider, organization tenancy, role definitions, data retention, and photo/invoice access policy.
+- Build the React + TypeScript installable PWA shell and the NestJS versioned API while preserving the approved Incuspaze UI direction.
+- Set up PostgreSQL migrations, development/staging environments, secrets management, audit conventions, request IDs, backups, and deployment pipeline.
+- Implement OIDC sign-in and server-side authorization for Head Office, State Head, Centre Head, custodian, and viewer scopes.
+- Add tenant-safe query patterns and seeded, clearly synthetic development data.
+
+**Exit gate:** users can sign in; a request cannot read or change data outside its organization and assigned location scope; database restore and audit trail are demonstrated in a non-production environment.
+
+## Phase 2 — India location network and asset register
+
+**Goal:** make the organization’s physical inventory and ownership structure reliable.
+
+- Load and review states, active centres, warehouses, and centre codes; flag incomplete or conflicting source rows rather than silently guessing. The provided directory is currently bundled as demo reference data; production CSV onboarding/review and duplicate reconciliation remain open.
+- Build the hierarchy India → state → centre/warehouse → building → floor → area, with centre-head management of internal and external spaces.
+- Add asset create, edit, search, detail, category, serial number, condition, custodian, and location workflows.
+- Store invoice and asset-photo metadata in the database and files in private object storage.
+- Generate opaque QR identities only after a record is saved; support printable labels and tag reissue history.
+
+**Exit gate:** a centre head can set up a centre and record/search assets; a state/head-office user can see only their authorized roll-up; every listed centre has an explicit location-data confidence state.
+
+## Phase 3 — Field capture, smart suggestions, and offline sync
+
+**Goal:** make on-site asset capture fast and dependable, including weak-connectivity locations.
+
+- Build camera-first capture for asset photos, QR/barcodes, invoices, and product labels.
+- Add OCR and image-matching behind review screens: extracted values and category/name suggestions remain editable and never silently overwrite a saved record.
+- Compare new captures with existing assets by tag, serial, manufacturer/model, image similarity, and location; show likely duplicates for human review.
+- Store unsynced scan actions in an encrypted local queue with visible pending/synced/failed states.
+- Sync with idempotency keys, retry/backoff, conflict handling, and a clear server acknowledgement before showing “saved centrally.”
+- Support low-bandwidth image upload, compression, resumable retry, and explicit retention controls.
+
+**Exit gate:** staff can capture and queue an asset offline, reconnect, sync once without duplicate records, review suggestions, and recover from a failed upload without losing the capture.
+
+## Phase 4 — Verification cycles and missing-asset control
+
+**Goal:** turn six-month scans into a clear, accountable control process.
+
+- Let Head Office configure cycle cadence, scan window, grace period, exceptions, and who can open/close a cycle.
+- Default to a six-month cycle with a two-month completion/grace window, while preserving policy history when settings change.
+- Track progress by organization, state, centre, floor, and area; support QR scan, manual lookup, and location confirmation.
+- Identify assets not seen by the cycle deadline; distinguish “not yet scanned,” “under investigation,” and “confirmed missing.”
+- Route reminders and escalations from custodian to Centre Head to State Head to Head Office, with delivery and action history.
+- Provide offline cycle manifests and conflict-safe scan synchronization.
+
+**Exit gate:** cycle totals reconcile to the asset register; extensions and exclusions are audited; unresolved items escalate on the configured schedule; no asset is automatically classified as stolen solely because it was not scanned.
+
+## Phase 5 — Repair, transfer, warranty, and asset lifecycle
+
+**Goal:** keep issues and movement traceable from report through resolution.
+
+- Implement damage/repair/out-of-service reports with asset link, exact place, urgency, photo evidence, owner, status, and resolution notes.
+- Add transfer requests, source/destination approval, dispatch/receipt confirmation, handover evidence, and movement history.
+- Track unused/available assets and propose centre-to-centre transfers without changing ownership/location until approved and received.
+- Add warranty/guarantee/AMC dates, seller and service-centre contacts, reminders, and claim/repair notes.
+- Define lifecycle rules for active, in repair, out of service, missing, retired, and disposed assets; require reasons and approvals for sensitive changes.
+- Deliver notification preferences, retryable delivery, and an organization-wide audit timeline.
+
+**Exit gate:** each report, transfer, warranty action, and status change has a responsible owner and durable history; notification failures are visible and retryable.
+
+## Phase 6 — India-wide insights, scale, and rollout
+
+**Goal:** launch with trustworthy national views and a supportable operating model.
+
+- Finish the India → state → centre → floor/area map experience with centre pins, explicit coordinate confidence, filters, and accessible list alternatives.
+- Build operational dashboards for asset counts, scan completion, missing investigations, repairs, transfers, warranties ending, and unused stock.
+- Use cursor pagination, indexed filters, aggregate endpoints, background export jobs, and measured query plans for nationwide datasets. Asset and map-place pagination plus scoped aggregate endpoints are implemented; background export jobs and measured nationwide query plans remain open.
+- Import the approved centre directory and support audited CSV onboarding/export with validation, duplicate detection, and a review report; do not infer uncertain addresses or coordinates from centre names. The supplied directory is present in demo data only; production import and duplicate review remain open.
+- Complete security review, accessibility review, device/browser checks, backup/restore exercise, monitoring, alerting, and incident runbooks. Desktop and phone-width browser checks are complete; formal accessibility/security reviews, broader device matrix, backup/restore, monitoring, and runbooks remain open.
+- Pilot with selected centres and custodians; reconcile sample asset data, measure scan time and sync failures, then expand by state in controlled waves.
+- Train centre/state/head-office roles and publish support, escalation, and data-correction procedures.
+
+**Exit gate:** the pilot meets agreed data-quality, sync, authorization, and support targets; recovery is exercised; rollout owners and expansion criteria are approved. This gate requires the organization’s identity provider, production hosting, approved asset/directory data, recovery environment, and pilot owners, so it is not represented as complete by local demo results.
+
+## Delivery rules across all phases
+
+- Treat GitHub as the source-code and migration repository. Live asset records, employee details, bills, photos, QR secrets, and exports stay in authenticated production services.
+- Enforce authorization in the API on every request. Hiding a control in the interface is not access control.
+- Make writes auditable and retry-safe. Keep human review for recognition, OCR, duplicate suggestions, missing classification, and transfer approval.
+- Release one useful end-to-end workflow per phase; do not defer all working software until a final phase.
+- Keep operational decisions configurable and versioned instead of hard-coding cycle dates, escalation rules, or role scope.

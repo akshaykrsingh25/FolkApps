@@ -1,0 +1,386 @@
+[
+  {
+    "code": "AHKC",
+    "name": "Ahmedabad Krish Cubicle",
+    "city": "Ahmedabad",
+    "stateName": "Gujarat"
+  },
+  {
+    "code": "AHTL",
+    "name": "AHM The Link",
+    "city": "Ahmedabad",
+    "stateName": "Gujarat"
+  },
+  {
+    "code": "BBJR",
+    "name": "Bhubaneswar Janpath",
+    "city": "Bhubaneswar",
+    "stateName": "Odisha"
+  },
+  {
+    "code": "BGMA",
+    "name": "Bangalore Meta Apply",
+    "city": "Bangalore",
+    "stateName": "Karnataka"
+  },
+  {
+    "code": "BLQS",
+    "name": "Bangalore Qube Software",
+    "city": "Bangalore",
+    "stateName": "Karnataka"
+  },
+  {
+    "code": "BLUB",
+    "name": "Bangalore UB City",
+    "city": "Bangalore",
+    "stateName": "Karnataka"
+  },
+  {
+    "code": "PBTP",
+    "name": "Bangalore Prasad Tech Park",
+    "city": "Bangalore",
+    "stateName": "Karnataka"
+  },
+  {
+    "code": "CHEA2",
+    "name": "Chennai Express Avenue",
+    "city": "Chennai",
+    "stateName": "Tamil Nadu"
+  },
+  {
+    "code": "CHOC",
+    "name": "Olympia Crest",
+    "city": "Chennai",
+    "stateName": "Tamil Nadu"
+  },
+  {
+    "code": "GCA1",
+    "name": "Gurgaon Campus 1",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "GCA2",
+    "name": "Gurgaon Campus 2",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "GCA3",
+    "name": "Gurgaon Campus 3",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "GGOH",
+    "name": "DLF One Horizon",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "GMGC",
+    "name": "Gurgaon M3M Urbana",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "GGSL",
+    "name": "Gurgaon HQ27",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "HYAC",
+    "name": "Hyderabad Anand Capital Tower",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "",
+    "name": "Hyderabad Gumidelli 4b",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IA4F",
+    "name": "Indore Apollo 4F",
+    "city": "Indore",
+    "stateName": "Madhya Pradesh"
+  },
+  {
+    "code": "IKDS",
+    "name": "iKeva Divyasree 2F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKDS",
+    "name": "iKeva Divyasree 3F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKIL",
+    "name": "iKeva ILab Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKJP",
+    "name": "iKeva Jyothi Pinnacle Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKJS",
+    "name": "iKeva Jain Satguru Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKKP",
+    "name": "iKeva KPHB Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKKS",
+    "name": "iKeva Krishe Suphire Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKMH",
+    "name": "iKeva My Home Hub Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKMR",
+    "name": "iKeva Umiya Marathahalli ORR BLR",
+    "city": "Bangalore",
+    "stateName": "Karnataka"
+  },
+  {
+    "code": "IKOGM",
+    "name": "iKeva OGM Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKOR",
+    "name": "iKeva Orbit 16F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKOR",
+    "name": "iKeva Orbit 3F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKVC",
+    "name": "iKeva Vaishnavi 3F Cynosure Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKVC",
+    "name": "iKeva Vaishnavi 10F Cynosure Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "",
+    "name": "Rajpushpa GF",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKWA",
+    "name": "iKeva Western Aqua 6F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "IKWA",
+    "name": "iKeva Western Aqua-1F Hyd",
+    "city": "Hyderabad",
+    "stateName": "Telangana"
+  },
+  {
+    "code": "JPGT",
+    "name": "Jaipur GT Landmark",
+    "city": "Jaipur",
+    "stateName": "Rajasthan"
+  },
+  {
+    "code": "KOML",
+    "name": "Kochi Oberon Mall",
+    "city": "Kochi",
+    "stateName": "Kerala"
+  },
+  {
+    "code": "LI8F",
+    "name": "Lucknow Indrium 2F",
+    "city": "Lucknow",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "LKEC",
+    "name": "LKO Eldeco Chamber",
+    "city": "Lucknow",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "LKEX1",
+    "name": "Experion 1st Floor",
+    "city": "Lucknow",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "LKEX6",
+    "name": "Experion 6th Floor",
+    "city": "Lucknow",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "LKEX2",
+    "name": "Experion 2nd Floor",
+    "city": "Lucknow",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "MULH",
+    "name": "Mumbai LightHall",
+    "city": "Mumbai",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "NCA2",
+    "name": "Noida Campus 2",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NCGB",
+    "name": "Noida Green Boulevard",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NCT2",
+    "name": "Noida Corenthum 2F",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NCT3",
+    "name": "Noida Corenthum 3F (A)+(B)",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NCT4",
+    "name": "Noida Corenthum 4F(A)+(B)",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NFO4",
+    "name": "Noida Fortune One",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NOAL",
+    "name": "Noida Alphathum",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "NWGR",
+    "name": "Noida Windsor",
+    "city": "Noida",
+    "stateName": "Uttar Pradesh"
+  },
+  {
+    "code": "TPBB",
+    "name": "Trios Pune Balaji Business Centre",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPAB",
+    "name": "Trios Pune Amar Business Zone",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPMG",
+    "name": "Trios Pune Magnus",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPSY",
+    "name": "Trios Pune Symphony IT Park",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPTS",
+    "name": "Trios Pune Tech Summit",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPGT",
+    "name": "Trios Pune Global Tower",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPMV",
+    "name": "Trios Pune Mont Vert Spectra",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPIG",
+    "name": "Trios Pune Indialand Global Tech Park",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TPFI",
+    "name": "Trios Pune Finswell",
+    "city": "Pune",
+    "stateName": "Maharashtra"
+  },
+  {
+    "code": "TGAO",
+    "name": "Trios Gurgaon Akaya One Sec 32",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "TGUC",
+    "name": "Trios Gurgaon Unitech Cyber Park Sec 39",
+    "city": "Gurgaon",
+    "stateName": "Haryana"
+  },
+  {
+    "code": "TRAH",
+    "name": "Trivandrum Aspinwall",
+    "city": "Trivandrum",
+    "stateName": "Kerala"
+  },
+  {
+    "code": "VAMC",
+    "name": "Vadodara Alembic City",
+    "city": "Vadodara",
+    "stateName": "Gujarat"
+  }
+]

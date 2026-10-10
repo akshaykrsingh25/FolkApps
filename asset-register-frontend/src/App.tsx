@@ -1,0 +1,803 @@
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import type { User } from 'oidc-client-ts';
+import QRCode from 'qrcode';
+import { api, ApiError } from './api/client';
+import { oidcConfigured, userManager } from './auth/oidc';
+import { demoStore, DEMO_ORGANIZATION } from './demo/store';
+import type { Asset, Evidence, Location, LocationKind, Organization, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import { Icon } from './ui/Icon';
+import { CodeScanner } from './capture/CodeScanner';
+import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
+import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
+
+type View = 'home' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
+const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
+const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
+  state: [], centre: ['state'], warehouse: ['state'], building: ['centre', 'warehouse'], floor: ['building'], area: ['floor'],
+};
+
+type MapFeature={type:'Feature';properties:{name:string};geometry:{type:'Polygon'|'MultiPolygon';coordinates:number[][][][]|number[][][]}};
+type IndiaGeoJson={type:'FeatureCollection';features:MapFeature[]};
+const MAP_WIDTH=760,MAP_HEIGHT=580,MAP_PAD=16;
+function mapBounds(features:MapFeature[]) {
+  const points:number[][]=[];
+  const visit=(node:unknown):void=>{if(Array.isArray(node)&&typeof node[0]==='number')points.push(node as number[]);else if(Array.isArray(node))node.forEach(visit);};
+  features.forEach((feature)=>visit(feature.geometry.coordinates));
+  return {minX:Math.min(...points.map((point)=>point[0])),maxX:Math.max(...points.map((point)=>point[0])),minY:Math.min(...points.map((point)=>point[1])),maxY:Math.max(...points.map((point)=>point[1]))};
+}
+function mapProject(longitude:number,latitude:number,bounds:ReturnType<typeof mapBounds>) {
+  const scale=Math.min((MAP_WIDTH-MAP_PAD*2)/(bounds.maxX-bounds.minX),(MAP_HEIGHT-MAP_PAD*2)/(bounds.maxY-bounds.minY));
+  const width=(bounds.maxX-bounds.minX)*scale,height=(bounds.maxY-bounds.minY)*scale;
+  const offsetX=(MAP_WIDTH-width)/2,offsetY=(MAP_HEIGHT-height)/2;
+  return [offsetX+(longitude-bounds.minX)*scale,offsetY+(bounds.maxY-latitude)*scale] as const;
+}
+function featurePath(feature:MapFeature,bounds:ReturnType<typeof mapBounds>) {
+  const polygons=feature.geometry.type==='Polygon'?[feature.geometry.coordinates as number[][][]]:feature.geometry.coordinates as number[][][][];
+  return polygons.flatMap((polygon)=>polygon.map((ring)=>ring.map((point,index)=>{const [x,y]=mapProject(point[0],point[1],bounds);return `${index?'L':'M'}${x.toFixed(2)},${y.toFixed(2)}`;}).join(' ')+' Z')).join(' ');
+}
+function stateKey(value:string) { const normalized=value.toLowerCase().replaceAll('&','and').replace(/[^a-z]/g,''); return ({orissa:'odisha',uttaranchal:'uttarakhand',pondicherry:'puducherry'} as Record<string,string>)[normalized]||normalized; }
+function isWithinLocation(locations:Location[],childId:string,ancestorId:string) { let current=locations.find((item)=>item.id===childId); while(current){if(current.id===ancestorId)return true;current=locations.find((item)=>item.id===current?.parentId);}return false; }
+
+function sessionUser(user: User): SessionUser {
+  return {
+    subject: user.profile.sub,
+    name: String(user.profile.name || user.profile.preferred_username || 'Team'),
+    email: String(user.profile.email || user.profile.preferred_username || ''),
+    accessToken: user.access_token,
+  };
+}
+
+function readForm(form: HTMLFormElement): Record<string, unknown> {
+  const entries = Object.fromEntries(new FormData(form).entries());
+  return Object.fromEntries(Object.entries(entries)
+    .filter(([, value]) => value !== '')
+    .map(([key, value]) => [key, key === 'purchaseAmount' ? Number(value) : value]));
+}
+
+export default function App() {
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [view, setView] = useState<View>('home');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+  const [qrImage, setQrImage] = useState('');
+  const [search, setSearch] = useState('');
+  const [assetStatusFilter,setAssetStatusFilter]=useState('');
+  const [assetCursor,setAssetCursor]=useState<string|null>(null);
+  const [loadingMoreAssets,setLoadingMoreAssets]=useState(false);
+  const [busy, setBusy] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [locationKind, setLocationKind] = useState<LocationKind>('state');
+  const [assetPhotoUrl, setAssetPhotoUrl] = useState('');
+  const [assetPhotoFile, setAssetPhotoFile] = useState<File | null>(null);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [captureSuggestions, setCaptureSuggestions] = useState<CaptureSuggestions | null>(null);
+  const [matchingAssets, setMatchingAssets] = useState<Asset[]>([]);
+  const [matchingConfidence, setMatchingConfidence] = useState<'exact' | 'similar' | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
+  const [captureProgress, setCaptureProgress] = useState(0);
+  const [formSeed, setFormSeed] = useState<CaptureSuggestions | null>(null);
+  const [formSeedVersion, setFormSeedVersion] = useState(0);
+  const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([]);
+  const [syncingCaptures, setSyncingCaptures] = useState(false);
+  const syncLock = useRef(false);
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
+  const [pendingEvidenceFiles, setPendingEvidenceFiles] = useState<PendingAttachment[]>([]);
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const assetRequestId = useRef<string | null>(null);
+  const [verificationPolicies, setVerificationPolicies] = useState<VerificationPolicy[]>([]);
+  const [verificationCycles, setVerificationCycles] = useState<VerificationCycle[]>([]);
+  const [activeCycle, setActiveCycle] = useState<VerificationCycle | null>(null);
+  const [cycleAssets, setCycleAssets] = useState<VerificationAsset[]>([]);
+  const [verificationScanCycleId, setVerificationScanCycleId] = useState<string | null>(null);
+  const [scanLocationId,setScanLocationId]=useState('');
+  const [pendingScans,setPendingScans]=useState<PendingVerificationScan[]>([]);
+  const [syncingScans,setSyncingScans]=useState(false);
+  const [reports,setReports]=useState<LifecycleReport[]>([]);
+  const [transfers,setTransfers]=useState<AssetTransfer[]>([]);
+  const [warranties,setWarranties]=useState<WarrantyRecord[]>([]);
+  const [overviewData,setOverviewData]=useState<InsightOverview|null>(null);
+  const [mapData,setMapData]=useState<IndiaMapData|null>(null);
+  const [indiaGeoJson,setIndiaGeoJson]=useState<IndiaGeoJson|null>(null);
+  const [mapLoadError,setMapLoadError]=useState('');
+  const [selectedMapState,setSelectedMapState]=useState('');
+  const [selectedMapCentreId,setSelectedMapCentreId]=useState('');
+  const [selectedMapLocationId,setSelectedMapLocationId]=useState('');
+  const [mapCoordinateBusy,setMapCoordinateBusy]=useState(false);
+  const [mapFilter,setMapFilter]=useState<'all'|'missing'|'attention'|'unused'>('all');
+  const [mapLocationAssets,setMapLocationAssets]=useState<Asset[]>([]);
+  const [mapLocationAssetCursor,setMapLocationAssetCursor]=useState<string|null>(null);
+  const [mapLocationAssetsBusy,setMapLocationAssetsBusy]=useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function initialize() {
+      if (DEMO_MODE) {
+        setUser({ subject: 'demo-user', name: 'Asset Team', email: 'demo@incuspaze.example', accessToken: 'demo-only' });
+        setOrganizations([DEMO_ORGANIZATION]);
+        setOrganization(DEMO_ORGANIZATION);
+        setBusy(false);
+        return;
+      }
+      if (!userManager) { setBusy(false); return; }
+      try {
+        if (window.location.pathname === '/auth/callback') {
+          const callbackUser = await userManager.signinCallback();
+          window.history.replaceState({}, document.title, '/');
+          if (active && callbackUser) setUser(sessionUser(callbackUser));
+        } else {
+          const currentUser = await userManager.getUser();
+          if (active && currentUser && !currentUser.expired) setUser(sessionUser(currentUser));
+        }
+      } catch {
+        if (active) setError('Sign-in could not be completed. Please try again.');
+      } finally {
+        if (active) setBusy(false);
+      }
+    }
+    void initialize();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!user || DEMO_MODE) return;
+    let active = true;
+    setBusy(true);
+    api.organizations(user.accessToken)
+      .then((items) => {
+        if (!active) return;
+        setOrganizations(items);
+        const savedId = sessionStorage.getItem('incuasset-organization');
+        const saved = items.find((item) => item.id === savedId);
+        setOrganization(saved || (items.length === 1 ? items[0] : null));
+      })
+      .catch((reason: unknown) => setError(errorMessage(reason)))
+      .finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !organization) return;
+    sessionStorage.setItem('incuasset-organization', organization.id);
+    let active = true;
+    async function load() {
+      try {
+        const [places, registeredAssets] = DEMO_MODE
+          ? await Promise.all([demoStore.locations(), demoStore.assets()])
+          : await Promise.all([api.locations(user!.accessToken, organization!.id), api.assets(user!.accessToken, organization!.id)]).then(([placeRows, assetPage]) => [placeRows, assetPage.data] as const);
+        if (active) { setLocations(places); setAssets(registeredAssets); }
+      } catch (reason) {
+        if (active) setError(errorMessage(reason));
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [user, organization]);
+
+  useEffect(() => {
+    if (!user || !organization || view !== 'assets') return;
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        if(DEMO_MODE){const items=(await demoStore.assets(search)).filter((asset)=>!assetStatusFilter||asset.status===assetStatusFilter);if(active){setAssets(items);setAssetCursor(null);}}
+        else {const page=await api.assets(user.accessToken,organization.id,search,assetStatusFilter);if(active){setAssets(page.data);setAssetCursor(page.nextCursor);}}
+      } catch (reason) { if (active) setError(errorMessage(reason)); }
+    }, 180);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [user, organization, search, assetStatusFilter, view]);
+
+  useEffect(()=>{
+    let active=true;
+    fetch('/data/india-states.geojson').then((response)=>{if(!response.ok)throw new Error('Map boundary data is unavailable.');return response.json() as Promise<IndiaGeoJson>;})
+      .then((data)=>{if(active)setIndiaGeoJson(data);}).catch(()=>{if(active)setMapLoadError('India state boundaries could not be loaded. The location list is still available.');});
+    return()=>{active=false;};
+  },[]);
+
+  useEffect(()=>{
+    if(!user||!organization||view!=='home')return;
+    if(DEMO_MODE){setOverviewData({assetCount:assets.length,centreCount:locations.filter((item)=>item.kind==='centre'||item.kind==='warehouse').length,missingCount:assets.filter((item)=>item.status==='missing').length,attentionCount:assets.filter((item)=>item.status==='in_repair'||item.status==='out_of_service').length,unusedCount:assets.filter((item)=>item.status==='unused').length,openReportCount:0,warrantyExpiringCount:0,activeCycleCount:0,openTransferCount:0,scanCompletionPercent:0});return;}
+    let active=true;void api.insightOverview(user.accessToken,organization.id).then((data)=>{if(active)setOverviewData(data);}).catch((reason)=>{if(active)setError(errorMessage(reason));});return()=>{active=false;};
+  },[user,organization,view,assets.length,locations.length]);
+
+  useEffect(()=>{
+    if(!user||!organization||view!=='map')return;
+    if(DEMO_MODE){void demoStore.locations().then((places)=>demoStore.assets().then((registered)=>{const centres=places.filter((item)=>item.kind==='centre').map((place)=>{const children=places.filter((item)=>item.id===place.id||isWithinLocation(places,item.id,place.id));const related=registered.filter((asset)=>children.some((child)=>child.id===asset.locationId));return {id:place.id,name:place.name,code:place.code,city:place.city,stateName:place.stateName,latitude:place.latitude,longitude:place.longitude,coordinatesStatus:place.coordinatesStatus,assetCount:related.length,missingCount:related.filter((asset)=>asset.status==='missing').length,attentionCount:related.filter((asset)=>asset.status==='in_repair'||asset.status==='out_of_service').length,unusedCount:related.filter((asset)=>asset.status==='unused').length};});const states=[...new Set(centres.map((item)=>item.stateName||'State not recorded'))].map((stateName)=>{const entries=centres.filter((item)=>item.stateName===stateName);return {stateName,centreCount:entries.length,assetCount:entries.reduce((sum,item)=>sum+item.assetCount,0),missingCount:entries.reduce((sum,item)=>sum+item.missingCount,0),attentionCount:entries.reduce((sum,item)=>sum+item.attentionCount,0),unusedCount:entries.reduce((sum,item)=>sum+item.unusedCount,0)};});setMapData({states,centres});}));return;}
+    let active=true;void api.mapData(user.accessToken,organization.id).then((data)=>{if(active)setMapData(data);}).catch((reason)=>{if(active)setError(errorMessage(reason));});return()=>{active=false;};
+  },[user,organization,view]);
+
+  useEffect(()=>{
+    if(!user||!organization||view!=='map'||!selectedMapLocationId){setMapLocationAssets([]);setMapLocationAssetCursor(null);return;}
+    let active=true;setMapLocationAssetsBusy(true);
+    const load=DEMO_MODE?demoStore.assets().then((items)=>({data:items.filter((item)=>item.locationId===selectedMapLocationId),nextCursor:null})):api.assets(user.accessToken,organization.id,'','','',selectedMapLocationId);
+    void load.then((page)=>{if(active){setMapLocationAssets(page.data);setMapLocationAssetCursor(page.nextCursor);}}).catch((reason)=>{if(active)setError(errorMessage(reason));}).finally(()=>{if(active)setMapLocationAssetsBusy(false);});
+    return()=>{active=false;};
+  },[user,organization,view,selectedMapLocationId]);
+
+  useEffect(()=>{
+    if(!user||!organization||DEMO_MODE)return;
+    if(view==='reports') void api.reports(user.accessToken,organization.id).then(setReports).catch((reason)=>setError(errorMessage(reason)));
+    if(view==='transfers') void api.transfers(user.accessToken,organization.id).then(setTransfers).catch((reason)=>setError(errorMessage(reason)));
+  },[user,organization,view]);
+
+  useEffect(() => {
+    if (!user || !organization || view !== 'verify') return;
+    if (DEMO_MODE) { setVerificationPolicies([]); setVerificationCycles([]); setActiveCycle(null); setCycleAssets([]); return; }
+    setActiveCycle(null); setCycleAssets([]);
+    let active = true;
+    void Promise.all([api.verificationPolicies(user.accessToken,organization.id),api.verificationCycles(user.accessToken,organization.id)])
+      .then(([policies,cycles]) => { if (active) { setVerificationPolicies(policies); setVerificationCycles(cycles); setActiveCycle(cycles[0] || null); } })
+      .catch((reason) => { if (active) setError(errorMessage(reason)); });
+    return () => { active=false; };
+  }, [user,organization,view]);
+
+  useEffect(() => {
+    if (!user || !organization || view !== 'verify' || !activeCycle || DEMO_MODE) { setCycleAssets([]); return; }
+    let active=true;
+    void api.verificationProgress(user.accessToken,organization.id,activeCycle.id)
+      .then((rows) => { if (active) setCycleAssets(rows); })
+      .catch((reason) => { if (active) setError(errorMessage(reason)); });
+    return () => { active=false; };
+  }, [user,organization,view,activeCycle]);
+
+  useEffect(() => {
+    if (!user || !organization || !selectedAsset || view !== 'asset-detail') return;
+    if (DEMO_MODE) { setEvidence([]); return; }
+    let active = true;
+    api.evidence(user.accessToken, organization.id, selectedAsset.id)
+      .then((items) => { if (active) setEvidence(items); })
+      .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
+    return () => { active = false; };
+  }, [user, organization, selectedAsset, view]);
+
+  useEffect(()=>{
+    if(!user||!organization||!selectedAsset||view!=='asset-detail'||DEMO_MODE)return;
+    let active=true;
+    void api.warranties(user.accessToken,organization.id,selectedAsset.id).then((rows)=>{if(active)setWarranties(rows);}).catch((reason)=>{if(active)setError(errorMessage(reason));});
+    return()=>{active=false;};
+  },[user,organization,selectedAsset,view]);
+
+  useEffect(() => {
+    if (view !== 'qr-label' || !selectedAsset) return;
+    let active = true;
+    void QRCode.toDataURL(selectedAsset.qrPublicId, { width: 260, margin: 1, errorCorrectionLevel: 'Q', color: { dark: '#182c43', light: '#ffffff' } })
+      .then((value) => { if (active) setQrImage(value); })
+      .catch(() => { if (active) setError('Could not prepare the QR label.'); });
+    return () => { active = false; };
+  }, [view, selectedAsset]);
+
+  useEffect(() => () => { if (assetPhotoUrl) URL.revokeObjectURL(assetPhotoUrl); }, [assetPhotoUrl]);
+
+  useEffect(() => {
+    if (!organization) { setPendingCaptures([]); return; }
+    let active = true;
+    void listOfflineAssets().then((items) => { if (active) setPendingCaptures(items.filter((item) => item.organizationId === organization.id)); }).catch(() => {});
+    void listVerificationScans().then((items)=>{if(active)setPendingScans(items.filter((item)=>item.organizationId===organization.id));}).catch(()=>{});
+    const onOnline = () => { void syncPendingCaptures(); void syncPendingScans(); };
+    if (navigator.onLine) { void syncPendingCaptures(); void syncPendingScans(); }
+    window.addEventListener('online', onOnline);
+    return () => { active = false; window.removeEventListener('online', onOnline); };
+  }, [organization, user]);
+
+  const filteredLocations = useMemo(() => locations.filter((item) => !locationFilter || `${item.name} ${item.code || ''} ${item.city || ''}`.toLowerCase().includes(locationFilter.toLowerCase())), [locations, locationFilter]);
+  const visibleKinds: LocationKind[] = organization?.roles.some((item) => item.role === 'head_office')
+    ? KINDS
+    : ['building', 'floor', 'area'];
+  const parentLocations = useMemo(() => locations.filter((item) => PARENT_KINDS[locationKind].includes(item.kind)), [locations, locationKind]);
+  const assetCounts = useMemo(() => ({ total: assets.length, attention: assets.filter((asset) => asset.status === 'in_repair' || asset.status === 'out_of_service').length, locations: locations.filter((location) => location.kind === 'centre' || location.kind === 'warehouse').length }), [assets, locations]);
+  const mapGeometryBounds = useMemo(() => indiaGeoJson ? mapBounds(indiaGeoJson.features) : null, [indiaGeoJson]);
+  const mapFilteredCentres = useMemo(() => (mapData?.centres || []).filter((centre)=>mapFilter==='all'||(mapFilter==='missing'?centre.missingCount>0:mapFilter==='attention'?centre.attentionCount>0:centre.unusedCount>0)), [mapData,mapFilter]);
+  const mapStates = useMemo(() => {const states=new Map<string,NonNullable<IndiaMapData['states'][number]>>();for(const centre of mapFilteredCentres){const stateName=centre.stateName||'State not recorded';const row=states.get(stateName)||{stateName,centreCount:0,assetCount:0,missingCount:0,attentionCount:0,unusedCount:0};row.centreCount++;row.assetCount+=centre.assetCount;row.missingCount+=centre.missingCount;row.attentionCount+=centre.attentionCount;row.unusedCount+=centre.unusedCount;states.set(stateName,row);}return [...states.values()].sort((a,b)=>a.stateName.localeCompare(b.stateName));}, [mapFilteredCentres]);
+  const selectedStateCentres = useMemo(() => mapFilteredCentres.filter((centre) => stateKey(centre.stateName || '') === stateKey(selectedMapState)).sort((a,b)=>(a.city||a.name).localeCompare(b.city||b.name)), [mapFilteredCentres, selectedMapState]);
+  const selectedCentre = mapData?.centres.find((centre)=>centre.id===selectedMapCentreId) || null;
+  const selectedMapLocation = locations.find((location)=>location.id===selectedMapLocationId) || null;
+  const selectedMapChildren = selectedMapLocation ? locations.filter((location)=>location.parentId===selectedMapLocation.id) : [];
+  const canConfirmCoordinates = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+
+  useEffect(() => {
+    if (visibleKinds.length && !visibleKinds.includes(locationKind)) setLocationKind(visibleKinds[0]);
+  }, [visibleKinds, locationKind]);
+
+  async function signIn() {
+    if (!userManager) return;
+    setBusy(true); setError('');
+    try { await userManager.signinRedirect(); }
+    catch { setError('Could not reach the identity provider. Check your connection and try again.'); setBusy(false); }
+  }
+
+  async function signOut() {
+    if (DEMO_MODE) {
+      sessionStorage.removeItem('incuasset-demo-v1');
+      setUser(null); setOrganization(null); setOrganizations([]); setView('home'); return;
+    }
+    if (!userManager) return;
+    try { await userManager.signoutRedirect(); }
+    catch { setError('Sign-out could not be completed.'); }
+  }
+
+  async function loadMoreAssets() {
+    if (!user || !organization || !assetCursor || loadingMoreAssets || DEMO_MODE) return;
+    setLoadingMoreAssets(true);
+    try { const page=await api.assets(user.accessToken,organization.id,search,assetStatusFilter,assetCursor); setAssets((current)=>[...current,...page.data]); setAssetCursor(page.nextCursor); }
+    catch(reason) { setError(errorMessage(reason)); }
+    finally { setLoadingMoreAssets(false); }
+  }
+
+  async function loadMoreMapLocationAssets() {
+    if(!user||!organization||!selectedMapLocationId||!mapLocationAssetCursor||mapLocationAssetsBusy||DEMO_MODE)return;
+    setMapLocationAssetsBusy(true);
+    try{const page=await api.assets(user.accessToken,organization.id,'','',''+mapLocationAssetCursor,selectedMapLocationId);setMapLocationAssets((current)=>[...current,...page.data]);setMapLocationAssetCursor(page.nextCursor);}
+    catch(reason){setError(errorMessage(reason));}finally{setMapLocationAssetsBusy(false);}
+  }
+
+  async function saveCentreCoordinates(event:FormEvent<HTMLFormElement>, centre:MapCentre) {
+    event.preventDefault(); if(!user||!organization||DEMO_MODE)return;
+    const data=readForm(event.currentTarget); const latitude=Number(data.latitude),longitude=Number(data.longitude);
+    if(!Number.isFinite(latitude)||latitude < 6.5||latitude>37.5||!Number.isFinite(longitude)||longitude<68||longitude>98){setError('Enter a valid location within India.');return;}
+    setMapCoordinateBusy(true);setError('');
+    try { await api.confirmCentreCoordinates(user.accessToken,organization.id,centre.id,{latitude,longitude}); const [nextMap,nextLocations]=await Promise.all([api.mapData(user.accessToken,organization.id),api.locations(user.accessToken,organization.id)]);setMapData(nextMap);setLocations(nextLocations);setNotice('Centre location confirmed. Its pin is now shown on the map.'); }
+    catch(reason){setError(errorMessage(reason));} finally{setMapCoordinateBusy(false);}
+  }
+
+  async function createVerificationPolicy(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!user || !organization) return;
+    const form=event.currentTarget;
+    const data=readForm(form);
+    setSaving(true); setError('');
+    try {
+      const policy=await api.createVerificationPolicy(user.accessToken,organization.id,{scopeLocationId:String(data.scopeLocationId),cadenceMonths:Number(data.cadenceMonths),graceDays:Number(data.graceDays)});
+      setVerificationPolicies((items)=>[policy,...items]); setNotice('Verification schedule saved. Existing cycles keep their original dates.'); form.reset();
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setSaving(false); }
+  }
+
+  async function openVerificationCycle(policyId:string) {
+    if (!user || !organization) return;
+    setSaving(true); setError('');
+    try {
+      await api.createVerificationCycle(user.accessToken,organization.id,policyId);
+      const cycles=await api.verificationCycles(user.accessToken,organization.id); setVerificationCycles(cycles); setActiveCycle(cycles[0] || null);
+      setNotice('Verification cycle opened. Assets are marked verified only after a scan is recorded.');
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setSaving(false); }
+  }
+
+  async function recordCycleScan(code:string) {
+    if (!user || !organization || !activeCycle) return;
+    try {
+      if (!navigator.onLine) {
+        const local=assets.find((asset)=>asset.qrPublicId.toLowerCase()===code.toLowerCase()||asset.assetTag.toLowerCase()===code.toLowerCase()||asset.serialNumber?.toLowerCase()===code.toLowerCase());
+        if (!local) throw new Error('This item is not in the device’s saved asset list. Connect to the network before verifying it.');
+        const queued=await enqueueVerificationScan({id:crypto.randomUUID(),organizationId:organization.id,cycleId:activeCycle.id,assetId:local.id,locationId:scanLocationId||local.locationId,scannedAt:new Date().toISOString()});
+        setPendingScans((items)=>[...items,queued]); setVerificationScanCycleId(null); setView('verify'); setNotice(`${local.assetTag} saved securely on this device. It will sync when you are online.`); return;
+      }
+      const isQr=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(code);
+      const found=isQr ? await api.assetByQr(user.accessToken,organization.id,code).catch(()=>null) : null;
+      const matching=found || (await api.assets(user.accessToken,organization.id,code)).data.find((asset)=>asset.assetTag.toLowerCase()===code.toLowerCase()||asset.serialNumber?.toLowerCase()===code.toLowerCase());
+      if (!matching) throw new Error('No asset matched that code. Check the tag or scan again.');
+      await api.recordVerificationScan(user.accessToken,organization.id,activeCycle.id,{assetId:matching.id,locationId:scanLocationId || matching.locationId,clientEventId:crypto.randomUUID(),scannedAt:new Date().toISOString()});
+      setSelectedAsset(matching); setVerificationScanCycleId(null); setCycleAssets(await api.verificationProgress(user.accessToken,organization.id,activeCycle.id));
+      setNotice(`${matching.assetTag} recorded for this verification cycle.`); setView('verify');
+    } catch (reason) { setError(errorMessage(reason)); setVerificationScanCycleId(null); setView('verify'); }
+  }
+
+  async function syncPendingScans() {
+    if (!user||!organization||!navigator.onLine||syncingScans) return;
+    setSyncingScans(true);
+    try {
+      const queued=(await listVerificationScans()).filter((item)=>item.organizationId===organization.id);
+      for (const scan of queued) {
+        try {
+          await api.recordVerificationScan(user.accessToken,organization.id,scan.cycleId,{assetId:scan.assetId,locationId:scan.locationId,clientEventId:scan.id,scannedAt:scan.scannedAt});
+          await removeVerificationScan(scan.id);
+        } catch (reason) { await markVerificationScanError(scan.id,errorMessage(reason)); }
+      }
+      const remaining=(await listVerificationScans()).filter((item)=>item.organizationId===organization.id); setPendingScans(remaining);
+      if (remaining.length===0&&queued.length) setNotice(`${queued.length} floor-walk scan${queued.length===1?'':'s'} synced.`);
+    } finally { setSyncingScans(false); }
+  }
+
+  async function createLocation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!user || !organization) return;
+    const form = event.currentTarget;
+    const data = readForm(form);
+    setSaving(true); setError('');
+    try {
+      if (DEMO_MODE) await demoStore.createLocation(data as { kind: LocationKind; name: string; parentId?: string; code?: string; city?: string; stateName?: string });
+      else await api.createLocation(user.accessToken, organization.id, data as { kind: LocationKind; name: string; parentId?: string; code?: string; city?: string; stateName?: string });
+      setLocations(DEMO_MODE ? await demoStore.locations() : await api.locations(user.accessToken, organization.id));
+      setNotice('Location added to the register.');
+      form.reset();
+      setLocationKind(visibleKinds[0]);
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setSaving(false); }
+  }
+
+  async function createConditionReport(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if(!user||!organization||DEMO_MODE)return;
+    const form=event.currentTarget; const data=readForm(form); setSaving(true); setError('');
+    try { await api.createReport(user.accessToken,organization.id,data); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report saved and queued for the responsible centre team.'); form.reset(); }
+    catch(reason){setError(errorMessage(reason));} finally{setSaving(false);}
+  }
+
+  async function updateConditionReport(report:LifecycleReport,status:string) {
+    if(!user||!organization)return;
+    try { await api.updateReport(user.accessToken,organization.id,report.id,{status,resolutionNotes:status==='resolved'?'Issue reviewed and marked resolved.':undefined}); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report status updated.'); }
+    catch(reason){setError(errorMessage(reason));}
+  }
+
+  async function createAssetTransfer(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if(!user||!organization||DEMO_MODE)return;
+    const form=event.currentTarget; setSaving(true); setError('');
+    try { await api.createTransfer(user.accessToken,organization.id,readForm(form)); setTransfers(await api.transfers(user.accessToken,organization.id)); setNotice('Transfer request sent for source-centre approval.'); form.reset(); }
+    catch(reason){setError(errorMessage(reason));} finally{setSaving(false);}
+  }
+
+  async function moveTransfer(transfer:AssetTransfer,action:string) {
+    if(!user||!organization)return;
+    try { await api.transferAction(user.accessToken,organization.id,transfer.id,action); setTransfers(await api.transfers(user.accessToken,organization.id)); if(action==='receive')setAssets((await api.assets(user.accessToken,organization.id,search,assetStatusFilter)).data); setNotice(`Transfer ${action==='receive'?'received':action+'d'}.`); }
+    catch(reason){setError(errorMessage(reason));}
+  }
+
+  async function createWarrantyRecord(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if(!user||!organization||!selectedAsset||DEMO_MODE)return;
+    const form=event.currentTarget; setSaving(true); setError('');
+    try { await api.createWarranty(user.accessToken,organization.id,selectedAsset.id,readForm(form)); setWarranties(await api.warranties(user.accessToken,organization.id,selectedAsset.id)); setNotice('Coverage details added to the asset history.'); form.reset(); }
+    catch(reason){setError(errorMessage(reason));} finally{setSaving(false);}
+  }
+
+  async function createAsset(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); if (!user || !organization) return;
+    const data = readForm(event.currentTarget);
+    if (!selectedAsset) delete data.status;
+    if (!selectedAsset) {
+      assetRequestId.current ||= crypto.randomUUID();
+      data.clientRequestId = assetRequestId.current;
+    }
+    const attachments: PendingAttachment[] = [
+      ...(assetPhotoFile ? [{ id: crypto.randomUUID(), kind: 'asset_photo' as const, name: assetPhotoFile.name, contentType: assetPhotoFile.type || 'image/jpeg', file: assetPhotoFile }] : []),
+      ...(invoiceFile ? [{ id: crypto.randomUUID(), kind: 'invoice' as const, name: invoiceFile.name, contentType: invoiceFile.type || 'image/jpeg', file: invoiceFile }] : []),
+    ];
+    setSaving(true); setError('');
+    try {
+      if (!selectedAsset && !navigator.onLine) {
+        const draft = data as unknown as OfflineAssetDraft;
+        await enqueueOfflineAsset(organization.id, draft, attachments.map(({ id, kind, file }) => ({ id, kind, file: file as File })));
+        setPendingCaptures((await listOfflineAssets()).filter((item) => item.organizationId === organization.id));
+        setNotice(`Saved securely on this device${attachments.length ? ` with ${attachments.length} capture${attachments.length === 1 ? '' : 's'}` : ''}. It will sync when you are online.`);
+        setView('home');
+        return;
+      }
+      const asset = selectedAsset
+        ? DEMO_MODE ? await demoStore.updateAsset(selectedAsset.id, data) : await api.updateAsset(user.accessToken, organization.id, selectedAsset.id, data)
+        : DEMO_MODE ? await demoStore.createAsset(data) : await api.createAsset(user.accessToken, organization.id, data);
+      setSelectedAsset(asset); setView(selectedAsset ? 'asset-detail' : 'qr-label');
+      setAssets(DEMO_MODE ? await demoStore.assets() : (await api.assets(user.accessToken, organization.id)).data);
+      setNotice(selectedAsset ? 'Asset details updated.' : 'Asset saved. Its unique QR identity is ready to print.');
+      setPendingEvidenceFiles(attachments);
+      if (attachments.length && !DEMO_MODE) {
+        try {
+          await uploadEvidenceFiles(asset.id, attachments);
+          setNotice(`${selectedAsset ? 'Asset updated' : 'Asset saved'} with ${attachments.length} attached capture${attachments.length === 1 ? '' : 's'}.`);
+          setAssetPhotoFile(null); setInvoiceFile(null); setAssetPhotoUrl('');
+        } catch {
+          if (!selectedAsset) {
+            await enqueueOfflineAsset(organization.id, { ...data, clientRequestId: assetRequestId.current || undefined } as unknown as OfflineAssetDraft, attachments.map(({ id, kind, file }) => ({ id, kind, file: file as File })));
+            setPendingCaptures((await listOfflineAssets()).filter((item) => item.organizationId === organization.id));
+          }
+          setView('asset-detail');
+          setNotice('Asset saved. A capture needs upload; its encrypted copy is in the device queue for retry.');
+        }
+      } else if (attachments.length && DEMO_MODE) {
+        setNotice('Sample asset saved. Private photo and invoice storage is enabled on the live API.');
+      }
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { setSaving(false); }
+  }
+
+  async function uploadEvidenceFiles(assetId: string, files: PendingAttachment[]) {
+    if (!user || !organization || DEMO_MODE) return;
+    setUploadingEvidence(true); setEvidenceError('');
+    try {
+      for (const attachment of files) {
+        const digest = await crypto.subtle.digest('SHA-256', await attachment.file.arrayBuffer());
+        const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+        const signed = await api.createEvidenceUpload(user.accessToken, organization.id, assetId, {
+          clientEvidenceId: attachment.id, kind: attachment.kind, originalName: attachment.name, contentType: attachment.contentType,
+          byteSize: attachment.file.size, sha256,
+        });
+        if (!signed.alreadyCompleted) {
+          if (!signed.uploadUrl) throw new Error('Private upload link is missing. Retry this capture.');
+          const upload = await fetch(signed.uploadUrl, { method: 'PUT', headers: signed.headers, body: attachment.file });
+          if (!upload.ok) throw new Error(`Private file upload failed (${upload.status}).`);
+          await api.completeEvidenceUpload(user.accessToken, organization.id, assetId, signed.evidenceId);
+        }
+        setPendingEvidenceFiles((current) => current.filter((item) => item.id !== attachment.id));
+      }
+      setEvidence(await api.evidence(user.accessToken, organization.id, assetId));
+    } catch (reason) {
+      const message = errorMessage(reason);
+      setEvidenceError(message);
+      throw reason;
+    } finally { setUploadingEvidence(false); }
+  }
+
+  async function addEvidenceFile(kind: PendingAttachment['kind'], file: File) {
+    if (!selectedAsset) return;
+    const attachment: PendingAttachment = { id: crypto.randomUUID(), kind, name: file.name, contentType: file.type || 'image/jpeg', file };
+    setPendingEvidenceFiles((current) => [...current.filter((item) => item.id !== attachment.id), attachment]);
+    try {
+      await uploadEvidenceFiles(selectedAsset.id, [attachment]);
+      setNotice(kind === 'invoice' ? 'Invoice attached to this asset record.' : 'Asset photo attached to this record.');
+    } catch { setNotice('The record is safe. This capture is ready to retry below.'); }
+  }
+
+  async function downloadEvidenceFile(item: Evidence) {
+    if (!user || !organization || !selectedAsset || DEMO_MODE) return;
+    try {
+      const result = await api.evidenceDownload(user.accessToken, organization.id, selectedAsset.id, item.id);
+      window.open(result.downloadUrl, '_blank', 'noopener,noreferrer');
+    } catch (reason) { setEvidenceError(errorMessage(reason)); }
+  }
+
+  async function findScannedCode(code: string) {
+    if (!user || !organization) return;
+    setError(''); setNotice('Looking up this code…');
+    try {
+      if (!navigator.onLine) {
+        const localMatch = assets.find((asset) => asset.qrPublicId.toLowerCase() === code.toLowerCase() || asset.assetTag.toLowerCase() === code.toLowerCase() || asset.serialNumber?.toLowerCase() === code.toLowerCase());
+        if (localMatch) { setSelectedAsset(localMatch); setNotice('Asset found in this device’s available records.'); setView('asset-detail'); }
+        else { setNotice(''); setError('This asset is not in the device’s saved records. Connect to the network to search all centres.'); }
+        return;
+      }
+      const byQr = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(code)
+        ? DEMO_MODE ? await demoStore.assetByQr(code) : await api.assetByQr(user.accessToken, organization.id, code).catch(() => null)
+        : null;
+      if (byQr) { setSelectedAsset(byQr); setNotice('Asset found.'); setView('asset-detail'); return; }
+      const matches = DEMO_MODE ? await demoStore.assets(code) : (await api.assets(user.accessToken, organization.id, code)).data;
+      const match = matches.find((asset) => asset.assetTag.toLowerCase() === code.toLowerCase() || asset.serialNumber?.toLowerCase() === code.toLowerCase()) || matches[0];
+      if (!match) { setNotice(''); setError('No matching asset found. Check the code or add the item to the register.'); return; }
+      setSelectedAsset(match); setNotice('Asset found.'); setView('asset-detail');
+    } catch (reason) { setNotice(''); setError(errorMessage(reason)); }
+  }
+
+  async function syncPendingCaptures() {
+    if (!organization || !user || !navigator.onLine || syncLock.current) return;
+    syncLock.current = true;
+    setSyncingCaptures(true);
+    let synced = 0;
+    try {
+      const items = (await listOfflineAssets()).filter((item) => item.organizationId === organization.id);
+      for (const item of items) {
+        try {
+          const payload = { ...item.payload, clientRequestId: item.payload.clientRequestId || item.id };
+          const created = DEMO_MODE
+            ? await demoStore.createAsset(payload)
+            : await api.createAsset(user.accessToken, organization.id, payload);
+          for (const attachment of item.attachments) {
+            if (!DEMO_MODE) await uploadEvidenceFiles(created.id, [attachment]);
+            await removeOfflineAssetAttachment(item.id, attachment.id);
+          }
+          await removeOfflineAsset(item.id); synced += 1;
+        } catch (reason) {
+          await markOfflineAssetError(item.id, errorMessage(reason));
+        }
+      }
+      const remaining = (await listOfflineAssets()).filter((item) => item.organizationId === organization.id);
+      setPendingCaptures(remaining);
+      if (synced) {
+        setAssets(DEMO_MODE ? await demoStore.assets() : (await api.assets(user.accessToken, organization.id)).data);
+        setNotice(`${synced} offline capture${synced === 1 ? '' : 's'} synced to the register.`);
+      }
+    } catch (reason) { setError(errorMessage(reason)); }
+    finally { syncLock.current = false; setSyncingCaptures(false); }
+  }
+
+  async function analyzeCapture(file: File, origin: 'asset' | 'invoice') {
+    setCaptureBusy(true); setCaptureProgress(0); setError('');
+    try {
+      const text = await readImageText(file, setCaptureProgress);
+      const suggestions = extractInvoiceSuggestions(text);
+      setCaptureSuggestions(suggestions);
+      const searchTerms = [suggestions.serialNumber, suggestions.model, suggestions.manufacturer, suggestions.category].filter((value): value is string => Boolean(value));
+      const candidates = DEMO_MODE
+        ? assets
+        : (await Promise.all(searchTerms.map(async (term) => (await api.assets(user!.accessToken, organization!.id, term)).data))).flat();
+      const unique = [...new Map(candidates.map((asset) => [asset.id, asset])).values()];
+      const exact = unique.filter((asset) =>
+        (suggestions.serialNumber && asset.serialNumber?.toLowerCase() === suggestions.serialNumber.toLowerCase()) ||
+        (suggestions.model && asset.model?.toLowerCase() === suggestions.model.toLowerCase()) ||
+        (suggestions.manufacturer && asset.manufacturer?.toLowerCase() === suggestions.manufacturer.toLowerCase()),
+      );
+      const match = exact.length ? exact : unique.filter((asset) => suggestions.category && asset.category.toLowerCase() === suggestions.category.toLowerCase()).slice(0, 4);
+      setMatchingAssets(match);
+      setMatchingConfidence(exact.length ? 'exact' : match.length ? 'similar' : null);
+      if (exact.length) setNotice(`A likely existing item matched by product label. Review it before adding another.`);
+      else if (match.length) setNotice(`Similar ${suggestions.category} assets are in the register. Compare before adding another.`);
+      else setNotice(origin === 'invoice' ? 'Invoice read on this device. Review every suggestion before saving.' : 'Product label read on this device. Confirm the category and item details.');
+    } catch {
+      setError('Could not read this image. Retake it with the label or invoice text in focus, or enter the details manually.');
+    } finally { setCaptureBusy(false); }
+  }
+
+  function applyCaptureSuggestions() {
+    if (!captureSuggestions) return;
+    setFormSeed((current) => ({ ...current, ...captureSuggestions }));
+    setFormSeedVersion((version) => version + 1);
+    setNotice('Suggestions placed into the form. Review and correct each field before saving.');
+  }
+
+  function startNewAsset() {
+    assetRequestId.current = null;
+    setSelectedAsset(null); setFormSeed(null); setFormSeedVersion(0); setCaptureSuggestions(null);
+    setMatchingAssets([]); setMatchingConfidence(null); setInvoiceFile(null); setAssetPhotoFile(null); setAssetPhotoUrl(''); setView('asset-form');
+  }
+
+  if (busy && !user) return <main className="app-shell"><header className="brandbar"><Brand /></header><section className="loading-state"><span className="spinner" />Preparing your workspace…</section></main>;
+  if (!user) return <SignIn error={error} onSignIn={signIn} configured={oidcConfigured} />;
+  if (busy && !organization && organizations.length === 0) return <main className="app-shell"><header className="brandbar"><Brand /></header><section className="loading-state"><span className="spinner" />Checking your workspace access…</section></main>;
+  if (!busy && organizations.length === 0) return <main className="app-shell"><header className="brandbar"><Brand /><button className="quiet-button signout" onClick={signOut}>Sign out</button></header><section className="org-picker"><p className="eyebrow">WORKSPACE ACCESS</p><h1>No register is assigned yet.</h1><p className="lead">Ask your administrator to add your account to an Incuspaze organization, then sign in again.</p></section></main>;
+  if (organizations.length > 1 && !organization) return <main className="app-shell"><header className="brandbar"><Brand /><button className="quiet-button signout" onClick={signOut}>Sign out</button></header><section className="org-picker"><p className="eyebrow">YOUR WORKSPACES</p><h1>Choose your register.</h1><div className="org-list">{organizations.map((item) => <button key={item.id} onClick={() => setOrganization(item)}><strong>{item.name}</strong><small>{item.roles.map((role) => role.role.replaceAll('_', ' ')).join(' · ')}</small><span>→</span></button>)}</div></section></main>;
+
+  return (
+    <main className={`workspace ${view === 'qr-label' ? 'printing' : ''}`}>
+      <header className="workspace-header">
+        <Brand />
+        <div className="workspace-controls">
+          {DEMO_MODE && <span className="demo-pill">DEMO · browser only</span>}
+          {organizations.length > 1 && <label className="org-select-label"><span className="sr-only">Organization</span><select value={organization?.id} onChange={(event) => setOrganization(organizations.find((item) => item.id === event.target.value) || null)}>{organizations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+          <span className="user-initial" aria-label={`Signed in as ${user.name}`}>{user.name.slice(0,1).toUpperCase()}</span>
+          <button className="quiet-button" onClick={signOut}>Sign out</button>
+        </div>
+      </header>
+      <div className="workspace-body">
+        <nav className="workspace-nav" aria-label="Main navigation">
+          <button className={view === 'home' ? 'selected' : ''} onClick={() => setView('home')}><Icon name="home" />Overview</button>
+          <button className={view === 'map' ? 'selected' : ''} onClick={() => {setSelectedMapState('');setSelectedMapCentreId('');setSelectedMapLocationId('');setView('map');}}><Icon name="pin" />India map</button>
+          <button className={view === 'locations' ? 'selected' : ''} onClick={() => setView('locations')}><Icon name="pin" />Locations</button>
+          <button className={view === 'assets' || view === 'asset-detail' || view === 'asset-form' || view === 'qr-label' || view === 'scanner' ? 'selected' : ''} onClick={() => setView('assets')}><Icon name="asset" />Assets</button>
+          <button className={view === 'verify' ? 'selected' : ''} onClick={() => setView('verify')}><Icon name="check" />Verify</button>
+          <button className={view === 'reports' ? 'selected' : ''} onClick={() => setView('reports')}><Icon name="asset" />Reports</button>
+          <button className={view === 'transfers' ? 'selected' : ''} onClick={() => setView('transfers')}><Icon name="arrow" />Transfers</button>
+        </nav>
+        <section className="workspace-content" aria-live="polite">
+          {error && <div className="inline-message error-message" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
+          {notice && <div className="inline-message success-message" role="status"><span>{notice}</span><button aria-label="Dismiss message" onClick={() => setNotice('')}>×</button></div>}
+          {DEMO_MODE && <div className="demo-banner"><strong>Sample workspace</strong><span>Changes are temporary in this browser. Live records require organization sign-in.</span></div>}
+
+          {view === 'home' && <section className="view-panel">
+            <p className="eyebrow">{organization?.name || 'ASSET REGISTER'} · OVERVIEW</p>
+            <div className="view-title-row"><div><h1>Every asset, in its place.</h1><p className="view-lead">A clear, accountable picture of the network you care for.</p></div><button className="primary-button add-button" onClick={startNewAsset}><Icon name="plus" /> Add asset</button></div>
+            {pendingCaptures.length > 0 && <section className="offline-queue"><div className="offline-queue-heading"><div><p className="eyebrow">DEVICE QUEUE · {pendingCaptures.length}</p><h2>Saved here, ready to sync.</h2></div><button className="quiet-button" onClick={() => void syncPendingCaptures()} disabled={syncingCaptures}>{syncingCaptures ? 'Syncing…' : 'Sync now'}</button></div>{pendingCaptures.map((item) => <div className="offline-queue-row" key={item.id}><span className="queue-dot" /><span><strong>{item.payload.name}</strong><small>{item.payload.category} · {locations.find((place) => place.id === item.payload.locationId)?.name || 'Saved location'}</small>{item.lastError && <em>{item.lastError}</em>}</span><small>{item.lastError ? 'Needs attention' : 'Waiting for connection'}</small></div>)}</section>}
+            <div className="summary-grid"><Summary label="Registered assets" value={overviewData?.assetCount ?? assetCounts.total} detail="Across your visible locations" /><Summary label="Centres & warehouses" value={overviewData?.centreCount ?? assetCounts.locations} detail="In the active directory" /><Summary label="Need attention" value={(overviewData?.attentionCount ?? assetCounts.attention)+(overviewData?.openReportCount||0)} detail={`${overviewData?.missingCount||0} marked missing · ${overviewData?.unusedCount||0} unused`} /></div>
+            <div className="operations-watch" aria-label="Operational watch"><button onClick={()=>setView('verify')}><span>Verification cycles</span><strong>{overviewData?.activeCycleCount ?? 0}</strong><small>{overviewData?.scanCompletionPercent ?? 0}% scanned · active scope <b>→</b></small></button><button onClick={()=>setView('transfers')}><span>Transfers in motion</span><strong>{overviewData?.openTransferCount ?? 0}</strong><small>awaiting the next step <b>→</b></small></button><button onClick={()=>setView('assets')}><span>Coverage ending soon</span><strong>{overviewData?.warrantyExpiringCount ?? 0}</strong><small>warranty or service <b>→</b></small></button></div>
+            <div className="home-columns"><section className="panel"><div className="panel-heading"><div><p className="eyebrow">RECENTLY RECORDED</p><h2>Latest assets</h2></div><button className="text-button" onClick={() => setView('assets')}>Browse register →</button></div><AssetRows assets={assets.slice(0,4)} onSelect={(asset) => { setSelectedAsset(asset); setView('asset-detail'); }} /></section><section className="panel location-teaser"><p className="eyebrow">THE NETWORK</p><h2>Every centre has a place.</h2><p>Browse state, centre, building, floor, and area records. Precise centre pins can be confirmed by the people who know the space.</p><button className="text-button" onClick={() => setView('locations')}>Manage locations →</button></section></div>
+          </section>}
+
+          {view === 'map' && <section className="view-panel map-view">
+            <p className="eyebrow">THE NETWORK · INDIA</p>
+            <div className="view-title-row"><div><h1>Every centre, on the map.</h1><p className="view-lead">Choose a state, then a centre, then move inward to its buildings and floors. Pins appear only when a centre location has been confirmed.</p></div></div>
+            <div className="map-summary-strip"><span><strong>{mapFilteredCentres.length}</strong> centres in this view</span><span><strong>{mapFilteredCentres.reduce((sum,item)=>sum+item.assetCount,0)}</strong> registered assets</span><span><strong>{mapFilteredCentres.reduce((sum,item)=>sum+item.missingCount,0)}</strong> marked missing</span></div>
+            <div className="map-filter-bar" role="group" aria-label="Filter centres by asset condition">{([['all','All centres'],['missing','Missing'],['attention','Needs attention'],['unused','Unused stock']] as const).map(([value,label])=><button key={value} className={mapFilter===value?'active':''} aria-pressed={mapFilter===value} onClick={()=>{setMapFilter(value);setSelectedMapState('');setSelectedMapCentreId('');setSelectedMapLocationId('');}}>{label}{value==='missing'&&<span>{mapData?.centres.reduce((sum,item)=>sum+item.missingCount,0)||0}</span>}</button>)}</div>
+            <div className="map-explorer">
+              <section className="panel india-map-panel" aria-label="India state map">
+                <div className="panel-heading"><div><p className="eyebrow">STATE VIEW</p><h2>{selectedMapState || 'India'}</h2></div>{selectedMapState&&<button className="text-button" onClick={()=>{setSelectedMapState('');setSelectedMapCentreId('');setSelectedMapLocationId('');}}>Show all India</button>}</div>
+                {mapLoadError&&<p className="form-hint" role="status">{mapLoadError}</p>}
+                {!indiaGeoJson||!mapGeometryBounds ? <div className="map-loading"><span className="spinner"/>Loading state boundaries…</div> : <svg className="india-map-svg" viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} role="group" aria-label="Select a state on the map">
+                  <defs><pattern id="map-grain" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r=".55" fill="#789384" opacity=".16"/></pattern></defs>
+                  {indiaGeoJson.features.map((feature)=>{const name=feature.properties.name;const state=mapStates.find((item)=>stateKey(item.stateName)===stateKey(name));const selected=stateKey(selectedMapState)===stateKey(name);return <path key={name} d={featurePath(feature,mapGeometryBounds)} className={`india-state-shape${selected?' chosen':''}${state?.centreCount?' has-centres':''}`} role="button" tabIndex={0} aria-label={`${name}: ${state?.centreCount||0} centres, ${state?.assetCount||0} assets`} aria-pressed={selected} onClick={()=>{setSelectedMapState(name);setSelectedMapCentreId('');setSelectedMapLocationId('');}} onKeyDown={(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedMapState(name);setSelectedMapCentreId('');setSelectedMapLocationId('');}}}><title>{name} · {state?.centreCount||0} centres · {state?.assetCount||0} assets</title></path>;})}
+                  {mapFilteredCentres.filter((centre)=>centre.latitude!==null&&centre.longitude!==null&&(centre.coordinatesStatus==='centre_head_confirmed'||centre.coordinatesStatus==='verified')&&(!selectedMapState||stateKey(centre.stateName||'')===stateKey(selectedMapState))).map((centre)=>{const [x,y]=mapProject(centre.longitude!,centre.latitude!,mapGeometryBounds);return <g key={centre.id} className={`map-centre-pin${selectedMapCentreId===centre.id?' active':''}`} role="button" tabIndex={0} aria-label={`${centre.name}, ${centre.assetCount} assets`} onClick={()=>{setSelectedMapCentreId(centre.id);setSelectedMapLocationId('');}} onKeyDown={(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedMapCentreId(centre.id);setSelectedMapLocationId('');}}}><circle className="pin-halo" cx={x} cy={y} r="9"/><circle className="pin-core" cx={x} cy={y} r="3.8"/><title>{centre.city||centre.name} · {centre.assetCount} assets</title></g>;})}
+                </svg>}
+                <div className="map-legend"><span><i className="legend-state"/>State boundary</span><span><i className="legend-pin"/>Confirmed centre</span><small>Illustrative boundaries for navigation · not for legal use</small></div>
+              </section>
+              <aside className="panel map-directory-panel">
+                {selectedMapLocation ? <><button className="back-action" onClick={()=>setSelectedMapLocationId(selectedMapCentreId)}>← Back to {selectedCentre?.city||'centre'}</button><p className="eyebrow">{selectedMapLocation.kind.toUpperCase()} · PLACE DETAILS</p><h2>{selectedMapLocation.name}</h2><p className="map-context">{selectedMapLocation.city||selectedMapLocation.stateName||'Location'} · {selectedMapLocation.coordinatesStatus.replaceAll('_',' ')}</p><div className="map-drill-list">{selectedMapChildren.map((child)=><button className="map-place-row" key={child.id} onClick={()=>setSelectedMapLocationId(child.id)}><span className="map-place-icon"><Icon name={child.kind}/></span><span><strong>{child.name}</strong><small>{child.kind} · {locations.filter((item)=>item.parentId===child.id).length} lower levels</small></span><span className="row-arrow"><Icon name="arrow"/></span></button>)}{!selectedMapChildren.length&&<div className="empty-state"><strong>No lower-level places yet.</strong><small>Centre managers can add buildings, floors, and areas from Locations.</small><button className="text-button" onClick={()=>setView('locations')}>Manage locations →</button></div>}</div><div className="map-place-assets"><div className="panel-heading"><div><p className="eyebrow">ASSETS HERE</p><h3>Registered items</h3></div><span className="evidence-count">{mapLocationAssets.length}{mapLocationAssetCursor?' +':''}</span></div>{mapLocationAssetsBusy&&!mapLocationAssets.length?<div className="map-loading"><span className="spinner"/>Loading assets…</div>:<><AssetRows assets={mapLocationAssets} onSelect={(asset)=>{setSelectedAsset(asset);setView('asset-detail');}} empty="No assets are assigned to this exact place."/>{mapLocationAssetCursor&&<button className="quiet-button load-more-button" onClick={()=>void loadMoreMapLocationAssets()} disabled={mapLocationAssetsBusy}>{mapLocationAssetsBusy?'Loading…':'Load more assets'}</button>}</>}</div></> : selectedCentre ? <><button className="back-action" onClick={()=>setSelectedMapCentreId('')}>← Back to {selectedMapState||'state centres'}</button><p className="eyebrow">CENTRE · {selectedCentre.code||'NO CODE'}</p><h2>{selectedCentre.name}</h2><p className="map-context">{selectedCentre.city||'City not recorded'} · {selectedCentre.stateName||selectedMapState}</p><div className="map-metrics"><span><strong>{selectedCentre.assetCount}</strong> assets</span><span><strong>{selectedCentre.missingCount}</strong> missing</span><span><strong>{selectedCentre.attentionCount}</strong> needs care</span></div><div className="map-drill-list">{locations.filter((item)=>item.parentId===selectedCentre.id).map((item)=><button className="map-place-row" key={item.id} onClick={()=>setSelectedMapLocationId(item.id)}><span className="map-place-icon"><Icon name={item.kind}/></span><span><strong>{item.name}</strong><small>{item.kind} · {locations.filter((child)=>child.parentId===item.id).length} lower levels</small></span><span className="row-arrow"><Icon name="arrow"/></span></button>)}{!locations.some((item)=>item.parentId===selectedCentre.id)&&<div className="empty-state"><strong>No buildings recorded yet.</strong><small>Add buildings, floors, and areas to make the map useful inside this centre.</small><button className="text-button" onClick={()=>setView('locations')}>Add centre locations →</button></div>}</div>{canConfirmCoordinates&&selectedCentre.coordinatesStatus==='unverified'&&!DEMO_MODE&&<form className="coordinate-form" onSubmit={(event)=>void saveCentreCoordinates(event,selectedCentre)}><p className="eyebrow">CONFIRM THIS CENTRE PIN</p><p>Use coordinates from a trusted map or centre manager. The app never guesses this location.</p><div className="coordinate-inputs"><label>Latitude<input name="latitude" type="number" min="6.5" max="37.5" step="any" required placeholder="28.4595"/></label><label>Longitude<input name="longitude" type="number" min="68" max="98" step="any" required placeholder="77.0266"/></label></div><button className="primary-button" disabled={mapCoordinateBusy}>{mapCoordinateBusy?'Saving…':'Confirm centre location'}</button></form>}</> : <><p className="eyebrow">{selectedMapState?'CENTRES IN THIS STATE':'STATE DIRECTORY'}</p><h2>{selectedMapState||'Choose a state'}</h2><p className="map-context">{selectedMapState?'Select a centre to see its buildings, floors, and asset counts.':'Select a state on the map or from this list.'}</p><div className="map-drill-list">{selectedMapState?selectedStateCentres.map((centre)=><button className="map-centre-row" key={centre.id} onClick={()=>setSelectedMapCentreId(centre.id)}><span className="map-centre-dot"/><span><strong>{centre.name}</strong><small>{centre.code||centre.city||centre.stateName} · {centre.assetCount} assets</small></span><span className="map-row-count">{centre.missingCount?`${centre.missingCount} review`:'Open'} <Icon name="arrow"/></span></button>):mapStates.map((state)=><button className="map-centre-row" key={state.stateName} onClick={()=>{setSelectedMapState(state.stateName);setSelectedMapCentreId('');}}><span className="map-centre-dot state-dot"/><span><strong>{state.stateName}</strong><small>{state.centreCount} centres · {state.assetCount} assets</small></span><span className="map-row-count">{state.missingCount?`${state.missingCount} review`:'View'} <Icon name="arrow"/></span></button>)}{!mapStates.length&&<div className="empty-state"><strong>No centres in your access scope.</strong><small>Location access is limited by your organization role.</small></div>}</div></>}
+              </aside>
+            </div>
+          </section>}
+
+          {view === 'locations' && <section className="view-panel">
+            <p className="eyebrow">LOCATION DIRECTORY</p><div className="view-title-row"><div><h1>One network. Clear locations.</h1><p className="view-lead">Keep the India → state → centre → floor → area hierarchy current.</p></div></div>
+            <div className="locations-layout"><section className="panel"><div className="panel-heading"><div><p className="eyebrow">AUTHORIZED LOCATIONS</p><h2>{locations.length} places</h2></div></div><label className="search-box"><Icon name="search" /><input value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} placeholder="Search location or centre code" /></label><LocationRows locations={filteredLocations} allLocations={locations} /></section>
+              <form className="panel entry-form compact-form" onSubmit={createLocation}><p className="eyebrow">CENTRE SETUP</p><h2>Add a place</h2><p className="form-intro">Choose the parent first. The hierarchy prevents assets from drifting between centres.</p><label>Location level<select name="kind" value={locationKind} required onChange={(event) => setLocationKind(event.target.value as LocationKind)}>{visibleKinds.map((kind) => <option value={kind} key={kind}>{kind[0].toUpperCase()+kind.slice(1)}</option>)}</select></label><label>Location name<input name="name" required maxLength={120} placeholder="e.g. Ahmedabad Krish Cubicle" /></label>{locationKind === 'state' ? <p className="form-hint"><span aria-hidden="true">⌖</span><span>States are top-level locations in the India network.</span></p> : <label>Parent location<select name="parentId" required defaultValue=""><option value="" disabled>Select a {PARENT_KINDS[locationKind].join(' or ')}</option>{parentLocations.map((location) => <option key={location.id} value={location.id}>{location.kind} · {location.name}</option>)}</select></label>}<label>Centre code<input name="code" maxLength={40} placeholder="e.g. AHKC" /></label><label>City<input name="city" maxLength={80} placeholder="City" /></label><label>State<input name="stateName" maxLength={80} placeholder="State" /></label><button className="primary-button" disabled={saving}>{saving ? 'Saving…' : 'Add location'}<span aria-hidden="true">→</span></button></form>
+            </div>
+          </section>}
+
+          {view === 'verify' && <section className="view-panel verify-view">
+            <p className="eyebrow">ASSET CHECK · SIX-MONTH CYCLE</p><div className="view-title-row"><div><h1>Know what’s been seen.</h1><p className="view-lead">A missed scan stays a review item. It is never marked stolen automatically.</p></div></div>
+            {pendingScans.length>0&&<section className="offline-queue scan-queue"><div className="offline-queue-heading"><div><p className="eyebrow">DEVICE QUEUE · {pendingScans.length}</p><h2>Floor-walk scans saved here.</h2></div><button className="quiet-button" onClick={()=>void syncPendingScans()} disabled={syncingScans}>{syncingScans?'Syncing…':'Sync scans'}</button></div>{pendingScans.map((scan)=><div key={scan.id} className="offline-queue-row"><span className="queue-dot"/><span><strong>{assets.find((asset)=>asset.id===scan.assetId)?.name||'Verified asset'}</strong><small>{assets.find((asset)=>asset.id===scan.assetId)?.assetTag||scan.assetId} · {locations.find((place)=>place.id===scan.locationId)?.name||'Saved location'}</small>{scan.lastError&&<em>{scan.lastError}</em>}</span><small>{scan.lastError?'Needs attention':'Waiting for connection'}</small></div>)}</section>}
+            {DEMO_MODE ? <section className="panel verify-empty"><Icon name="check"/><h2>Verification cycles connect to the live register.</h2><p>Sign in through your organization to open a cycle, record scans, and review assets that were not seen.</p></section> : <>
+              {verificationPolicies.length===0 && <section className="panel verify-empty"><Icon name="check"/><h2>No scan schedule yet.</h2><p>Head Office can set a six-month cadence and a two-month completion window for a state or centre.</p></section>}
+              {verificationPolicies.length>0 && <section className="panel policy-panel"><div className="panel-heading"><div><p className="eyebrow">ACTIVE SCHEDULES</p><h2>Choose a cycle to work on</h2></div></div><div className="cycle-grid">{verificationPolicies.map((policy)=><article className="cycle-policy" key={policy.id}><span className="cycle-mark"><Icon name="check"/></span><div><strong>{policy.scopeLocationName}</strong><small>Every {policy.cadenceMonths} months · {policy.graceDays} day completion window</small></div><button className="quiet-button" disabled={saving} onClick={()=>void openVerificationCycle(policy.id)}>Open cycle</button></article>)}</div></section>}
+              {verificationCycles.length>0 && <section className="cycle-tabs" aria-label="Verification cycles">{verificationCycles.map((cycle)=><button key={cycle.id} className={activeCycle?.id===cycle.id?'active':''} onClick={()=>setActiveCycle(cycle)}><strong>{cycle.scopeLocationName}</strong><small>{new Date(cycle.startsAt).toLocaleDateString('en-IN')} · {cycle.status}</small></button>)}</section>}
+              {activeCycle && <section className="panel cycle-progress-panel"><div className="cycle-progress-heading"><div><p className="eyebrow">{activeCycle.status.toUpperCase()} · {activeCycle.scopeLocationName}</p><h2>{cycleAssets.filter((item)=>item.scanned).length} <span>of {cycleAssets.length} verified</span></h2><p>Complete by {new Date(activeCycle.graceEndsAt).toLocaleDateString('en-IN')}</p></div><button className="primary-button" disabled={activeCycle.status==='closed'} onClick={()=>{setScanLocationId('');setVerificationScanCycleId(activeCycle.id);setView('scanner');}}>Scan an asset</button></div><div className="cycle-progress-track" role="progressbar" aria-label="Cycle completion" aria-valuemin={0} aria-valuemax={cycleAssets.length} aria-valuenow={cycleAssets.filter((item)=>item.scanned).length}><span style={{width:`${cycleAssets.length?cycleAssets.filter((item)=>item.scanned).length/cycleAssets.length*100:0}%`}}/></div><div className="cycle-asset-list">{cycleAssets.map((item)=><article key={item.assetId} className="cycle-asset-row"><span className={`cycle-state ${item.scanned?'seen':item.reviewState==='unseen_after_window'?'overdue':''}`}><Icon name={item.scanned?'check':'asset'}/></span><span><strong>{item.name}</strong><small>{item.assetTag} · {item.locationName}</small></span><span className={`cycle-review cycle-${item.reviewState}`}>{item.scanned?'Verified':item.reviewState==='unseen_after_window'?'Needs review':'Not scanned'}</span></article>)}</div>{cycleAssets.some((item)=>item.reviewState==='unseen_after_window')&&<p className="review-note">Some assets were not seen before the scan window ended. Review their last known location and contact the responsible centre; no loss status was applied.</p>}</section>}
+              {organization?.roles.some((item)=>item.role==='head_office')&&<form className="panel entry-form policy-create" onSubmit={createVerificationPolicy}><p className="eyebrow">HEAD OFFICE · CYCLE SETTINGS</p><h2>Set a verification schedule</h2><div className="form-grid"><label>State or centre<select name="scopeLocationId" required defaultValue=""><option value="" disabled>Choose a scope</option>{locations.filter((item)=>item.kind==='state'||item.kind==='centre').map((item)=><option key={item.id} value={item.id}>{item.kind} · {item.name}</option>)}</select></label><label>Repeat every<select name="cadenceMonths" defaultValue="6"><option value="6">6 months</option><option value="3">3 months</option><option value="12">12 months</option></select></label><label>Completion window<select name="graceDays" defaultValue="60"><option value="60">2 months · 60 days</option><option value="30">1 month · 30 days</option><option value="90">3 months · 90 days</option></select></label></div><button className="primary-button" disabled={saving}>{saving?'Saving…':'Save schedule'}</button></form>}
+            </>}
+          </section>}
+
+          {view === 'reports' && <section className="view-panel lifecycle-view"><p className="eyebrow">ASSET CARE · REPORTS</p><div className="view-title-row"><div><h1>Give every issue an owner.</h1><p className="view-lead">Report damage, repair needs, and items that can no longer work. Each update stays in the asset history.</p></div></div>
+            {DEMO_MODE?<section className="panel verify-empty"><Icon name="asset"/><h2>Reports connect to the live register.</h2><p>Sign in to record and route repairs.</p></section>:<div className="lifecycle-layout"><form className="panel entry-form compact-form" onSubmit={createConditionReport}><p className="eyebrow">NEW REPORT</p><h2>What needs attention?</h2><label>Asset<select name="assetId" required defaultValue=""><option value="" disabled>Choose asset</option>{assets.map((asset)=><option key={asset.id} value={asset.id}>{asset.assetTag} · {asset.name}</option>)}</select></label><label>Issue<select name="kind" defaultValue="damaged"><option value="damaged">Damaged</option><option value="needs_repair">Needs repair</option><option value="not_working">Not working</option><option value="other">Other</option></select></label><label>Urgency<select name="urgency" defaultValue="normal"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>What happened?<textarea name="description" rows={4} minLength={5} maxLength={2000} required placeholder="Describe what you noticed and when." /></label><button className="primary-button" disabled={saving}>{saving?'Saving…':'Submit report'}</button></form><section className="panel lifecycle-list"><div className="panel-heading"><div><p className="eyebrow">AUTHORIZED ASSETS</p><h2>{reports.length} open and recent</h2></div></div>{reports.length===0?<div className="empty-state"><Icon name="check"/><strong>No reports yet.</strong><small>New repair and damage reports will appear here.</small></div>:reports.map((report)=><article className="lifecycle-row" key={report.id}><span className={`urgency-mark urgency-${report.urgency}`}><Icon name="asset"/></span><div className="lifecycle-row-main"><strong>{report.assetName}</strong><small>{report.assetTag} · {report.locationName}</small><p>{report.description}</p><small>{report.kind.replaceAll('_',' ')} · {new Date(report.reportedAt).toLocaleDateString('en-IN')}</small></div><div className="lifecycle-row-actions"><span className={`status-chip status-${report.status}`}>{report.status.replaceAll('_',' ')}</span>{organization?.roles.some((role)=>['head_office','state_head','centre_head'].includes(role.role))&&report.status!=='closed'&&report.status!=='resolved'&&<button className="text-button" onClick={()=>void updateConditionReport(report,report.status==='reported'?'assigned':report.status==='assigned'?'in_repair':'resolved')}>{report.status==='reported'?'Assign':report.status==='assigned'?'Start repair':'Resolve'}</button>}</div></article>)}</section></div>}
+          </section>}
+
+          {view === 'transfers' && <section className="view-panel lifecycle-view"><p className="eyebrow">ASSET MOVEMENT · TRANSFERS</p><div className="view-title-row"><div><h1>Move with a clear handover.</h1><p className="view-lead">The register changes location only after the receiving centre confirms arrival.</p></div></div>
+            {DEMO_MODE?<section className="panel verify-empty"><Icon name="arrow"/><h2>Transfers connect to the live register.</h2><p>Sign in to request, approve, dispatch, and receive assets.</p></section>:<div className="lifecycle-layout"><form className="panel entry-form compact-form" onSubmit={createAssetTransfer}><p className="eyebrow">NEW TRANSFER</p><h2>Request a move</h2><label>Asset<select name="assetId" required defaultValue=""><option value="" disabled>Choose asset</option>{assets.map((asset)=><option key={asset.id} value={asset.id}>{asset.assetTag} · {asset.name} · {asset.locationName}</option>)}</select></label><label>Destination<select name="toLocationId" required defaultValue=""><option value="" disabled>Choose centre or store</option>{locations.filter((place)=>place.kind==='centre'||place.kind==='warehouse'||place.kind==='floor'||place.kind==='area').map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label><label>Handover notes<textarea name="handoverNotes" rows={3} maxLength={2000} placeholder="Condition, packing, courier, or contact details." /></label><button className="primary-button" disabled={saving}>{saving?'Sending…':'Request transfer'}</button></form><section className="panel lifecycle-list"><div className="panel-heading"><div><p className="eyebrow">MOVEMENT HISTORY</p><h2>{transfers.length} transfer requests</h2></div></div>{transfers.length===0?<div className="empty-state"><Icon name="arrow"/><strong>No transfers in your scope.</strong><small>Approved movement requests will appear here.</small></div>:transfers.map((transfer)=><article className="lifecycle-row" key={transfer.id}><span className="transfer-mark"><Icon name="arrow"/></span><div className="lifecycle-row-main"><strong>{transfer.assetName}</strong><small>{transfer.assetTag} · {transfer.fromLocationName} → {transfer.toLocationName}</small><p>{transfer.handoverNotes||'No handover notes added.'}</p><small>Requested {new Date(transfer.requestedAt).toLocaleDateString('en-IN')}</small></div><div className="lifecycle-row-actions"><span className="status-chip">{transfer.status.replaceAll('_',' ')}</span>{transfer.status==='requested'&&<button className="text-button" onClick={()=>void moveTransfer(transfer,'approve')}>Approve</button>}{transfer.status==='approved'&&<button className="text-button" onClick={()=>void moveTransfer(transfer,'dispatch')}>Mark dispatched</button>}{transfer.status==='in_transit'&&<button className="text-button" onClick={()=>void moveTransfer(transfer,'receive')}>Confirm receipt</button>}</div></article>)}</section></div>}
+          </section>}
+
+          {view === 'assets' && <section className="view-panel">
+            <p className="eyebrow">ASSET REGISTER</p><div className="view-title-row"><div><h1>Everything accounted for.</h1><p className="view-lead">Search by name, tag, serial number, category, or location.</p></div><div className="inventory-actions"><button className="quiet-button" onClick={() => setView('scanner')}>Scan code</button><button className="primary-button add-button" onClick={startNewAsset}><Icon name="plus" /> Add asset</button></div></div>
+            <div className="inventory-toolbar"><label className="search-box"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, QR tag, serial or centre" /></label><label className="status-filter">Status<select value={assetStatusFilter} onChange={(event)=>setAssetStatusFilter(event.target.value)}><option value="">All assets</option><option value="unused">Unused · available</option><option value="active">Active</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option></select></label><span className="count-label">{assets.length} visible</span></div>
+            <section className="panel inventory-panel"><AssetRows assets={assets} onSelect={(asset) => { setSelectedAsset(asset); setView('asset-detail'); }} empty="No assets match that search." />{assetCursor&&<button className="quiet-button load-more-button" onClick={()=>void loadMoreAssets()} disabled={loadingMoreAssets}>{loadingMoreAssets?'Loading records…':'Load more assets'}</button>}</section>
+          </section>}
+
+          {view === 'asset-form' && <section className="view-panel narrow-view">
+            <button className="back-action" onClick={() => setView(selectedAsset ? 'asset-detail' : 'assets')}>← Back to {selectedAsset ? 'asset' : 'register'}</button><p className="eyebrow">{selectedAsset ? 'ASSET RECORD · EDIT' : 'NEW ASSET · REGISTER'}</p><h1>{selectedAsset ? 'Keep this record up to date.' : 'Give it a place in the register.'}</h1><p className="view-lead">The QR identity stays with the item. Confirm changes against the product and bill.</p>
+            <form key={`${selectedAsset?.id || 'new'}-${formSeedVersion}`} className="panel entry-form asset-form" onSubmit={createAsset}>
+              <div className="form-section-title"><span>01</span><div><h2>Identify the item</h2><small>Name and category are required.</small></div></div>
+              <div className="capture-grid">
+                <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{assetPhotoFile ? 'Retake product photo' : 'Photograph the asset'}</strong><small>Read visible brand, model, and serial text</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setAssetPhotoFile(file); setAssetPhotoUrl(URL.createObjectURL(file)); setCaptureSuggestions(null); void analyzeCapture(file, 'asset'); }} /></label>
+                <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{invoiceFile ? 'Choose another invoice' : 'Scan purchase invoice'}</strong><small>Extract seller, date, amount, and product clues</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setInvoiceFile(file); setCaptureSuggestions(null); } }} /></label>
+              </div>
+              {assetPhotoUrl && <img className="capture-preview" src={assetPhotoUrl} alt="Captured asset for review" />}
+              {invoiceFile && <div className="selected-invoice"><span>{invoiceFile.name}</span><button type="button" className="text-button" onClick={() => void analyzeCapture(invoiceFile, 'invoice')}>{captureBusy ? `Reading ${captureProgress}%` : 'Read invoice'}</button></div>}
+              {captureBusy && <div className="capture-progress" role="status"><span style={{ width: `${captureProgress}%` }} /><small>Reading this image on your device · {captureProgress}%</small></div>}
+              {captureSuggestions && <section className="capture-review" aria-live="polite"><div><p className="eyebrow">SUGGESTIONS TO REVIEW</p><strong>{matchingConfidence === 'exact' ? 'Possible duplicate · compare these records.' : matchingConfidence === 'similar' ? 'Similar items · compare before adding.' : 'Check these details against the item.'}</strong></div><dl>{[['Suggested name',captureSuggestions.name],['Category',captureSuggestions.category],['Brand',captureSuggestions.manufacturer],['Model',captureSuggestions.model],['Serial number',captureSuggestions.serialNumber],['Seller',captureSuggestions.sellerName],['Invoice date',captureSuggestions.purchaseDate],['Invoice amount',captureSuggestions.purchaseAmount && `₹${captureSuggestions.purchaseAmount}`],['Invoice number',captureSuggestions.invoiceReference]].filter(([,value]) => value).map(([label,value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{matchingAssets.map((asset) => <button type="button" className="possible-match" key={asset.id} onClick={() => { setSelectedAsset(asset); setView('asset-detail'); }}><Icon name="asset" /><span><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.locationName}</small></span><Icon name="arrow" /></button>)}{!selectedAsset && <button type="button" className="text-button" onClick={applyCaptureSuggestions}>Use suggestions in the editable form →</button>}<details><summary>View text read from image</summary><pre>{captureSuggestions.sourceText}</pre></details></section>}
+              <div className="form-grid"><label>Asset name<input name="name" required maxLength={160} defaultValue={selectedAsset?.name || formSeed?.name || ''} placeholder="e.g. Network switch" /></label><label>Category<input name="category" required maxLength={100} defaultValue={selectedAsset?.category || formSeed?.category || ''} placeholder="e.g. IT equipment" /></label><label>Asset tag <small>Optional · assigned if blank</small><input name="assetTag" maxLength={40} defaultValue={selectedAsset?.assetTag || ''} placeholder="e.g. IT-00482" /></label><label>Serial number<input name="serialNumber" maxLength={120} defaultValue={selectedAsset?.serialNumber || formSeed?.serialNumber || ''} placeholder="Manufacturer serial number" /></label><label>Manufacturer<input name="manufacturer" maxLength={120} defaultValue={selectedAsset?.manufacturer || formSeed?.manufacturer || ''} placeholder="Brand or manufacturer" /></label><label>Model<input name="model" maxLength={120} defaultValue={selectedAsset?.model || formSeed?.model || ''} placeholder="Model name or number" /></label><label>Condition<select name="condition" defaultValue={selectedAsset?.condition || 'good'}><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Record status<select name="status" defaultValue={selectedAsset?.status || 'active'}><option value="active">Active</option><option value="unused">Unused · available for transfer</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label></div>
+              <div className="form-section-title"><span>02</span><div><h2>Give it a location</h2><small>Choose the most precise confirmed place.</small></div></div>
+              <label>Centre, warehouse, or floor<select name="locationId" required defaultValue={selectedAsset?.locationId || ''}><option value="" disabled>Select a location</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.kind} · {location.name}{location.code ? ` (${location.code})` : ''}</option>)}</select></label>
+              <div className="form-section-title"><span>03</span><div><h2>Purchase record</h2><small>Editable information for the asset history.</small></div></div>
+              <div className="form-grid"><label>Purchase date<input name="purchaseDate" type="date" defaultValue={selectedAsset?.purchaseDate || formSeed?.purchaseDate || ''} /></label><label>Purchase amount (₹)<input name="purchaseAmount" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={selectedAsset?.purchaseAmount || formSeed?.purchaseAmount || ''} placeholder="0.00" /></label><label>Seller name<input name="sellerName" maxLength={160} defaultValue={selectedAsset?.sellerName || formSeed?.sellerName || ''} placeholder="Seller or supplier" /></label><label>Seller phone<input name="sellerPhone" type="tel" maxLength={40} defaultValue={selectedAsset?.sellerPhone || formSeed?.sellerPhone || ''} placeholder="Contact number" /></label></div>
+              <label>Notes<textarea name="notes" rows={3} maxLength={2000} placeholder="Anything the next custodian should know" /></label>
+              <div className="form-hint"><Icon name="asset" /><span>Photo and invoice details are suggestions. Review them in the form before saving; the original captures stay attached to the asset record.</span></div>
+              <div className="form-actions"><button type="button" className="quiet-button" onClick={() => setView(selectedAsset ? 'asset-detail' : 'assets')}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? 'Saving asset…' : selectedAsset ? 'Save changes' : 'Save asset & create QR'}<span aria-hidden="true">→</span></button></div>
+            </form>
+          </section>}
+
+          {view === 'scanner' && <>{verificationScanCycleId && <div className="scan-location-choice"><label>Where are you checking?<select value={scanLocationId} onChange={(event)=>setScanLocationId(event.target.value)}><option value="">Use asset’s current register location</option>{locations.map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label></div>}<CodeScanner onCode={(code) => void (verificationScanCycleId ? recordCycleScan(code) : findScannedCode(code))} onClose={() => {setVerificationScanCycleId(null);setView(verificationScanCycleId?'verify':'assets');}} /></>}
+
+          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
+            <section className="panel warranty-panel"><div className="panel-heading"><div><p className="eyebrow">COVERAGE WATCH</p><h2>Warranty and service</h2></div><span className="evidence-count">{warranties.length} records</span></div>{warranties.map((warranty)=><article className="warranty-row" key={warranty.id}><span className="warranty-mark"><Icon name="check"/></span><span><strong>{warranty.coverageKind.toUpperCase()} · {warranty.provider||'Provider not listed'}</strong><small>{warranty.startsOn||'Start not recorded'} — {warranty.endsOn||'No end date'}{warranty.servicePhone?` · Service ${warranty.servicePhone}`:''}</small></span></article>)}{!warranties.length&&<p className="evidence-empty">No warranty or service coverage recorded yet.</p>}<form className="warranty-create" onSubmit={createWarrantyRecord}><label>Coverage<select name="coverageKind" defaultValue="warranty"><option value="warranty">Warranty</option><option value="guarantee">Guarantee</option><option value="amc">Annual maintenance</option><option value="other">Other</option></select></label><label>Seller or service provider<input name="provider" maxLength={160} defaultValue={selectedAsset.sellerName||''} placeholder="Provider name"/></label><label>Service centre phone<input name="servicePhone" type="tel" maxLength={40} placeholder="Support number"/></label><label>Coverage ends<input name="endsOn" type="date"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving…':'Add coverage'}</button></form></section>
+            <section className="panel evidence-panel"><div className="panel-heading"><div><p className="eyebrow">PRIVATE ASSET RECORD</p><h2>Photos and documents</h2></div><span className="evidence-count">{evidence.length} saved</span></div><p className="evidence-intro">Keep the product photo and purchase proof with this item. Only people with access to this asset can open them.</p><div className="evidence-add-actions"><label className="quiet-button evidence-picker">Take asset photo<input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('asset_photo', file); event.currentTarget.value = ''; }} /></label><label className="quiet-button evidence-picker">Add invoice<input type="file" accept="image/*,application/pdf" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('invoice', file); event.currentTarget.value = ''; }} /></label></div>{evidenceError && <div className="inline-message error-message" role="alert">{evidenceError}</div>}{pendingEvidenceFiles.length > 0 && <div className="pending-evidence" role="status"><span>{pendingEvidenceFiles.length} capture{pendingEvidenceFiles.length === 1 ? '' : 's'} need upload</span><button className="text-button" disabled={uploadingEvidence} onClick={() => void uploadEvidenceFiles(selectedAsset.id, pendingEvidenceFiles)}>{uploadingEvidence ? 'Uploading…' : 'Retry upload'}</button>{pendingEvidenceFiles.map((item) => <small key={item.id}>{item.name}</small>)}</div>}{evidence.length > 0 ? <div className="evidence-list">{evidence.map((item) => <article className="evidence-row" key={item.id}><span className="evidence-type"><Icon name={item.kind === 'invoice' ? 'asset' : 'pin'} /></span><span><strong>{item.kind === 'invoice' ? 'Purchase invoice' : 'Asset photo'}</strong><small>{item.originalName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small></span><button className="text-button" onClick={() => void downloadEvidenceFile(item)}>Open file ↗</button></article>)}</div> : !pendingEvidenceFiles.length && <p className="evidence-empty">No photos or documents attached yet.</p>}</section>
+          </section>}
+
+          {view === 'qr-label' && selectedAsset && <section className="view-panel narrow-view label-view"><button className="back-action no-print" onClick={() => setView('asset-detail')}>← Back to asset</button><p className="eyebrow no-print">ASSET REGISTER · QR LABEL</p><h1 className="no-print">Print the asset’s identity.</h1><p className="view-lead no-print">Place this label where it can be scanned during a floor walk.</p><div className="qr-label"><div className="qr-brand"><span className="brandmark">i</span><strong>INCUSPAZE <small>ASSET REGISTER</small></strong></div>{qrImage ? <img className="qr-image" src={qrImage} alt={`QR code for ${selectedAsset.assetTag}`} /> : <div className="qr-placeholder" aria-label="Preparing QR code" />}<strong className="qr-item-name">{selectedAsset.name}</strong><span className="qr-tag">{selectedAsset.assetTag}</span><small className="qr-location">{selectedAsset.locationName}</small><small className="qr-id">{selectedAsset.qrPublicId}</small></div><button className="primary-button print-button no-print" onClick={() => window.print()}>Print label <span aria-hidden="true">↗</span></button></section>}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function Brand() { return <div className="brand-lockup"><div className="brandmark" aria-hidden="true">i</div><span className="brandname">INCUSPAZE</span><span className="brand-divider" /><span className="product-name">ASSET REGISTER</span></div>; }
+
+function SignIn({ error, configured, onSignIn }: { error: string; configured: boolean; onSignIn: () => void }) {
+  return <main className="app-shell"><header className="brandbar"><Brand /></header><section className="signin-layout"><div className="signin-copy"><p className="eyebrow">A CLEARER VIEW OF EVERY ASSET</p><h1>Every place.<br /><em>Every asset.</em><br />Accounted for.</h1><p className="lead">One thoughtful register for every Incuspaze centre across India.</p><div className="signin-note"><span className="fine-rule" />Designed for the people who care for the space.</div></div><section className="signin-card"><div className="signin-card-top"><span className="lock-glyph" aria-hidden="true">⌑</span><span>PRIVATE WORKSPACE</span></div><h2>Welcome back</h2><p>Sign in with your organization account to continue.</p>{error && <div className="message" role="alert">{error}</div>}{configured ? <button className="primary-button" onClick={onSignIn}>Continue with your work account <span aria-hidden="true">→</span></button> : <div className="config-message" role="status"><strong>Sign-in setup in progress</strong><span>Your administrator will connect the organization identity provider before live records are enabled.</span></div>}<small className="privacy-copy">Access is limited by your assigned organization, state, and centre role.</small></section></section><footer className="page-footer"><span>INCUASSET</span><span>ONE REGISTER · EVERY CENTRE</span></footer></main>;
+}
+
+function Summary({ label, value, detail }: { label: string; value: number; detail: string }) { return <article className="summary-card"><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>; }
+function Detail({ label, value }: { label: string; value: string }) { return <div className="detail-field"><small>{label}</small><strong>{value}</strong></div>; }
+
+function AssetRows({ assets, onSelect, empty = 'No registered assets yet.' }: { assets: Asset[]; onSelect: (asset: Asset) => void; empty?: string }) {
+  if (!assets.length) return <div className="empty-state"><Icon name="asset" /><strong>{empty}</strong><small>Try another search or add an asset to the register.</small></div>;
+  return <div className="asset-rows">{assets.map((asset) => <button className="asset-row" key={asset.id} onClick={() => onSelect(asset)}><span className="asset-symbol"><Icon name="asset" /></span><span className="asset-primary"><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.category}</small></span><span className="asset-place">{asset.locationName}</span><span className={`status-chip status-${asset.status}`}>{asset.status.replaceAll('_',' ')}</span><span className="row-arrow"><Icon name="arrow" /></span></button>)}</div>;
+}
+
+function LocationRows({ locations, allLocations }: { locations: Location[]; allLocations: Location[] }) {
+  if (!locations.length) return <div className="empty-state"><Icon name="pin" /><strong>No locations match.</strong><small>Check the search or add a place to the hierarchy.</small></div>;
+  const parentName = (item: Location) => item.parentId ? allLocations.find((parent) => parent.id === item.parentId)?.name || 'Parent location' : 'India';
+  return <div className="location-rows">{locations.map((item) => <article className="location-row" key={item.id}><span className={`location-level level-${item.kind}`}><Icon name={item.kind} /></span><span className="location-primary"><strong>{item.name}</strong><small>{item.code || item.kind} · {item.city || item.stateName || parentName(item)}</small></span><span className="location-parent">Within {parentName(item)}</span><span className={`coordinate-state ${item.coordinatesStatus === 'unverified' ? 'unverified' : ''}`}>{item.coordinatesStatus.replaceAll('_',' ')}</span></article>)}</div>;
+}
+
+function errorMessage(reason: unknown) {
+  if (reason instanceof ApiError) {
+    if (reason.status === 401) return 'Your sign-in expired. Sign in again to continue.';
+    if (reason.status === 403) return 'Your role does not allow that action or location.';
+    return reason.message;
+  }
+  if (reason instanceof Error) return reason.message;
+  return 'Something went wrong. Please try again.';
+}

@@ -1,0 +1,41 @@
+{
+  "name": "incuspaze-asset-register-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Versioned API for the Incuspaze nationwide asset register",
+  "scripts": {
+    "start:dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1148.0",
+    "@aws-sdk/s3-request-presigner": "^3.1148.0",
+    "@nestjs/common": "^11.0.0",
+    "@nestjs/config": "^4.0.0",
+    "@nestjs/core": "^11.0.0",
+    "@nestjs/platform-express": "^11.0.0",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.14.1",
+    "helmet": "^8.0.0",
+    "jose": "^6.0.0",
+    "pg": "^8.13.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.15",
+    "@nestjs/cli": "^11.0.0",
+    "@nestjs/schematics": "^11.0.0",
+    "@nestjs/testing": "^11.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.11.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.11"
+  }
+}
