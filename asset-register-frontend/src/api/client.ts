@@ -59,11 +59,15 @@ export const api = {
   evidenceDownload: (token: string, organizationId: string, assetId: string, evidenceId: string) =>
     request<{ downloadUrl: string; expiresInSeconds: number }>(`/assets/${encodeURIComponent(assetId)}/evidence/${encodeURIComponent(evidenceId)}/download`, token, organizationId),
   verificationPolicies: (token: string, organizationId: string) => request<VerificationPolicy[]>('/verification/policies',token,organizationId),
-  createVerificationPolicy: (token: string, organizationId: string, data: { scopeLocationId: string; cadenceMonths: number; graceDays: number }) =>
+  createVerificationPolicy: (token: string, organizationId: string, data: { scopeLocationId: string; cadenceMonths: number; graceDays: number; escalationIntervalDays?: number }) =>
     request<VerificationPolicy>('/verification/policies',token,organizationId,data),
+  updateVerificationPolicy: (token: string, organizationId: string, id: string, data: { cadenceMonths?: number; graceDays?: number; escalationIntervalDays?: number; enabled?: boolean }) =>
+    request<VerificationPolicy>(`/verification/policies/${encodeURIComponent(id)}`,token,organizationId,data,'PATCH'),
   verificationCycles: (token: string, organizationId: string) => request<VerificationCycle[]>('/verification/cycles',token,organizationId),
   createVerificationCycle: (token: string, organizationId: string, policyId: string) =>
-    request<{ id: string }>('/verification/cycles',token,organizationId,{policyId}),
+    request<{ id: string; reused: boolean }>('/verification/cycles',token,organizationId,{policyId}),
+  closeVerificationCycle: (token: string, organizationId: string, cycleId: string, reason: string) =>
+    request<{ id: string; status: string; closedAt: string; closeReason: string; unresolvedAssetCount: number }>(`/verification/cycles/${encodeURIComponent(cycleId)}/close`,token,organizationId,{reason}),
   verificationProgress: (token: string, organizationId: string, cycleId: string) =>
     request<VerificationAsset[]>(`/verification/cycles/${encodeURIComponent(cycleId)}/progress`,token,organizationId),
   recordVerificationScan: (token: string, organizationId: string, cycleId: string, data: { assetId: string; locationId: string; clientEventId: string; scannedAt: string; identificationMethod?: 'qr'|'barcode'|'rfid'|'manual' }) =>

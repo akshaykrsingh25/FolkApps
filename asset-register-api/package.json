@@ -7,7 +7,7 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/003_ownership_and_transfer_batches.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/004_scoped_rbac_and_user_profiles.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/005_dual_asset_identifiers.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/006_background_asset_exports.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/007_rfid_binding_history.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/008_location_physical_addresses.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/009_notification_inbox.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/010_notification_outbox_worker.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/011_verification_watch_indexes.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/012_recurring_verification_cycles.sql",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/003_ownership_and_transfer_batches.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/004_scoped_rbac_and_user_profiles.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/005_dual_asset_identifiers.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/006_background_asset_exports.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/007_rfid_binding_history.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/008_location_physical_addresses.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/009_notification_inbox.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/010_notification_outbox_worker.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/011_verification_watch_indexes.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/012_recurring_verification_cycles.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/013_verification_escalation_policy.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/014_verification_cycle_closure.sql",
     "db:migrate:custody": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql",
     "db:migrate:ownership-batches": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/003_ownership_and_transfer_batches.sql",
     "db:migrate:scoped-rbac": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/004_scoped_rbac_and_user_profiles.sql",
@@ -25,7 +25,9 @@
     "worker:notifications": "node dist/notifications/run-notification-worker.js",
     "test": "vitest run",
     "test:recovery": "bash scripts/test-backup-restore.sh",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:migrate:verification-escalation-policy": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/013_verification_escalation_policy.sql",
+    "db:migrate:verification-cycle-closure": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/014_verification_cycle_closure.sql"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1148.0",

@@ -1,16 +1,28 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
 export class CreatePolicyDto {
   @IsUUID() scopeLocationId!: string;
   @IsInt() @Min(1) @Max(24) cadenceMonths!: number;
   @IsInt() @Min(0) @Max(180) graceDays!: number;
+  @IsOptional() @IsInt() @Min(1) @Max(90) escalationIntervalDays?: number;
+  @IsOptional() @IsBoolean() enabled?: boolean;
+}
+
+export class UpdatePolicyDto {
+  @IsOptional() @IsInt() @Min(1) @Max(24) cadenceMonths?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(180) graceDays?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(90) escalationIntervalDays?: number;
   @IsOptional() @IsBoolean() enabled?: boolean;
 }
 
 export class CreateCycleDto {
   @IsUUID() policyId!: string;
   @IsOptional() @IsDateString() startsAt?: string;
+}
+
+export class CloseCycleDto {
+  @IsString() @MinLength(5) @MaxLength(500) reason!: string;
 }
 
 export class RecordScanDto {

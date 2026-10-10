@@ -65,6 +65,8 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/010_notification_outbox_worker.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/011_verification_watch_indexes.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/012_recurring_verification_cycles.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/013_verification_escalation_policy.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -205,14 +207,27 @@ describe('phase two API integration', () => {
     expect(((await (await call(`/assets/${asset.id}/evidence/${upload.evidenceId}/download`, centreToken)).json()) as { downloadUrl: string }).downloadUrl)
       .toContain('signed-get');
 
-    const policyResponse=await call('/verification/policies',hoToken,{scopeLocationId:state.id,cadenceMonths:6,graceDays:60});
+    const policyResponse=await call('/verification/policies',hoToken,{scopeLocationId:state.id,cadenceMonths:6,graceDays:60,escalationIntervalDays:14});
     expect(policyResponse.status).toBe(201);
-    const policy=await policyResponse.json() as {id:string;cadenceMonths:number;graceDays:number};
-    expect(policy).toMatchObject({cadenceMonths:6,graceDays:60});
+    const policy=await policyResponse.json() as {id:string;cadenceMonths:number;graceDays:number;escalationIntervalDays:number};
+    expect(policy).toMatchObject({cadenceMonths:6,graceDays:60,escalationIntervalDays:14});
     expect((await call('/verification/policies',centreToken,{scopeLocationId:centre.id,cadenceMonths:6,graceDays:60})).status).toBe(403);
     const cycleResponse=await call('/verification/cycles',hoToken,{policyId:policy.id});
     expect(cycleResponse.status).toBe(201);
-    const cycle=await cycleResponse.json() as {id:string};
+    const cycle=await cycleResponse.json() as {id:string;reused:boolean};
+    expect(cycle.reused).toBe(false);
+    const existingCycleResponse=await call('/verification/cycles',hoToken,{policyId:policy.id});
+    expect(await existingCycleResponse.json()).toMatchObject({id:cycle.id,reused:true});
+    const updatePolicyResponse=await call(`/verification/policies/${policy.id}`,hoToken,{escalationIntervalDays:21},organizationId,'PATCH');
+    expect(updatePolicyResponse.status).toBe(200);
+    expect(await updatePolicyResponse.json()).toMatchObject({id:policy.id,escalationIntervalDays:21});
+    expect((await call(`/verification/policies/${policy.id}`,centreToken,{graceDays:45},organizationId,'PATCH')).status).toBe(403);
+    expect((await call(`/verification/policies/${policy.id}`,hoToken,{escalationIntervalDays:91},organizationId,'PATCH')).status).toBe(400);
+    const policyHistory=await db.query<{details:{before:{escalationIntervalDays:number};after:{escalationIntervalDays:number}}}>(
+      `SELECT details FROM audit_events WHERE organization_id=$1 AND entity_id=$2 AND event_type='verification.policy_updated'`,
+      [organizationId,policy.id],
+    );
+    expect(policyHistory.rows[0].details).toMatchObject({before:{escalationIntervalDays:14},after:{escalationIntervalDays:21}});
     const emptyProgressResponse=await call(`/verification/cycles/${cycle.id}/progress`,centreToken);
     expect(emptyProgressResponse.status).toBe(200);
     const emptyProgress=await emptyProgressResponse.json() as {reviewState:string}[];
@@ -223,10 +238,11 @@ describe('phase two API integration', () => {
     expect((await call(`/verification/cycles/${cycle.id}/scans`,centreToken,{...scanBody,locationId:centerBId})).status).toBe(403);
     expect((await call(`/verification/cycles/${cycle.id}/scans`,centreToken,scanBody)).status).toBe(201);
     expect(((await (await call(`/verification/cycles/${cycle.id}/scans`,centreToken,scanBody)).json()) as {duplicate:boolean}).duplicate).toBe(true);
+    const crossCentreScan=await call(`/verification/cycles/${cycle.id}/scans`,hoToken,{assetId:otherCentreAsset.id,locationId:centerBId,clientEventId:'70000000-0000-4000-8000-000000000004',scannedAt:new Date().toISOString(),identificationMethod:'manual'});
+    expect(crossCentreScan.status).toBe(201);
     const verifiedProgress=await (await call(`/verification/cycles/${cycle.id}/progress`,centreToken)).json() as {reviewState:string;scanned:boolean}[];
     expect(verifiedProgress[0]).toMatchObject({scanned:true,reviewState:'verified'});
     expect(((await (await call('/verification/cycles',centreToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
-
     const viewer=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'e2e-viewer','Read Only Viewer','e2e-viewer@example.test') RETURNING id`,[organizationId]);
     await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'viewer',$3)`,[organizationId,viewer.rows[0].id,centre.id]);
     const viewerToken=await token('e2e-viewer');
@@ -311,6 +327,23 @@ describe('phase two API integration', () => {
     expect(scopedMap.states).toEqual([{stateName:'Karnataka',centreCount:1,assetCount:1,missingCount:0,attentionCount:1,unusedCount:0}]);
     const overviewResponse=await call('/insights/overview',centreToken);
     expect(((await overviewResponse.json()) as {assetCount:number;centreCount:number;attentionCount:number;activeCycleCount:number;scanCompletionPercent:number})).toMatchObject({assetCount:1,centreCount:1,attentionCount:1,activeCycleCount:1,scanCompletionPercent:100});
+    expect((await call(`/verification/cycles/${cycle.id}/close`,centreToken,{reason:'Centre cannot close this cycle'})).status).toBe(403);
+    const closeResponse=await call(`/verification/cycles/${cycle.id}/close`,hoToken,{reason:'All listed assets were checked.'});
+    expect(closeResponse.status).toBe(201);
+    expect(await closeResponse.json()).toMatchObject({id:cycle.id,status:'closed',closeReason:'All listed assets were checked.',unresolvedAssetCount:0});
+    expect((await call(`/verification/cycles/${cycle.id}/close`,hoToken,{reason:'Duplicate close request'})).status).toBe(409);
+    expect((await call(`/verification/cycles/${cycle.id}/scans`,centreToken,{...scanBody,clientEventId:'70000000-0000-4000-8000-000000000003'})).status).toBe(403);
+    expect(((await (await call('/insights/overview',centreToken)).json()) as {activeCycleCount:number;scanCompletionPercent:number})).toMatchObject({activeCycleCount:0,scanCompletionPercent:0});
+
+    const futurePolicyResponse=await call('/verification/policies',hoToken,{scopeLocationId:centerBId,cadenceMonths:6,graceDays:60});
+    const futurePolicy=await futurePolicyResponse.json() as {id:string};
+    const futureCycleResponse=await call('/verification/cycles',hoToken,{policyId:futurePolicy.id,startsAt:new Date(Date.now()+24*60*60*1000).toISOString()});
+    const futureCycle=await futureCycleResponse.json() as {id:string;status:string};
+    expect(futureCycleResponse.status).toBe(201);
+    expect(futureCycle.status).toBe('scheduled');
+    const futureScan={assetId:otherCentreAsset.id,locationId:centerBId,clientEventId:'70000000-0000-4000-8000-000000000014',scannedAt:new Date().toISOString()};
+    expect((await call(`/verification/cycles/${futureCycle.id}/scans`,centreBToken,futureScan)).status).toBe(403);
+    expect((await call(`/verification/cycles/${futureCycle.id}/rfid-scans`,centreBToken,{locationId:centerBId,readings:[{epc:otherCentreAsset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000000015',scannedAt:new Date().toISOString()}]})).status).toBe(403);
 
     const reportResponse=await call('/reports',centreToken,{assetId:asset.id,kind:'needs_repair',urgency:'high',description:'Network switch port is intermittently dropping traffic.'});
     expect(reportResponse.status).toBe(201);

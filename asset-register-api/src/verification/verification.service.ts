@@ -1,8 +1,8 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
-import { DatabaseService } from '../database.service';
-import type { CreateCycleDto, CreatePolicyDto, RecordRfidScansDto, RecordScanDto } from './verification.dto';
+import { DatabaseService, type SqlQuery } from '../database.service';
+import type { CloseCycleDto, CreateCycleDto, CreatePolicyDto, RecordRfidScansDto, RecordScanDto, UpdatePolicyDto } from './verification.dto';
 
 @Injectable()
 export class VerificationService {
@@ -31,7 +31,8 @@ export class VerificationService {
          SELECT parent.id,parent.parent_id FROM locations parent JOIN assigned_path child ON child.parent_id=parent.id WHERE parent.organization_id=$1::uuid
        )
        SELECT p.id,p.scope_location_id AS "scopeLocationId",l.name AS "scopeLocationName",
-        p.cadence_months AS "cadenceMonths",p.grace_days AS "graceDays",p.enabled,p.created_at AS "createdAt"
+        p.cadence_months AS "cadenceMonths",p.grace_days AS "graceDays",
+              p.escalation_interval_days AS "escalationIntervalDays",p.enabled,p.created_at AS "createdAt"
        FROM verification_policies p JOIN locations l ON l.organization_id=p.organization_id AND l.id=p.scope_location_id
        WHERE p.organization_id=$1::uuid AND (
          p.scope_location_id IN (SELECT id FROM assigned_path)
@@ -45,17 +46,62 @@ export class VerificationService {
     await this.authorization.assertLocationAccess(actor,dto.scopeLocationId,['head_office']);
     return this.database.transaction(async (query) => {
       const rows = await query<{ id: string }>(
-        `INSERT INTO verification_policies (organization_id,scope_location_id,cadence_months,grace_days,enabled)
-         VALUES ($1::uuid,$2::uuid,$3,$4,$5) RETURNING id`,
-        [actor.organizationId,dto.scopeLocationId,dto.cadenceMonths,dto.graceDays,dto.enabled ?? true],
+        `INSERT INTO verification_policies (organization_id,scope_location_id,cadence_months,grace_days,escalation_interval_days,enabled)
+         VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6) RETURNING id`,
+        [actor.organizationId,dto.scopeLocationId,dto.cadenceMonths,dto.graceDays,dto.escalationIntervalDays ?? 7,dto.enabled ?? true],
       );
       await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
         VALUES ($1::uuid,$2::uuid,'verification.policy_created','verification_policy',$3::uuid,$4::jsonb)`,
         [actor.organizationId,actor.userId,rows[0].id,JSON.stringify(dto)]);
       return (await query(`SELECT p.id,p.scope_location_id AS "scopeLocationId",l.name AS "scopeLocationName",
-        p.cadence_months AS "cadenceMonths",p.grace_days AS "graceDays",p.enabled,p.created_at AS "createdAt"
+        p.cadence_months AS "cadenceMonths",p.grace_days AS "graceDays",
+        p.escalation_interval_days AS "escalationIntervalDays",p.enabled,p.created_at AS "createdAt"
         FROM verification_policies p JOIN locations l ON l.id=p.scope_location_id AND l.organization_id=p.organization_id
         WHERE p.organization_id=$1::uuid AND p.id=$2::uuid`,[actor.organizationId,rows[0].id]))[0];
+    });
+  }
+
+  async updatePolicy(actor: ActorContext,policyId: string,dto: UpdatePolicyDto) {
+    if (Object.values(dto).every((value) => value === undefined)) throw new BadRequestException('Change at least one schedule setting');
+    const existing = await this.database.query<{
+      id:string;scopeLocationId:string;cadenceMonths:number;graceDays:number;escalationIntervalDays:number;enabled:boolean;
+    }>(
+      `SELECT id,scope_location_id AS "scopeLocationId",cadence_months AS "cadenceMonths",grace_days AS "graceDays",
+              escalation_interval_days AS "escalationIntervalDays",enabled
+         FROM verification_policies WHERE organization_id=$1::uuid AND id=$2::uuid`,
+      [actor.organizationId,policyId],
+    );
+    const before=existing[0];
+    if (!before) throw new NotFoundException('Verification policy was not found');
+    await this.authorization.assertLocationAccess(actor,before.scopeLocationId,['head_office']);
+    return this.database.transaction(async (query) => {
+      const locked = await query<typeof before>(
+        `SELECT id,scope_location_id AS "scopeLocationId",cadence_months AS "cadenceMonths",grace_days AS "graceDays",
+                escalation_interval_days AS "escalationIntervalDays",enabled
+           FROM verification_policies WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,
+        [actor.organizationId,policyId],
+      );
+      if (!locked[0]) throw new NotFoundException('Verification policy was not found');
+      const current=locked[0];
+      const updated=(await query<typeof current>(
+        `UPDATE verification_policies SET cadence_months=COALESCE($3,cadence_months),
+                grace_days=COALESCE($4,grace_days),escalation_interval_days=COALESCE($5,escalation_interval_days),
+                enabled=COALESCE($6,enabled)
+          WHERE organization_id=$1::uuid AND id=$2::uuid
+          RETURNING id,scope_location_id AS "scopeLocationId",cadence_months AS "cadenceMonths",grace_days AS "graceDays",
+                    escalation_interval_days AS "escalationIntervalDays",enabled`,
+        [actor.organizationId,policyId,dto.cadenceMonths ?? null,dto.graceDays ?? null,dto.escalationIntervalDays ?? null,dto.enabled ?? null],
+      ))[0];
+      await query(
+        `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+         VALUES ($1::uuid,$2::uuid,'verification.policy_updated','verification_policy',$3::uuid,$4::jsonb)`,
+        [actor.organizationId,actor.userId,policyId,JSON.stringify({before:current,after:updated})],
+      );
+      const names=await query<{scopeLocationName:string}>(
+        `SELECT name AS "scopeLocationName" FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid`,
+        [actor.organizationId,updated.scopeLocationId],
+      );
+      return {...updated,scopeLocationName:names[0]?.scopeLocationName};
     });
   }
 
@@ -81,6 +127,7 @@ export class VerificationService {
        )
        SELECT c.id,c.policy_id AS "policyId",c.scope_location_id AS "scopeLocationId",l.name AS "scopeLocationName",
         c.starts_at AS "startsAt",c.grace_ends_at AS "graceEndsAt",c.status,c.created_at AS "createdAt",
+        c.closed_at AS "closedAt",c.close_reason AS "closeReason",
         (SELECT count(*) FROM assets a WHERE a.organization_id=c.organization_id AND a.location_id IN (
           WITH RECURSIVE descendants(id) AS (SELECT c.scope_location_id UNION SELECT child.id FROM locations child JOIN descendants d ON child.parent_id=d.id WHERE child.organization_id=c.organization_id)
           SELECT id FROM descendants INTERSECT SELECT id FROM visible_locations)) AS "assetCount",
@@ -98,39 +145,103 @@ export class VerificationService {
   }
 
   async createCycle(actor: ActorContext,dto: CreateCycleDto) {
-    const policies = await this.database.query<{ id:string; scopeLocationId:string; graceDays:number }>(
-      `SELECT id,scope_location_id AS "scopeLocationId",grace_days AS "graceDays" FROM verification_policies
+    const policies = await this.database.query<{ id:string; scopeLocationId:string }>(
+      `SELECT id,scope_location_id AS "scopeLocationId" FROM verification_policies
        WHERE organization_id=$1::uuid AND id=$2::uuid AND enabled=true`,[actor.organizationId,dto.policyId],
     );
     const policy=policies[0];
     if (!policy) throw new NotFoundException('Enabled verification policy was not found');
     await this.assertCycleScopeAccess(actor,policy.scopeLocationId,['head_office','state_head','centre_head']);
-    const startsAt=dto.startsAt || new Date().toISOString();
     return this.database.transaction(async (query) => {
-      const rows=await query<{id:string}>(
+      const lockedPolicy=await query<{graceDays:number}>(
+        `SELECT grace_days AS "graceDays" FROM verification_policies
+          WHERE organization_id=$1::uuid AND id=$2::uuid AND enabled=true FOR UPDATE`,
+        [actor.organizationId,policy.id],
+      );
+      if(!lockedPolicy[0])throw new NotFoundException('Enabled verification policy was not found');
+      const active=await query<{id:string}>(
+        `SELECT id FROM verification_cycles WHERE organization_id=$1::uuid AND policy_id=$2::uuid AND status<>'closed'
+          ORDER BY starts_at DESC,created_at DESC LIMIT 1`,[actor.organizationId,policy.id],
+      );
+      if(active[0])return {id:active[0].id,reused:true};
+      const startsAt=dto.startsAt ?? null;
+      const rows=await query<{id:string;status:string;startsAt:Date|string}>(
         `INSERT INTO verification_cycles (organization_id,scope_location_id,policy_id,starts_at,grace_ends_at,status,created_by)
-         VALUES ($1::uuid,$2::uuid,$3::uuid,$4::timestamptz,$4::timestamptz+make_interval(days=>$5),'open',$6::uuid) RETURNING id`,
-        [actor.organizationId,policy.scopeLocationId,policy.id,startsAt,policy.graceDays,actor.userId],
+         VALUES ($1::uuid,$2::uuid,$3::uuid,COALESCE($4::timestamptz,now()),COALESCE($4::timestamptz,now())+make_interval(days=>$5),
+           CASE WHEN COALESCE($4::timestamptz,now())+make_interval(days=>$5)<=now() THEN 'grace'::cycle_status
+                WHEN COALESCE($4::timestamptz,now())>now() THEN 'scheduled'::cycle_status ELSE 'open'::cycle_status END,$6::uuid)
+         RETURNING id,status,starts_at AS "startsAt"`,
+        [actor.organizationId,policy.scopeLocationId,policy.id,startsAt,lockedPolicy[0].graceDays,actor.userId],
       );
       await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
         VALUES ($1::uuid,$2::uuid,'verification.cycle_opened','verification_cycle',$3::uuid,$4::jsonb)`,
-        [actor.organizationId,actor.userId,rows[0].id,JSON.stringify({policyId:policy.id,scopeLocationId:policy.scopeLocationId,startsAt,graceDays:policy.graceDays})]);
-      return rows[0];
+        [actor.organizationId,actor.userId,rows[0].id,JSON.stringify({policyId:policy.id,scopeLocationId:policy.scopeLocationId,startsAt:rows[0].startsAt,graceDays:lockedPolicy[0].graceDays,status:rows[0].status})]);
+      return {...rows[0],reused:false};
+    });
+  }
+
+  async closeCycle(actor:ActorContext,cycleId:string,dto:CloseCycleDto) {
+    const cycle=await this.cycle(actor,cycleId);
+    await this.assertCycleScopeAccess(actor,cycle.scopeLocationId,['head_office']);
+    const reason=dto.reason.trim();
+    if(reason.length<5)throw new BadRequestException('Enter at least five characters for the closure reason');
+    return this.database.transaction(async(query)=>{
+      const lockedCycle=await query<{status:string}>(
+        `SELECT status FROM verification_cycles WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,
+        [actor.organizationId,cycleId],
+      );
+      if(!lockedCycle[0])throw new NotFoundException('Verification cycle was not found');
+      if(lockedCycle[0].status==='closed')throw new ConflictException('Verification cycle is already closed');
+      const unresolved=await query<{count:number}>(
+        `WITH RECURSIVE scope_tree(id) AS (
+           SELECT id FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid
+           UNION SELECT child.id FROM locations child JOIN scope_tree parent ON child.parent_id=parent.id WHERE child.organization_id=$1::uuid
+         ) SELECT count(*)::integer AS count FROM assets asset
+           WHERE asset.organization_id=$1::uuid AND asset.location_id IN (SELECT id FROM scope_tree)
+             AND asset.status NOT IN ('missing','retired','disposed')
+             AND NOT EXISTS (SELECT 1 FROM scan_events scan WHERE scan.organization_id=$1::uuid AND scan.cycle_id=$3::uuid AND scan.asset_id=asset.id)`,
+        [actor.organizationId,cycle.scopeLocationId,cycleId],
+      );
+      const closed=await query<{id:string;status:string;closedAt:Date|string;closeReason:string}>(
+        `UPDATE verification_cycles SET status='closed',closed_at=now(),closed_by=$3::uuid,close_reason=$4
+          WHERE organization_id=$1::uuid AND id=$2::uuid AND status<>'closed'
+          RETURNING id,status,closed_at AS "closedAt",close_reason AS "closeReason"`,
+        [actor.organizationId,cycleId,actor.userId,reason],
+      );
+      if(!closed[0])throw new ConflictException('Verification cycle is already closed');
+      await query(
+        `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+         VALUES ($1::uuid,$2::uuid,'verification.cycle_closed','verification_cycle',$3::uuid,$4::jsonb)`,
+        [actor.organizationId,actor.userId,cycleId,JSON.stringify({reason,unresolvedAssetCount:unresolved[0]?.count??0})],
+      );
+      return {...closed[0],unresolvedAssetCount:unresolved[0]?.count??0};
     });
   }
 
   private async cycle(actor: ActorContext,cycleId:string) {
-    const rows=await this.database.query<{id:string;scopeLocationId:string;startsAt:string;graceEndsAt:string;status:string}>(
-      `SELECT id,scope_location_id AS "scopeLocationId",starts_at AS "startsAt",grace_ends_at AS "graceEndsAt",status
+    const rows=await this.database.query<{id:string;scopeLocationId:string;startsAt:string;graceEndsAt:string;status:string;started:boolean}>(
+      `SELECT id,scope_location_id AS "scopeLocationId",starts_at AS "startsAt",grace_ends_at AS "graceEndsAt",status,starts_at<=now() AS started
        FROM verification_cycles WHERE organization_id=$1::uuid AND id=$2::uuid`,[actor.organizationId,cycleId]);
     if (!rows[0]) throw new NotFoundException('Verification cycle was not found');
     await this.assertCycleScopeAccess(actor,rows[0].scopeLocationId);
     return rows[0];
   }
 
+  private async lockWritableCycle(query:SqlQuery,actor:ActorContext,cycleId:string) {
+    const rows=await query<{status:string;started:boolean}>(
+      `SELECT status,starts_at<=now() AS started FROM verification_cycles
+        WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,
+      [actor.organizationId,cycleId],
+    );
+    if(!rows[0]) throw new NotFoundException('Verification cycle was not found');
+    if(rows[0].status==='closed') throw new ForbiddenException('This verification cycle is closed');
+    if(!rows[0].started) throw new ForbiddenException('This verification cycle has not started yet');
+  }
+
   async recordScan(actor:ActorContext,cycleId:string,dto:RecordScanDto) {
     const cycle=await this.cycle(actor,cycleId);
     if (cycle.status==='closed') throw new ForbiddenException('This verification cycle is closed');
+    if (!cycle.started) throw new ForbiddenException('This verification cycle has not started yet');
     const locations=await this.database.query<{allowed:boolean}>(
       `WITH RECURSIVE scope_tree(id) AS (
         SELECT id FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid
@@ -150,6 +261,7 @@ export class VerificationService {
        SELECT EXISTS(SELECT 1 FROM scope_tree WHERE id=$3::uuid) AS allowed`,[actor.organizationId,cycle.scopeLocationId,assetRows[0].locationId]);
     if (!inScope[0]?.allowed) throw new ForbiddenException('Asset is outside this verification cycle');
     return this.database.transaction(async query=>{
+      await this.lockWritableCycle(query,actor,cycleId);
       const saved=await query<{id:string;duplicate:boolean}>(
         `INSERT INTO scan_events (organization_id,cycle_id,asset_id,location_id,scanned_by,client_event_id,scanned_at,identification_method)
          VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::uuid,$7::timestamptz,$8)
@@ -171,6 +283,7 @@ export class VerificationService {
   async recordRfidScans(actor:ActorContext,cycleId:string,dto:RecordRfidScansDto) {
     const cycle=await this.cycle(actor,cycleId);
     if(cycle.status==='closed') throw new ForbiddenException('This verification cycle is closed');
+    if(!cycle.started) throw new ForbiddenException('This verification cycle has not started yet');
     const location=await this.database.query<{allowed:boolean}>(
       `WITH RECURSIVE scope_tree(id) AS (
          SELECT id FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid
@@ -224,6 +337,7 @@ export class VerificationService {
     }
 
     const saved=await this.database.transaction(async query=>{
+      await this.lockWritableCycle(query,actor,cycleId);
       const inserted=candidates.length?await query<{id:string;assetId:string;clientEventId:string}>(
         `INSERT INTO scan_events (organization_id,cycle_id,asset_id,location_id,scanned_by,client_event_id,scanned_at,identification_method)
          SELECT $1::uuid,$2::uuid,input.asset_id,$3::uuid,$4::uuid,input.event_id,input.scanned_at,'rfid'

@@ -34,6 +34,10 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(verificationWatchIndexesMigration);
     const recurringVerificationCyclesMigration = await readFile(new URL('../../database/migrations/012_recurring_verification_cycles.sql', import.meta.url), 'utf8');
     await db.exec(recurringVerificationCyclesMigration);
+    const verificationEscalationPolicyMigration = await readFile(new URL('../../database/migrations/013_verification_escalation_policy.sql', import.meta.url), 'utf8');
+    await db.exec(verificationEscalationPolicyMigration);
+    const verificationCycleClosureMigration = await readFile(new URL('../../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8');
+    await db.exec(verificationCycleClosureMigration);
   });
 
   afterAll(async () => { await db.close(); });

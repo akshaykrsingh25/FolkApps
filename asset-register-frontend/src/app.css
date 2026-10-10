@@ -213,3 +213,20 @@ h1,h2,p { margin-top: 0; }
 .qr-epc strong{overflow-wrap:anywhere;color:#30485a;font:700 9px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.04em}
 @media(max-width:620px){.rfid-bulk-entry{padding:13px}.rfid-bulk-heading h3{font-size:16px}.rfid-bulk-controls{grid-template-columns:1fr}.rfid-file-picker{min-height:40px}}
 @media print{.qr-id-status{font-size:6pt}.qr-epc{margin-top:2mm;padding:2mm}.qr-epc small{font-size:5pt}.qr-epc strong{font-size:7pt}}
+
+.cycle-policy{display:grid;gap:11px;padding:13px 0}
+.cycle-policy>.cycle-policy-summary{display:flex;align-items:center;gap:12px}
+.cycle-policy-summary>div{min-width:0;flex:1}
+.cycle-policy-settings{display:grid;grid-template-columns:repeat(4,minmax(90px,1fr)) auto;align-items:end;gap:9px;padding-left:46px}
+.cycle-policy-settings label{min-width:0;display:grid;gap:5px;color:#647586;font-size:9px;font-weight:700}
+.cycle-policy-settings input,.cycle-policy-settings select{width:100%;min-width:0;min-height:36px;padding:7px 9px;border:1px solid #dce4e8;border-radius:8px;background:#fff;color:#334b5e;font:inherit;font-size:11px}
+.cycle-policy-settings>.quiet-button{min-height:36px;margin:0;padding:0 11px;white-space:nowrap}
+@media(max-width:900px){.cycle-policy-settings{grid-template-columns:repeat(2,minmax(0,1fr))}.cycle-policy-settings>.quiet-button{grid-column:1/-1}}
+@media(max-width:620px){.cycle-policy-settings{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:0}.cycle-policy-summary{flex-wrap:wrap}.cycle-policy-summary>div{flex:1 1 calc(100% - 48px)}.cycle-policy-summary>.quiet-button{margin-left:46px}}
+.cycle-progress-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
+.cycle-close-form{display:flex;align-items:end;gap:10px;margin:13px 0;padding:13px;border:1px solid #dfe7eb;border-radius:11px;background:#fbfcfd}
+.cycle-close-form label{min-width:0;flex:1;display:grid;gap:5px;color:#586d7b;font-size:10px;font-weight:700}
+.cycle-close-form input{width:100%;min-height:38px;padding:8px 10px;border:1px solid #dce4e8;border-radius:8px;background:#fff;color:#334b5e;font:inherit;font-size:11px}
+.cycle-close-form .quiet-button{width:auto;min-height:38px;margin:0;padding:0 12px;white-space:nowrap}
+.cycle-close-record{margin:10px 0;padding:10px 12px;border-radius:8px;background:#f3f6f7;color:#647586;font-size:10px;line-height:1.5}
+@media(max-width:620px){.cycle-progress-actions{width:100%;align-items:stretch;flex-direction:column}.cycle-progress-actions>.text-button{text-align:center}.cycle-close-form{align-items:stretch;flex-direction:column}.cycle-close-form .quiet-button{width:100%}}

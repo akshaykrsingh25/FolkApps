@@ -65,12 +65,13 @@ export interface Evidence {
 }
 
 export interface VerificationPolicy {
-  id: string; scopeLocationId: string; scopeLocationName: string; cadenceMonths: number; graceDays: number; enabled: boolean;
+  id: string; scopeLocationId: string; scopeLocationName: string; cadenceMonths: number; graceDays: number;
+  escalationIntervalDays: number; enabled: boolean;
 }
 
 export interface VerificationCycle {
-  id: string; policyId: string; scopeLocationId: string; scopeLocationName: string; startsAt: string; graceEndsAt: string;
-  status: string; assetCount: number; scannedCount: number;
+  id: string; policyId: string | null; scopeLocationId: string; scopeLocationName: string; startsAt: string; graceEndsAt: string;
+  status: string; closedAt: string | null; closeReason: string | null; assetCount: number; scannedCount: number;
 }
 
 export interface VerificationAsset {

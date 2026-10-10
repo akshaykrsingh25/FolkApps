@@ -62,6 +62,14 @@ export class NotificationOutboxWorkerService {
       const lock = await query<{ acquired: boolean }>(`SELECT pg_try_advisory_xact_lock(183456720,2) AS acquired`);
       if (!lock[0]?.acquired) return;
       await query(
+        `UPDATE verification_cycles SET status=CASE WHEN grace_ends_at<=now() THEN 'grace'::cycle_status ELSE 'open'::cycle_status END
+          WHERE status='scheduled' AND starts_at<=now()`
+      );
+      await query(
+        `UPDATE verification_cycles SET status='grace'
+          WHERE status='open' AND grace_ends_at<=now()`
+      );
+      await query(
         `WITH due_policies AS (
            SELECT policy.organization_id,policy.id AS policy_id,policy.scope_location_id,
                   policy.cadence_months,policy.grace_days,
@@ -69,12 +77,13 @@ export class NotificationOutboxWorkerService {
                        ELSE prior.starts_at+make_interval(months=>policy.cadence_months) END AS starts_at
              FROM verification_policies policy
              LEFT JOIN LATERAL (
-               SELECT cycle.starts_at FROM verification_cycles cycle
+               SELECT cycle.starts_at,cycle.status FROM verification_cycles cycle
                 WHERE cycle.organization_id=policy.organization_id AND cycle.policy_id=policy.id
                 ORDER BY cycle.starts_at DESC,cycle.created_at DESC LIMIT 1
              ) prior ON true
             WHERE policy.enabled=true
-              AND (prior.starts_at IS NULL OR prior.starts_at+make_interval(months=>policy.cadence_months)<=now())
+              AND (prior.starts_at IS NULL OR (prior.status='closed' AND prior.starts_at+make_interval(months=>policy.cadence_months)<=now()))
+            FOR UPDATE OF policy SKIP LOCKED
          ), opened AS (
            INSERT INTO verification_cycles (
              organization_id,scope_location_id,policy_id,starts_at,grace_ends_at,status,created_by
@@ -101,56 +110,82 @@ export class NotificationOutboxWorkerService {
       const lock = await query<{ acquired: boolean }>(`SELECT pg_try_advisory_xact_lock(183456720,1) AS acquired`);
       if (!lock[0]?.acquired) return;
       await query(
-        `WITH RECURSIVE cycle_places(organization_id,cycle_id,location_id,grace_ends_at) AS (
-           SELECT c.organization_id,c.id,c.scope_location_id,c.grace_ends_at
+        `WITH RECURSIVE cycle_places(organization_id,cycle_id,location_id,grace_ends_at,escalation_interval_days) AS (
+           SELECT c.organization_id,c.id,c.scope_location_id,c.grace_ends_at,COALESCE(policy.escalation_interval_days,7)::integer
              FROM verification_cycles c
+             LEFT JOIN verification_policies policy ON policy.organization_id=c.organization_id AND policy.id=c.policy_id
             WHERE c.grace_ends_at<=now() AND c.status<>'closed'
            UNION
-           SELECT places.organization_id,places.cycle_id,child.id,places.grace_ends_at
+           SELECT places.organization_id,places.cycle_id,child.id,places.grace_ends_at,places.escalation_interval_days
              FROM cycle_places places
              JOIN locations child ON child.organization_id=places.organization_id AND child.parent_id=places.location_id
          ), overdue_assets AS (
            SELECT DISTINCT c.organization_id,c.cycle_id,a.id AS asset_id,a.asset_tag,a.name AS asset_name,
-                  a.location_id,l.name AS location_name,c.grace_ends_at
+                  a.location_id,l.name AS location_name,c.grace_ends_at,c.escalation_interval_days
              FROM cycle_places c
              JOIN assets a ON a.organization_id=c.organization_id AND a.location_id=c.location_id
              JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
-            WHERE NOT EXISTS (
+            WHERE a.status NOT IN ('missing','retired','disposed') AND NOT EXISTS (
               SELECT 1 FROM scan_events s
                WHERE s.organization_id=c.organization_id AND s.cycle_id=c.cycle_id AND s.asset_id=a.id
             )
-         ), asset_paths(organization_id,cycle_id,asset_id,location_id,parent_id) AS (
-           SELECT overdue.organization_id,overdue.cycle_id,overdue.asset_id,l.id,l.parent_id
+         ), asset_paths(organization_id,cycle_id,asset_id,location_id,parent_id,location_kind) AS (
+           SELECT overdue.organization_id,overdue.cycle_id,overdue.asset_id,l.id,l.parent_id,l.kind
              FROM overdue_assets overdue JOIN locations l
                ON l.organization_id=overdue.organization_id AND l.id=overdue.location_id
            UNION
-           SELECT path.organization_id,path.cycle_id,path.asset_id,parent.id,parent.parent_id
+           SELECT path.organization_id,path.cycle_id,path.asset_id,parent.id,parent.parent_id,parent.kind
              FROM asset_paths path JOIN locations parent
                ON parent.organization_id=path.organization_id AND parent.id=path.parent_id
+         ), due_stages AS (
+           SELECT overdue.*,stage.level AS escalation_level,
+                  overdue.grace_ends_at+make_interval(days=>overdue.escalation_interval_days*stage.level) AS escalated_at
+             FROM overdue_assets overdue CROSS JOIN generate_series(0,3) AS stage(level)
+            WHERE overdue.grace_ends_at+make_interval(days=>overdue.escalation_interval_days*stage.level)<=now()
          ), recipients AS (
-           SELECT DISTINCT overdue.organization_id,assignment.user_id,overdue.cycle_id,overdue.asset_id,
-                  overdue.asset_tag,overdue.asset_name,overdue.location_id,overdue.location_name,overdue.grace_ends_at
-             FROM overdue_assets overdue
-             JOIN asset_paths path ON path.organization_id=overdue.organization_id
-               AND path.cycle_id=overdue.cycle_id AND path.asset_id=overdue.asset_id
-             JOIN role_assignments assignment ON assignment.organization_id=overdue.organization_id
+           SELECT DISTINCT due.organization_id,assignment.user_id,due.cycle_id,due.asset_id,
+                  due.asset_tag,due.asset_name,due.location_id,due.location_name,due.escalation_level,due.escalated_at
+             FROM due_stages due
+             JOIN asset_paths path ON path.organization_id=due.organization_id
+               AND path.cycle_id=due.cycle_id AND path.asset_id=due.asset_id
+             JOIN role_assignments assignment ON assignment.organization_id=due.organization_id
              JOIN users member ON member.organization_id=assignment.organization_id AND member.id=assignment.user_id AND member.active=true
              JOIN role_permissions permission ON permission.role_key=assignment.role_key AND permission.permission_key='asset:read'
-            WHERE (assignment.role_key='head_office' AND assignment.scope_location_id IS NULL)
-               OR assignment.scope_location_id=path.location_id
+            WHERE (due.escalation_level=0 AND assignment.role_key='asset_custodian' AND assignment.scope_location_id=path.location_id)
+               OR (due.escalation_level=1 AND assignment.role_key='centre_head' AND path.location_kind='centre' AND assignment.scope_location_id=path.location_id)
+               OR (due.escalation_level=2 AND assignment.role_key='state_head' AND path.location_kind='state' AND assignment.scope_location_id=path.location_id)
+               OR (due.escalation_level=3 AND assignment.role_key='head_office' AND assignment.scope_location_id IS NULL)
+         ), inserted_notices AS (
+           INSERT INTO notification_inbox (
+             organization_id,recipient_user_id,notification_key,kind,severity,title,description,
+             asset_id,asset_tag,asset_name,location_name,related_id,occurred_at
+           )
+           SELECT recipient.organization_id,recipient.user_id,
+                  'unseen:'||recipient.cycle_id::text||':'||recipient.asset_id::text||':'||recipient.escalation_level::text,
+                  'verification_overdue',
+                  CASE WHEN recipient.escalation_level>=2 THEN 'high' ELSE 'medium' END,
+                  CASE recipient.escalation_level
+                    WHEN 0 THEN 'Custodian check: asset not seen'
+                    WHEN 1 THEN 'Centre review: asset still not seen'
+                    WHEN 2 THEN 'State review: asset remains unverified'
+                    ELSE 'Head Office escalation: asset remains unverified'
+                  END,
+                  'Confirm the last known location and scan the asset if found. A missed scan alone is not a confirmed loss.',
+                  recipient.asset_id,recipient.asset_tag,recipient.asset_name,recipient.location_name,
+                  recipient.cycle_id,recipient.escalated_at
+             FROM recipients recipient
+           ON CONFLICT (organization_id,recipient_user_id,notification_key) DO NOTHING
+           RETURNING organization_id,recipient_user_id,notification_key,asset_id,related_id,occurred_at
+         ), escalation_audit AS (
+           INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+           SELECT notice.organization_id,NULL,'verification.escalation_notified','verification_cycle',notice.related_id,
+                  jsonb_build_object('assetId',notice.asset_id,'level',split_part(notice.notification_key,':',4)::integer,
+                    'recipientCount',count(*)::integer,'scheduledAt',min(notice.occurred_at))
+             FROM inserted_notices notice
+            GROUP BY notice.organization_id,notice.related_id,notice.asset_id,split_part(notice.notification_key,':',4)
+           RETURNING id
          )
-         INSERT INTO notification_inbox (
-           organization_id,recipient_user_id,notification_key,kind,severity,title,description,
-           asset_id,asset_tag,asset_name,location_name,related_id,occurred_at
-         )
-         SELECT recipient.organization_id,recipient.user_id,
-                'unseen:'||recipient.cycle_id::text||':'||recipient.asset_id::text,
-                'verification_overdue','medium','Not seen after the scan window',
-                'Contact the centre and check the last recorded location. This is not a confirmed loss.',
-                recipient.asset_id,recipient.asset_tag,recipient.asset_name,recipient.location_name,
-                recipient.cycle_id,recipient.grace_ends_at
-           FROM recipients recipient
-         ON CONFLICT (organization_id,recipient_user_id,notification_key) DO NOTHING`,
+         SELECT count(*) FROM escalation_audit`,
       );
     });
   }

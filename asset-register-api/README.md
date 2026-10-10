@@ -21,7 +21,7 @@ Production access uses the configured OIDC provider. The app does not issue loca
 
 ## Local setup
 
-Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. For a database already through migration 006, run `npm run db:migrate:rfid-binding-history`; databases through migration 005 must apply migration 006 before 007. Install dependencies, then run `npm run start:dev`.
+Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. On an existing database, apply each missing migration in order; the notification, verification-index, recurring-cycle, escalation-policy, and cycle-closure scripts are listed below. Install dependencies, then run `npm run start:dev`.
 
 Run `npm test` for authentication, tenant-membership, location-scope, and PostgreSQL schema checks. The schema tests use an embedded PostgreSQL runtime and do not need a running database service.
 Run `npm run test:recovery` against two disposable PostgreSQL 16 databases to exercise all migrations, checksummed backup, restore, and tamper rejection. The CI workflow runs this drill with synthetic data.
@@ -79,11 +79,14 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns 50 items per cursor page with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Scheduled missed-cycle notices and report/transfer/missing events use the durable worker; other Watch signal types remain refresh-captured.
 - `PATCH /api/v1/notifications/:id/read` marks one of the caller's notifications read. Both reads and updates are tenant/user scoped and re-check the asset's current location access, so moving an asset or changing a user's role removes stale access to its prior alert history.
 - `npm run worker:notifications` consumes missing-asset, report, and transfer events from the durable outbox. Delivery into the in-app inbox is transactional and idempotent, recipients are resolved through their current active scoped permissions, and failures retry with backoff before dead-lettering after eight attempts.
-- The worker also sweeps expired verification cycles every five minutes and saves every still-unseen in-scope asset to the inbox, even when nobody opens Watch. Other live Watch signals can still be captured when the signed-in app loads or refreshes. The worker does not send push, email, or WhatsApp notifications while the app is closed; tiered timed escalation and external delivery need an approved policy/provider.
+- The worker checks enabled verification policies and overdue cycles every five minutes. Missed assets escalate in the app from assigned Custodian to Centre Head, State Head, and Head Office at the interval configured on each policy (default seven days per step). It stops when an eligible scan is recorded, the asset is marked missing/retired/disposed, or Head Office closes the cycle with a required reason; closure records the unresolved asset count. Other live Watch signals can still be captured when the signed-in app loads or refreshes. Push, email, and WhatsApp delivery still need an approved provider.
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
 - Run `npm run db:migrate:notification-outbox-worker` to add retry and dead-letter scheduling fields to an existing notification outbox.
 - Run `npm run db:migrate:verification-watch-indexes` to add the scan/cycle indexes used by the scheduled overdue-cycle sweep.
-- Run `npm run db:migrate:recurring-verification-cycles` to enforce one generated cycle per policy start time. The notification worker opens the first enabled policy cycle immediately, then repeats from the previous cycle start using its configured cadence and grace window; each generated cycle receives a system audit event.
+- Run `npm run db:migrate:recurring-verification-cycles` to prevent duplicate generated starts for a policy.
+- Run `npm run db:migrate:verification-escalation-policy` to add the configurable escalation interval (default seven days per role).
+- Run `npm run db:migrate:verification-cycle-closure` to record who closed a cycle, when, why, and the unresolved count in the audit event. Only Head Office can close a cycle.
+- Head Office can edit cadence, scan window, escalation interval, and whether a policy automatically opens future cycles. Policy changes retain before/after values in the audit log. New cycles wait until the prior policy cycle is closed; otherwise the worker does not create overlapping cycles.
 
 ## Production boundary
 
