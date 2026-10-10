@@ -71,4 +71,20 @@ describe('asset register API client', () => {
     }));
     expect(fetchMock).toHaveBeenNthCalledWith(2,'http://localhost:4000/api/v1/assets/rfid/E2801160600000000000034A',expect.anything());
   });
+
+  it('reads and updates personal notification preferences and requests scoped audit pages', async () => {
+    const fetchMock=vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({preferences:[{category:'missing',inAppEnabled:true}],highPriorityAlwaysOn:true}),{status:200}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({category:'missing',inAppEnabled:false,highPriorityAlwaysOn:true}),{status:200}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({items:[],nextCursor:null}),{status:200}));
+    vi.stubGlobal('fetch',fetchMock);
+
+    await expect(api.notificationPreferences('signed-token','org-123')).resolves.toMatchObject({highPriorityAlwaysOn:true});
+    await expect(api.updateNotificationPreference('signed-token','org-123','missing',false)).resolves.toMatchObject({inAppEnabled:false});
+    await expect(api.auditEvents('signed-token','org-123',{locationId:'loc 1',eventType:'asset.created',limit:50})).resolves.toMatchObject({items:[],nextCursor:null});
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1,'http://localhost:4000/api/v1/notifications/preferences',expect.objectContaining({headers:expect.objectContaining({'x-organization-id':'org-123'})}));
+    expect(fetchMock).toHaveBeenNthCalledWith(2,'http://localhost:4000/api/v1/notifications/preferences',expect.objectContaining({method:'PATCH',body:JSON.stringify({category:'missing',inAppEnabled:false})}));
+    expect(fetchMock).toHaveBeenNthCalledWith(3,'http://localhost:4000/api/v1/audit/events?locationId=loc+1&eventType=asset.created&limit=50',expect.anything());
+  });
 });

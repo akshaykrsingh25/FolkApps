@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, OperationalAlert, Organization, Role, RfidScanReconcileResult, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, AuditEventPage, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, NotificationPreferences, OperationalAlert, Organization, Role, RfidScanReconcileResult, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, NotificationCategory } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -98,6 +98,13 @@ export const api = {
   alerts: (token:string,organizationId:string)=>request<OperationalAlert[]>('/insights/alerts',token,organizationId),
   notifications: (token:string,organizationId:string,cursor?:string)=>request<NotificationInbox>(`/notifications${cursor?`?cursor=${encodeURIComponent(cursor)}`:''}`,token,organizationId),
   markNotificationRead: (token:string,organizationId:string,id:string)=>request<{id:string;readAt:string}>(`/notifications/${encodeURIComponent(id)}/read`,token,organizationId,{},'PATCH'),
+  notificationPreferences: (token:string,organizationId:string)=>request<NotificationPreferences>('/notifications/preferences',token,organizationId),
+  updateNotificationPreference: (token:string,organizationId:string,category:NotificationCategory,inAppEnabled:boolean)=>request<{category:NotificationCategory;inAppEnabled:boolean;highPriorityAlwaysOn:boolean}>('/notifications/preferences',token,organizationId,{category,inAppEnabled},'PATCH'),
+  auditEvents: (token:string,organizationId:string,options:{cursor?:string;limit?:number;locationId?:string;eventType?:string}={})=>{
+    const params=new URLSearchParams();
+    for(const [key,value] of Object.entries(options))if(value!==undefined&&value!=='')params.set(key,String(value));
+    return request<AuditEventPage>(`/audit/events${params.size?`?${params.toString()}`:''}`,token,organizationId);
+  },
   mapData: (token:string,organizationId:string)=>request<IndiaMapData>('/insights/map',token,organizationId),
   confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number;physicalAddress?:string|null})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
   assetByQr: (token: string, organizationId: string, qrPublicId: string) =>

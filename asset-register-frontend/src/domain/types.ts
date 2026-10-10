@@ -123,6 +123,11 @@ export interface EligibleCustodian { userId:string; displayName:string; }
 export interface OperationalAlert { id:string; kind:string; severity:'high'|'medium'|'low'; title:string; description:string; assetId:string; assetTag:string; assetName:string; locationName:string; occurredAt:string; relatedId:string|null; }
 export interface UserNotification extends Omit<OperationalAlert,'id'> { id:string; sourceAlertId:string; createdAt:string; readAt:string|null; }
 export interface NotificationInbox { items:UserNotification[]; unreadCount:number; nextCursor:string|null; }
+export type NotificationCategory='verification'|'transfers'|'repairs'|'data_quality'|'missing';
+export interface NotificationPreference { category:NotificationCategory; inAppEnabled:boolean; }
+export interface NotificationPreferences { preferences:NotificationPreference[]; highPriorityAlwaysOn:boolean; }
+export interface AuditEvent { id:string; eventType:string; entityType:string; entityId:string; occurredAt:string; actorName:string; locationName:string; details:Record<string,unknown>; }
+export interface AuditEventPage { items:AuditEvent[]; nextCursor:string|null; }
 export interface InsightOverview { assetCount:number; centreCount:number; missingCount:number; attentionCount:number; unusedCount:number; openReportCount:number; warrantyExpiringCount:number; activeCycleCount:number; openTransferCount:number; scanCompletionPercent:number; }
 export interface MapCentre { id:string; name:string; code:string|null; city:string|null; stateName:string|null; physicalAddress:string|null; physicalAddressStatus:string; latitude:number|null; longitude:number|null; coordinatesStatus:string; assetCount:number; missingCount:number; attentionCount:number; unusedCount:number; }
 export interface MapState { stateName:string; centreCount:number; assetCount:number; missingCount:number; attentionCount:number; unusedCount:number; }

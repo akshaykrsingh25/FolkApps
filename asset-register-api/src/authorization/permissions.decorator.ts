@@ -8,6 +8,7 @@ export const PERMISSION_KEYS = [
   'transfer:approve',
   'handover:execute',
   'audit:verify',
+  'audit:read',
   'user:manage',
 ] as const;
 

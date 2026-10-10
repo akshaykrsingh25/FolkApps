@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
-import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, RfidScanReconcileResult, SessionUser, UserNotification, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, AuditEvent, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, NotificationCategory, NotificationPreference, OperationalAlert, Organization, Role, RfidScanReconcileResult, SessionUser, UserNotification, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
 import { isWithinIndia, parseLatitudeLongitude } from './domain/coordinates';
 import { findTransferReceiptAsset, validateTransferReceiptScans } from './domain/transferReceipt';
 import { isSignedAssetQr, qrIdentityForOfflineLookup, verifySignedAssetQr } from './domain/signedQr';
@@ -14,9 +14,27 @@ import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } fro
 import { parseRfidBatchText } from './capture/rfidBatch';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
-type View = 'home' | 'alerts' | 'notifications' | 'map' | 'locations' | 'assets' | 'exports' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+type View = 'home' | 'alerts' | 'notifications' | 'audit' | 'map' | 'locations' | 'assets' | 'exports' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
 type RfidBatchSummary = Omit<RfidScanReconcileResult,'results'> & { inputDuplicateCount:number; results:RfidScanReconcileResult['results'] };
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
+const NOTIFICATION_CATEGORIES: { id: NotificationCategory; title: string; detail: string }[] = [
+  { id: 'missing', title: 'Missing assets', detail: 'Items not found during a verification window' },
+  { id: 'verification', title: 'Verification cycles', detail: 'Scan windows, progress, and overdue checks' },
+  { id: 'transfers', title: 'Transfers', detail: 'Dispatches, receipts, and movement delays' },
+  { id: 'repairs', title: 'Repairs & condition', detail: 'Damage reports and repair updates' },
+  { id: 'data_quality', title: 'Register quality', detail: 'Duplicate serials and record conflicts' },
+];
+const AUDIT_EVENT_TYPES = [
+  'asset.created', 'asset.updated', 'asset.rfid_binding_changed', 'verification.asset_scanned',
+  'condition.reported', 'condition.status_changed', 'transfer.requested', 'transfer.approve',
+  'transfer.dispatch', 'transfer.receive', 'transfer.reject', 'transfer.cancel',
+  'transfer_batch.requested', 'transfer_batch.approve', 'transfer_batch.dispatch', 'transfer_batch.receive',
+  'transfer_batch.reject', 'transfer_batch.cancel', 'transfer_batch.item_discrepancy',
+  'custody.issued', 'custody.returned', 'warranty.recorded', 'verification.cycle_opened',
+  'verification.cycle_closed', 'verification.cycle_auto_opened', 'verification.escalation_notified',
+  'verification.policy_created', 'verification.policy_updated',
+  'location.coordinates_confirmed',
+];
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
   state: [], centre: ['state'], warehouse: ['state'], building: ['centre', 'warehouse'], floor: ['centre', 'building'], area: ['floor'],
@@ -78,6 +96,10 @@ function activityTitle(eventType:string) {
     'transfer_batch.receive':'Manifest receipt recorded','transfer_batch.reject':'Manifest declined','transfer_batch.cancel':'Manifest cancelled',
     'transfer_batch.item_discrepancy':'Transfer receipt discrepancy',
     'custody.returned':'Custody returned','warranty.recorded':'Coverage recorded','asset.rfid_binding_changed':'RFID tag bound or replaced',
+    'verification.cycle_opened':'Verification cycle opened','verification.cycle_closed':'Verification cycle closed',
+    'verification.cycle_auto_opened':'Recurring verification cycle opened','verification.escalation_notified':'Verification cycle escalated',
+    'verification.policy_created':'Verification schedule created','verification.policy_updated':'Verification schedule updated',
+    'location.coordinates_confirmed':'Centre location details confirmed',
   };
   return titles[eventType]||eventType.replaceAll('.',' · ').replaceAll('_',' ');
 }
@@ -93,9 +115,14 @@ function activitySummary(event:AssetActivityEvent) {
   if(event.eventType==='condition.status_changed')return `${String(details.from||'previous status').replaceAll('_',' ')} → ${String(details.to||'updated').replaceAll('_',' ')}`;
   if(event.eventType==='asset.rfid_binding_changed')return `${details.previousEpc?'Previous tag retired':'First tag bound'}${details.nextEpc?` · current EPC ${String(details.nextEpc)}`:' · no current EPC'}${details.reason?` · Reason: ${String(details.reason)}`:''}`;
   if(event.eventType==='transfer_batch.item_discrepancy')return `Receipt marked ${String(details.receiptStatus||'needs review').replaceAll('_',' ')}${details.note?` · ${String(details.note)}`:''}`;
+  if(event.eventType==='transfer.requested')return 'Asset movement submitted for review.';
   if(event.eventType.startsWith('transfer.'))return `Movement: ${String(details.from||'requested').replaceAll('_',' ')} → ${String(details.to||event.eventType.split('.')[1]).replaceAll('_',' ')}`;
   if(event.eventType.startsWith('transfer_batch.'))return `Manifest ${String(details.batchReference||details.batchId||'movement')} · ${String(details.receiptStatus||details.to||'updated').replaceAll('_',' ')}`;
   if(event.eventType==='verification.asset_scanned')return 'The asset was scanned during a verification cycle.';
+  if(event.eventType==='verification.cycle_closed')return `${Number(details.unresolvedAssetCount||0)} assets still need review${details.reason?` · ${String(details.reason)}`:''}`;
+  if(event.eventType==='verification.cycle_opened'||event.eventType==='verification.cycle_auto_opened')return `Verification cycle opened${details.status?` · ${String(details.status)}`:''}${details.startsAt?` · Starts ${new Date(String(details.startsAt)).toLocaleDateString('en-IN')}`:''}`;
+  if(event.eventType==='verification.escalation_notified')return `Escalated to ${Number(details.recipientCount||0)} reviewer${Number(details.recipientCount||0)===1?'':'s'} · level ${String(details.level||'—')}`;
+  if(event.eventType==='verification.policy_updated')return 'Verification cadence, scan window, or escalation settings changed.';
   if(event.eventType==='warranty.recorded')return `${String(details.coverageKind||'Coverage').toUpperCase()}${details.endsOn?` · Ends ${String(details.endsOn)}`:''}`;
   if(event.eventType==='asset.created')return 'The asset record and QR identity were created.';
   return 'A change was recorded in the asset history.';
@@ -180,6 +207,13 @@ export default function App() {
   const [notificationNextCursor,setNotificationNextCursor]=useState<string|null>(null);
   const [loadingOlderNotifications,setLoadingOlderNotifications]=useState(false);
   const [notificationsLoading,setNotificationsLoading]=useState(false);
+  const [notificationPreferences,setNotificationPreferences]=useState<NotificationPreference[]>([]);
+  const [savingNotificationPreference,setSavingNotificationPreference]=useState<NotificationCategory|null>(null);
+  const [auditEvents,setAuditEvents]=useState<AuditEvent[]>([]);
+  const [auditNextCursor,setAuditNextCursor]=useState<string|null>(null);
+  const [auditLoading,setAuditLoading]=useState(false);
+  const [auditLocationFilter,setAuditLocationFilter]=useState('');
+  const [auditEventTypeFilter,setAuditEventTypeFilter]=useState('');
   const [overviewData,setOverviewData]=useState<InsightOverview|null>(null);
   const [mapData,setMapData]=useState<IndiaMapData|null>(null);
   const [indiaGeoJson,setIndiaGeoJson]=useState<IndiaGeoJson|null>(null);
@@ -197,7 +231,7 @@ export default function App() {
   const [userRoleChoice,setUserRoleChoice]=useState<Role>('viewer');
   const [savingManagedUser,setSavingManagedUser]=useState(false);
 
-  useEffect(()=>{setOperationalAlerts([]);setNotifications([]);setUnreadNotificationCount(0);setNotificationNextCursor(null);setNotificationsLoading(false);},[organization?.id,user?.subject]);
+  useEffect(()=>{setOperationalAlerts([]);setNotifications([]);setUnreadNotificationCount(0);setNotificationNextCursor(null);setNotificationsLoading(false);setNotificationPreferences([]);setAuditEvents([]);setAuditNextCursor(null);setAuditLocationFilter('');setAuditEventTypeFilter('');},[organization?.id,user?.subject]);
 
   useEffect(() => {
     let active = true;
@@ -341,13 +375,23 @@ export default function App() {
     if(!user||!organization||(view!=='alerts'&&view!=='home'&&view!=='notifications'))return;
     if(DEMO_MODE){
       const rows=assets.filter((asset)=>asset.status==='missing').map((asset)=>({id:`missing:${asset.id}`,kind:'missing',severity:'high' as const,title:'Asset marked missing',description:'Review the last known location and record the investigation outcome.',assetId:asset.id,assetTag:asset.assetTag,assetName:asset.name,locationName:asset.locationName,occurredAt:asset.createdAt,relatedId:null}));
-      setOperationalAlerts(rows);setNotifications(rows.map((row)=>({...row,sourceAlertId:row.id,createdAt:row.occurredAt,readAt:null})));setUnreadNotificationCount(rows.length);setNotificationNextCursor(null);setNotificationsLoading(false);
+      setOperationalAlerts(rows);setNotifications(rows.map((row)=>({...row,sourceAlertId:row.id,createdAt:row.occurredAt,readAt:null})));setUnreadNotificationCount(rows.length);setNotificationNextCursor(null);setNotificationsLoading(false);setNotificationPreferences(NOTIFICATION_CATEGORIES.map(({id})=>({category:id,inAppEnabled:true})));
       return;
     }
     let active=true;setNotificationsLoading(true);
-    void Promise.all([api.alerts(user.accessToken,organization.id),api.notifications(user.accessToken,organization.id)]).then(([rows,inbox])=>{if(active){setOperationalAlerts(rows);setNotifications(inbox.items);setUnreadNotificationCount(inbox.unreadCount);setNotificationNextCursor(inbox.nextCursor);}}).catch((reason)=>{if(active)setError(errorMessage(reason));}).finally(()=>{if(active)setNotificationsLoading(false);});
+    void Promise.all([api.alerts(user.accessToken,organization.id),api.notifications(user.accessToken,organization.id),api.notificationPreferences(user.accessToken,organization.id)]).then(([rows,inbox,preferences])=>{if(active){setOperationalAlerts(rows);setNotifications(inbox.items);setUnreadNotificationCount(inbox.unreadCount);setNotificationNextCursor(inbox.nextCursor);setNotificationPreferences(preferences.preferences);}}).catch((reason)=>{if(active)setError(errorMessage(reason));}).finally(()=>{if(active)setNotificationsLoading(false);});
     return()=>{active=false;};
   },[user,organization,view,assets]);
+
+  useEffect(()=>{
+    if(!user||!organization||view!=='audit'||DEMO_MODE)return;
+    let active=true;setAuditLoading(true);setAuditEvents([]);setAuditNextCursor(null);
+    void api.auditEvents(user.accessToken,organization.id,{locationId:auditLocationFilter,eventType:auditEventTypeFilter,limit:50})
+      .then((page)=>{if(active){setAuditEvents(page.items);setAuditNextCursor(page.nextCursor);}})
+      .catch((reason)=>{if(active)setError(errorMessage(reason));})
+      .finally(()=>{if(active)setAuditLoading(false);});
+    return()=>{active=false;};
+  },[user,organization,view,auditLocationFilter,auditEventTypeFilter]);
 
   useEffect(() => {
     if (!user || !organization || view !== 'verify') return;
@@ -455,6 +499,7 @@ export default function App() {
   const selectedMapChildren = selectedMapLocation ? locations.filter((location)=>location.parentId===selectedMapLocation.id) : [];
   const canConfirmCoordinates = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
   const canManageUsers = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const canViewAudit = canManageUsers;
   const canWriteAssets = organization?.roles.some((item)=>item.role!=='viewer') || false;
   const canVerifyAudits = organization?.roles.some((item)=>item.role!=='viewer') || false;
   const canExportAssets = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
@@ -895,6 +940,30 @@ export default function App() {
     finally{setLoadingOlderNotifications(false);}
   }
 
+  async function toggleNotificationPreference(category:NotificationCategory) {
+    if(!user||!organization||DEMO_MODE||savingNotificationPreference)return;
+    const current=notificationPreferences.find((item)=>item.category===category)?.inAppEnabled??true;
+    setSavingNotificationPreference(category);setError('');
+    try{
+      const saved=await api.updateNotificationPreference(user.accessToken,organization.id,category,!current);
+      setNotificationPreferences((items)=>[...items.filter((item)=>item.category!==category),{category:saved.category,inAppEnabled:saved.inAppEnabled}]);
+      const inbox=await api.notifications(user.accessToken,organization.id);
+      setNotifications(inbox.items);setNotificationNextCursor(inbox.nextCursor);setUnreadNotificationCount(inbox.unreadCount);
+    }catch(reason){setError(errorMessage(reason));}
+    finally{setSavingNotificationPreference(null);}
+  }
+
+  async function loadOlderAuditEvents() {
+    if(!user||!organization||!auditNextCursor||auditLoading||DEMO_MODE)return;
+    setAuditLoading(true);
+    try{
+      const page=await api.auditEvents(user.accessToken,organization.id,{cursor:auditNextCursor,locationId:auditLocationFilter,eventType:auditEventTypeFilter,limit:50});
+      setAuditEvents((items)=>{const known=new Set(items.map((item)=>item.id));return [...items,...page.items.filter((item)=>!known.has(item.id))];});
+      setAuditNextCursor(page.nextCursor);
+    }catch(reason){setError(errorMessage(reason));}
+    finally{setAuditLoading(false);}
+  }
+
   async function createAsset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!user || !organization) return;
     const data = readForm(event.currentTarget);
@@ -1116,6 +1185,7 @@ export default function App() {
           <button className={view === 'locations' ? 'selected' : ''} onClick={() => setView('locations')}><Icon name="pin" />Locations</button>
           <button className={view === 'assets' || view === 'exports' || view === 'asset-detail' || view === 'asset-form' || view === 'qr-label' || view === 'scanner' ? 'selected' : ''} onClick={() => setView('assets')}><Icon name="asset" />Assets</button>
           <button className={view === 'verify' ? 'selected' : ''} onClick={() => setView('verify')}><Icon name="check" />Verify</button>
+          {!DEMO_MODE&&canViewAudit&&<button className={view==='audit'?'selected':''} onClick={()=>setView('audit')}><Icon name="history"/>Audit trail</button>}
           <button className={view === 'reports' ? 'selected' : ''} onClick={() => setView('reports')}><Icon name="asset" />Reports</button>
           <button className={view === 'transfers' ? 'selected' : ''} onClick={() => setView('transfers')}><Icon name="arrow" />Transfers</button>
           {!DEMO_MODE&&canManageUsers&&<button className={view==='users'?'selected':''} onClick={()=>setView('users')}><Icon name="people"/>People & access</button>}
@@ -1138,9 +1208,12 @@ export default function App() {
           {view === 'notifications' && <section className="view-panel lifecycle-view alert-view notification-view">
             <p className="eyebrow">YOUR INBOX · PRIVATE TO YOUR ACCOUNT</p>
             <div className="view-title-row"><div><h1>Notifications.</h1><p className="view-lead">Signals saved for your account. Items follow your current asset access and remain here after you read them.</p></div><button className="quiet-button" onClick={()=>setView('alerts')}>Open Watch →</button></div>
+            {!DEMO_MODE&&<section className="panel notification-preferences"><div className="panel-heading"><div><p className="eyebrow">YOUR PREFERENCES</p><h2>Choose what reaches your inbox.</h2></div></div><p className="preference-note">You can quiet routine categories. High-priority alerts remain on so missing assets and urgent issues are not hidden.</p><div className="preference-list">{NOTIFICATION_CATEGORIES.map(({id,title,detail})=>{const enabled=notificationPreferences.find((item)=>item.category===id)?.inAppEnabled??true;return <div className="preference-row" key={id}><span><strong>{title}</strong><small>{detail}</small></span><button className={`preference-switch ${enabled?'is-on':''}`} type="button" role="switch" aria-checked={enabled} aria-label={`${title} notifications`} disabled={notificationsLoading||savingNotificationPreference!==null} onClick={()=>void toggleNotificationPreference(id)}><span/></button></div>;})}</div></section>}
             <div className="alert-queue-summary"><span><strong>{unreadNotificationCount}</strong> unread · {notifications.length} loaded</span><small>In-app only · signals sync when you open or refresh the app</small></div>
             {notifications.length===0?notificationsLoading?<section className="panel verify-empty"><span className="spinner" aria-hidden="true"/><h2>Checking your inbox.</h2><p>Loading review signals for the centres you can access.</p></section>:<section className="panel verify-empty"><Icon name={DEMO_MODE?'bell':'check'}/><h2>{DEMO_MODE?'No sample alerts in this workspace.':'You’re all caught up.'}</h2><p>{DEMO_MODE?'The sample workspace has no active review signals. Sign in to see notifications scoped to your organization and centres.':'New missing-asset, overdue-scan, transfer, duplicate-record, and urgent-report signals will appear here.'}</p></section>:<><div className="alert-list">{notifications.map((item)=><article className={`panel alert-row notification-row ${item.readAt?'is-read':''} severity-${item.severity}`} key={item.id}><span className="alert-mark"><Icon name={item.kind==='verification_overdue'?'history':item.kind==='duplicate_serial'?'asset':item.kind==='transfer_stalled'||item.kind==='transfer_discrepancy'||item.kind==='transfer_batch_requested'?'arrow':'watch'}/></span><div className="alert-main"><div className="alert-title-line"><h2>{item.title}</h2><span className={`status-chip alert-severity-${item.severity}`}>{item.readAt?'Read':item.severity==='high'?'Review soon':'Check'}</span></div><strong>{item.assetName} · {item.assetTag}</strong><small>{item.locationName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small><p>{item.description}</p><div className="notification-actions"><button className="text-button" onClick={()=>void openAlertAsset(item)}>{item.kind==='verification_overdue'?'Review asset and scan cycle':item.kind==='transfer_stalled'||item.kind==='transfer_discrepancy'||item.kind==='transfer_batch_requested'?'Open transfer manifest':item.kind==='urgent_report'||item.kind==='condition_report'?'Open repair report':'Open asset record'} <span aria-hidden="true">→</span></button>{!item.readAt&&<button className="text-button notification-read-action" onClick={()=>void markNotificationRead(item)}>Mark as read</button>}</div></div></article>)}</div>{notificationNextCursor&&<button className="load-more-button quiet-button" onClick={()=>void loadOlderNotifications()} disabled={loadingOlderNotifications}>{loadingOlderNotifications?'Loading…':'Load older notifications'}</button>}</>}
           </section>}
+
+          {view==='audit'&&canViewAudit&&<section className="view-panel audit-view"><p className="eyebrow">ACCOUNTABILITY · ORGANIZATION AUDIT</p><div className="view-title-row"><div><h1>Every change has a trail.</h1><p className="view-lead">Review who changed records, moved assets, verified items, and updated reports within your assigned locations.</p></div></div><section className="panel audit-filters"><label>Location<select aria-label="Filter audit events by location" value={auditLocationFilter} onChange={(event)=>setAuditLocationFilter(event.target.value)}><option value="">All locations in my access</option>{locations.map((place)=><option key={place.id} value={place.id}>{place.kind.replaceAll('_',' ')} · {place.name}</option>)}</select></label><label>Activity<select aria-label="Filter audit events by activity" value={auditEventTypeFilter} onChange={(event)=>setAuditEventTypeFilter(event.target.value)}><option value="">All activity</option>{AUDIT_EVENT_TYPES.map((eventType)=><option key={eventType} value={eventType}>{activityTitle(eventType)}</option>)}</select></label></section>{auditEvents.length===0?auditLoading?<section className="panel verify-empty"><span className="spinner" aria-hidden="true"/><h2>Loading the audit trail.</h2><p>Only events within your assigned locations are included.</p></section>:<section className="panel verify-empty"><Icon name="history"/><h2>No matching activity.</h2><p>Try another location or activity filter. New record changes, scans, handovers, and reports will appear here.</p></section>:<section className="panel audit-timeline-panel"><div className="panel-heading"><div><p className="eyebrow">SCOPED RECORD</p><h2>{auditEvents.length}{auditNextCursor?'+':''} recent events</h2></div><small>Newest first · your assigned scope</small></div><ol className="activity-timeline audit-timeline">{auditEvents.map((event)=><li key={event.id}><span className="activity-node"><Icon name="history"/></span><div className="activity-copy"><strong>{activityTitle(event.eventType)}</strong><p>{activitySummary(event)}</p><small>{event.actorName} · {event.locationName} · {new Date(event.occurredAt).toLocaleString('en-IN')}</small></div></li>)}</ol>{auditNextCursor&&<button className="load-more-button quiet-button" onClick={()=>void loadOlderAuditEvents()} disabled={auditLoading}>{auditLoading?'Loading…':'Load older activity'}</button>}</section>}</section>}
 
           {view === 'alerts' && <section className="view-panel lifecycle-view alert-view">
             <p className="eyebrow">ORGANIZATION WATCH · ACTION QUEUE</p>

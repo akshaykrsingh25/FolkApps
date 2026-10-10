@@ -38,6 +38,7 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(verificationEscalationPolicyMigration);
     const verificationCycleClosureMigration = await readFile(new URL('../../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8');
     await db.exec(verificationCycleClosureMigration);
+    await db.exec(await readFile(new URL('../../database/migrations/015_audit_feed_and_notification_preferences.sql', import.meta.url), 'utf8'));
   });
 
   afterAll(async () => { await db.close(); });
@@ -49,7 +50,7 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence', 'notification_inbox',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
+      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'notification_preferences', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
     ]));
     const outboxColumns = await db.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns WHERE table_name='notification_outbox'`,
@@ -78,6 +79,7 @@ describe('initial PostgreSQL schema', () => {
     expect(grants.rows.filter((row) => row.role_key === 'viewer').map((row) => row.permission_key)).toEqual(['asset:read']);
     expect(grants.rows.some((row) => row.role_key === 'asset_custodian' && row.permission_key === 'transfer:approve')).toBe(false);
     expect(grants.rows.some((row) => row.role_key === 'centre_head' && row.permission_key === 'user:manage')).toBe(true);
+    expect(grants.rows.filter((row)=>row.permission_key==='audit:read').map((row)=>row.role_key).sort()).toEqual(['centre_head','head_office','state_head']);
     expect(grants.rows.filter((row) => row.permission_key === 'asset:export').map((row) => row.role_key).sort()).toEqual(['centre_head', 'head_office', 'state_head']);
     await expect(db.query('SELECT phone_number FROM users LIMIT 0')).resolves.toBeDefined();
   });

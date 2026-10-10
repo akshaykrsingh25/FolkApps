@@ -67,6 +67,7 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/012_recurring_verification_cycles.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/013_verification_escalation_policy.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/015_audit_feed_and_notification_preferences.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -180,6 +181,26 @@ describe('phase two API integration', () => {
     const otherCentreAsset=await otherCentreAssetResponse.json() as {id:string;rfidEpc:string};
     expect(otherCentreAsset.rfidEpc).toBe('E2801160600000000000034B');
     expect((await call(`/assets/rfid/${otherCentreAsset.rfidEpc}`,centreToken)).status).toBe(403);
+    const scopedAudit=await call('/audit/events?limit=100',centreToken);
+    expect(scopedAudit.status).toBe(200);
+    const scopedAuditPage=await scopedAudit.json() as {items:{eventType:string;entityId:string;locationName:string}[];nextCursor:string|null};
+    const scopedAuditRows=scopedAuditPage.items;
+    expect(scopedAuditRows.some((row)=>row.eventType==='asset.created'&&row.entityId===asset.id)).toBe(true);
+    expect(scopedAuditRows.some((row)=>row.entityId===otherCentreAsset.id)).toBe(false);
+    await db.query(
+      `INSERT INTO audit_events(organization_id,event_type,entity_type,entity_id,occurred_at,details)
+       SELECT $1::uuid,'asset.updated','asset',$2::uuid,now()-n*interval '1 minute',jsonb_build_object('seed',n)
+         FROM generate_series(1,55) n`,[organizationId,asset.id],
+    );
+    const firstAuditPage=await (await call('/audit/events?limit=20&eventType=asset.updated',centreToken)).json() as {items:{id:string}[];nextCursor:string|null};
+    expect(firstAuditPage.items).toHaveLength(20);
+    expect(firstAuditPage.nextCursor).toEqual(expect.any(String));
+    const nextAuditPage=await (await call(`/audit/events?limit=20&eventType=asset.updated&cursor=${encodeURIComponent(firstAuditPage.nextCursor!)}`,centreToken)).json() as {items:{id:string}[];nextCursor:string|null};
+    expect(nextAuditPage.items).toHaveLength(20);
+    expect(nextAuditPage.items.some((item)=>firstAuditPage.items.some((first)=>first.id===item.id))).toBe(false);
+    expect((await call('/audit/events?eventType=bad event',centreToken)).status).toBe(400);
+    const outOfScopeAudit=await (await call(`/audit/events?locationId=${centerBId}`,centreToken)).json() as {items:{entityId:string}[]};
+    expect(outOfScopeAudit.items.some((item)=>item.entityId===otherCentreAsset.id)).toBe(false);
 
     const qrResponse = await call(`/assets/qr/${asset.qrPublicId}`, centreToken);
     expect(qrResponse.status).toBe(200);
@@ -247,6 +268,7 @@ describe('phase two API integration', () => {
     await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'viewer',$3)`,[organizationId,viewer.rows[0].id,centre.id]);
     const viewerToken=await token('e2e-viewer');
     expect((await call('/assets',viewerToken)).status).toBe(200);
+    expect((await call('/audit/events',viewerToken)).status).toBe(403);
     expect((await call('/assets',viewerToken,{locationId:centre.id,name:'Viewer write must fail',category:'IT'})).status).toBe(403);
     expect((await call(`/verification/cycles/${cycle.id}/scans`,viewerToken,{...scanBody,clientEventId:'70000000-0000-4000-8000-000000000002'})).status).toBe(403);
 
@@ -443,6 +465,16 @@ describe('phase two API integration', () => {
     const readInbox=await (await call('/notifications',centreToken)).json() as {items:{id:string;readAt:string|null}[];unreadCount:number};
     expect(readInbox.unreadCount).toBe(inbox.unreadCount-1);
     expect(readInbox.items.find((item)=>item.id===urgentNotification!.id)?.readAt).toEqual(expect.any(String));
+    const defaultPreferences=await (await call('/notifications/preferences',centreToken)).json() as {preferences:{category:string;inAppEnabled:boolean}[];highPriorityAlwaysOn:boolean};
+    expect(defaultPreferences.preferences.every((item)=>item.inAppEnabled)).toBe(true);
+    expect(defaultPreferences.highPriorityAlwaysOn).toBe(true);
+    expect((await call('/notifications/preferences',centreToken,{category:'transfers',inAppEnabled:false},organizationId,'PATCH')).status).toBe(200);
+    expect((await call('/notifications/preferences',centreToken,{category:'unknown',inAppEnabled:false},organizationId,'PATCH')).status).toBe(400);
+    const preferenceFilteredInbox=await (await call('/notifications',centreToken)).json() as {items:{kind:string;severity:string}[]};
+    expect(preferenceFilteredInbox.items.some((item)=>item.kind==='transfer_batch_requested')).toBe(false);
+    expect(preferenceFilteredInbox.items.some((item)=>item.kind==='urgent_report'&&item.severity==='high')).toBe(true);
+    const independentPreferences=await (await call('/notifications/preferences',centreBToken)).json() as {preferences:{category:string;inAppEnabled:boolean}[]};
+    expect(independentPreferences.preferences.every((item)=>item.inAppEnabled)).toBe(true);
     const otherScopeInbox=await (await call('/notifications',centreBToken)).json() as {items:{id:string}[];unreadCount:number};
     expect(otherScopeInbox.items.some((item)=>item.id===urgentNotification!.id)).toBe(false);
     expect((await call(`/notifications/${urgentNotification?.id}/read`,centreBToken,{},organizationId,'PATCH')).status).toBe(404);

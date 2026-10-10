@@ -17,6 +17,9 @@ List endpoints use cursor pagination (`limit` capped at 100, opaque `nextCursor`
 | `POST /api/v1/reports` | Submit damage/repair/out-of-service issue | Report permission in asset scope |
 | `POST /api/v1/transfers` | Request asset movement with source/destination | Transfer request permission; approvals are separate actions |
 | `POST /api/v1/media/upload-intents` | Request a short-lived private upload URL | Evidence permission for related asset/report |
+| `GET /api/v1/audit/events?locationId=&eventType=&limit=&cursor=` | Review recent asset, scan, report, custody, and transfer events | `audit:read`; results are constrained to current assigned locations |
+| `GET /api/v1/notifications/preferences` | Read the signed-in user's inbox category settings | Signed-in organization member |
+| `PATCH /api/v1/notifications/preferences` | Enable or quiet one in-app notification category | Signed-in organization member; high-priority alerts always remain on |
 
 ## Verification cycles
 

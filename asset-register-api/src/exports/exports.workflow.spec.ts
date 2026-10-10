@@ -24,7 +24,7 @@ describe('scoped background asset exports', () => {
     db = new PGlite({ extensions: { pgcrypto } });
     for (const name of [
       '001_initial_schema.sql', '002_custody_history.sql', '003_ownership_and_transfer_batches.sql',
-      '004_scoped_rbac_and_user_profiles.sql', '005_dual_asset_identifiers.sql', '006_background_asset_exports.sql', '007_rfid_binding_history.sql', '008_location_physical_addresses.sql', '009_notification_inbox.sql', '010_notification_outbox_worker.sql', '011_verification_watch_indexes.sql', '012_recurring_verification_cycles.sql', '013_verification_escalation_policy.sql', '014_verification_cycle_closure.sql',
+      '004_scoped_rbac_and_user_profiles.sql', '005_dual_asset_identifiers.sql', '006_background_asset_exports.sql', '007_rfid_binding_history.sql', '008_location_physical_addresses.sql', '009_notification_inbox.sql', '010_notification_outbox_worker.sql', '011_verification_watch_indexes.sql', '012_recurring_verification_cycles.sql', '013_verification_escalation_policy.sql', '014_verification_cycle_closure.sql', '015_audit_feed_and_notification_preferences.sql',
     ]) await db.exec(await readFile(new URL(`../../database/migrations/${name}`, import.meta.url), 'utf8'));
 
     const database = {

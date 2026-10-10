@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import type { ActorContext } from '../auth/authenticated-request';
 import { DatabaseService } from '../database.service';
 import { InsightsService } from '../insights/insights.service';
+import { NOTIFICATION_CATEGORIES, type UpdateNotificationPreferenceDto } from './notifications.dto';
 
 interface AlertSnapshot {
   id: string;
@@ -70,6 +71,17 @@ export class NotificationsService {
            JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
           WHERE n.organization_id=$1::uuid AND n.recipient_user_id=$2::uuid
             AND a.location_id IN (SELECT id FROM visible_locations)
+            AND (n.severity='high' OR COALESCE((
+              SELECT preference.in_app_enabled FROM notification_preferences preference
+               WHERE preference.organization_id=n.organization_id AND preference.user_id=n.recipient_user_id
+                 AND preference.category=CASE
+                   WHEN n.kind='verification_overdue' THEN 'verification'
+                   WHEN n.kind IN ('transfer_stalled','transfer_batch_requested','transfer_discrepancy') THEN 'transfers'
+                   WHEN n.kind IN ('condition_report','urgent_report') THEN 'repairs'
+                   WHEN n.kind='duplicate_serial' THEN 'data_quality'
+                   WHEN n.kind='missing' THEN 'missing'
+                   ELSE NULL END
+            ),true))
             AND ($3::timestamptz IS NULL OR (n.created_at,n.id)<($3::timestamptz,$4::uuid))
           ORDER BY n.created_at DESC,n.id DESC LIMIT 51`,
         [actor.organizationId, actor.userId, decodedCursor?.createdAt ?? null, decodedCursor?.id ?? null],
@@ -80,7 +92,18 @@ export class NotificationsService {
            FROM notification_inbox n JOIN assets a
              ON a.organization_id=n.organization_id AND a.id=n.asset_id
           WHERE n.organization_id=$1::uuid AND n.recipient_user_id=$2::uuid
-            AND a.location_id IN (SELECT id FROM visible_locations)`,
+            AND a.location_id IN (SELECT id FROM visible_locations)
+            AND (n.severity='high' OR COALESCE((
+              SELECT preference.in_app_enabled FROM notification_preferences preference
+               WHERE preference.organization_id=n.organization_id AND preference.user_id=n.recipient_user_id
+                 AND preference.category=CASE
+                   WHEN n.kind='verification_overdue' THEN 'verification'
+                   WHEN n.kind IN ('transfer_stalled','transfer_batch_requested','transfer_discrepancy') THEN 'transfers'
+                   WHEN n.kind IN ('condition_report','urgent_report') THEN 'repairs'
+                   WHEN n.kind='duplicate_serial' THEN 'data_quality'
+                   WHEN n.kind='missing' THEN 'missing'
+                   ELSE NULL END
+            ),true))`,
         [actor.organizationId, actor.userId],
       ),
     ]);
@@ -91,6 +114,27 @@ export class NotificationsService {
       unreadCount: Number(counts[0]?.unreadCount ?? 0),
       nextCursor: hasMore ? this.encodeCursor(page[page.length - 1]) : null,
     };
+  }
+
+  async preferences(actor:ActorContext) {
+    const rows=await this.database.query<{category:string;inAppEnabled:boolean}>(
+      `SELECT category,in_app_enabled AS "inAppEnabled" FROM notification_preferences
+        WHERE organization_id=$1::uuid AND user_id=$2::uuid`,[actor.organizationId,actor.userId],
+    );
+    const saved=new Map(rows.map((row)=>[row.category,row.inAppEnabled]));
+    return {preferences:NOTIFICATION_CATEGORIES.map((category)=>({category,inAppEnabled:saved.get(category)??true})),highPriorityAlwaysOn:true};
+  }
+
+  async updatePreference(actor:ActorContext,dto:UpdateNotificationPreferenceDto) {
+    const rows=await this.database.query<{category:string;inAppEnabled:boolean;updatedAt:Date|string}>(
+      `INSERT INTO notification_preferences(organization_id,user_id,category,in_app_enabled)
+       VALUES ($1::uuid,$2::uuid,$3,$4)
+       ON CONFLICT (organization_id,user_id,category) DO UPDATE
+         SET in_app_enabled=EXCLUDED.in_app_enabled,updated_at=now()
+       RETURNING category,in_app_enabled AS "inAppEnabled",updated_at AS "updatedAt"`,
+      [actor.organizationId,actor.userId,dto.category,dto.inAppEnabled],
+    );
+    return {...rows[0],highPriorityAlwaysOn:true};
   }
 
   async markRead(actor: ActorContext, id: string) {

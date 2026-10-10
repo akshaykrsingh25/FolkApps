@@ -78,7 +78,14 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 
 - `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns 50 items per cursor page with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Scheduled missed-cycle notices and report/transfer/missing events use the durable worker; other Watch signal types remain refresh-captured.
 - `PATCH /api/v1/notifications/:id/read` marks one of the caller's notifications read. Both reads and updates are tenant/user scoped and re-check the asset's current location access, so moving an asset or changing a user's role removes stale access to its prior alert history.
+- `GET /api/v1/notifications/preferences` returns the signed-in user's in-app preferences, with all five notification categories enabled by default. `PATCH /api/v1/notifications/preferences` updates one category. High-priority notifications always remain visible.
 - `npm run worker:notifications` consumes missing-asset, report, and transfer events from the durable outbox. Delivery into the in-app inbox is transactional and idempotent, recipients are resolved through their current active scoped permissions, and failures retry with backoff before dead-lettering after eight attempts.
+
+## Scoped audit feed
+
+- `GET /api/v1/audit/events` returns a keyset-paginated record of asset, custody, verification, condition-report, and transfer changes. `locationId`, `eventType`, `limit`, and `cursor` may be used to narrow the result.
+- Audit access requires the `audit:read` permission. Head office, state heads, and centre heads receive it by default; returned events are filtered against each user's current location scope. Custodians and read-only viewers cannot access the organization-wide audit feed.
+- Apply migration `015_audit_feed_and_notification_preferences.sql` using `npm run db:migrate` or `npm run db:migrate:audit-preferences`.
 - The worker checks enabled verification policies and overdue cycles every five minutes. Missed assets escalate in the app from assigned Custodian to Centre Head, State Head, and Head Office at the interval configured on each policy (default seven days per step). It stops when an eligible scan is recorded, the asset is marked missing/retired/disposed, or Head Office closes the cycle with a required reason; closure records the unresolved asset count. Other live Watch signals can still be captured when the signed-in app loads or refreshes. Push, email, and WhatsApp delivery still need an approved provider.
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
 - Run `npm run db:migrate:notification-outbox-worker` to add retry and dead-letter scheduling fields to an existing notification outbox.
