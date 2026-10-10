@@ -190,9 +190,12 @@ describe('phase two API integration', () => {
     expect(((await (await call('/verification/cycles',centreToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
     const mapResponse=await call('/insights/map',centreToken);
     expect(mapResponse.status).toBe(200);
-    expect(((await mapResponse.json()) as {centres:{assetCount:number;coordinatesStatus:string}[]}).centres[0].assetCount).toBe(1);
+    const scopedMap=await mapResponse.json() as {states:{stateName:string;centreCount:number;assetCount:number}[];centres:{assetCount:number;coordinatesStatus:string;stateName:string}[]};
+    expect(scopedMap.centres).toHaveLength(1);
+    expect(scopedMap.centres[0]).toMatchObject({assetCount:1,coordinatesStatus:'centre_head_confirmed',stateName:'Karnataka'});
+    expect(scopedMap.states).toEqual([{stateName:'Karnataka',centreCount:1,assetCount:1,missingCount:0,attentionCount:1,unusedCount:0}]);
     const overviewResponse=await call('/insights/overview',centreToken);
-    expect(((await overviewResponse.json()) as {assetCount:number;attentionCount:number})).toMatchObject({assetCount:1,attentionCount:1});
+    expect(((await overviewResponse.json()) as {assetCount:number;centreCount:number;attentionCount:number;activeCycleCount:number;scanCompletionPercent:number})).toMatchObject({assetCount:1,centreCount:1,attentionCount:1,activeCycleCount:1,scanCompletionPercent:100});
 
     const reportResponse=await call('/reports',centreToken,{assetId:asset.id,kind:'needs_repair',urgency:'high',description:'Network switch port is intermittently dropping traffic.'});
     expect(reportResponse.status).toBe(201);
