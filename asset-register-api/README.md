@@ -4,7 +4,8 @@ NestJS + TypeScript service foundation for the nationwide asset register. This p
 
 ## First slice
 
-- `GET /api/v1/health` — checks service and database connectivity.
+- `GET /api/v1/health/live` — process liveness probe; it does not depend on PostgreSQL.
+- `GET /api/v1/health/ready` — readiness probe that checks PostgreSQL connectivity. `GET /api/v1/health` remains an alias for readiness.
 - OIDC bearer-token verification, organization membership resolution, and recursive location-scope authorization helpers for protected controllers.
 - `database/migrations/001_initial_schema.sql` — tenant-scoped relational model for locations, assets, warranties, evidence metadata, verification cycles, idempotent scans, reports, transfers, audit events, and a notification outbox.
 - `database/migrations/002_custody_history.sql` — accountable issue/return history for named custodians, including a backfill from existing asset custodian fields.
@@ -25,6 +26,8 @@ Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` a
 
 Run `npm test` for authentication, tenant-membership, location-scope, and PostgreSQL schema checks. The schema tests use an embedded PostgreSQL runtime and do not need a running database service.
 Run `npm run test:recovery` against two disposable PostgreSQL 16 databases to exercise all migrations, checksummed backup, restore, and tamper rejection. The CI workflow runs this drill with synthetic data.
+
+See [`docs/production-runbook.md`](../docs/production-runbook.md) for liveness/readiness probes, release sequencing, supervised workers, secret and storage boundaries, monitoring expectations, and the pilot release gate.
 
 ## Database backup and restore exercise
 

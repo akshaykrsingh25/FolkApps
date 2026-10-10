@@ -7,6 +7,16 @@ export class HealthController {
 
   @Get()
   async getHealth() {
+    return this.getReadiness();
+  }
+
+  @Get('live')
+  getLiveness() {
+    return { status: 'ok', service: 'asset-register-api', apiVersion: 'v1' };
+  }
+
+  @Get('ready')
+  async getReadiness() {
     try {
       await this.database.check();
       return { status: 'ok', dependencies: { database: 'ok' }, service: 'asset-register-api', apiVersion: 'v1' };

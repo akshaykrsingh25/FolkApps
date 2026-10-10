@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import centreDirectory from './centreDirectory.json';
 
 describe('supplied Incuspaze centre directory', () => {
-  it('keeps centre identities unique and records floor-only rows beneath their shared centre', () => {
+  it('normalizes the supplied 64 rows into 60 centres while preserving repeated-code floors', () => {
     const centres = centreDirectory as { code: string | null; name: string; city: string; stateName: string; floors?: string[] }[];
     const codes = centres.map((centre) => centre.code).filter((code): code is string => Boolean(code));
     const floors = centres.flatMap((centre) => (centre.floors || []).map((name) => ({ parentCode: centre.code, name })));
+    const representedSourceRows = centres.reduce((count, centre) => count + Math.max(0, (centre.floors?.length || 0) - 1), centres.length);
 
     expect(centres).toHaveLength(60);
+    expect(representedSourceRows).toBe(64);
     expect(new Set(codes).size).toBe(codes.length);
     expect(codes).toContain('NFRO');
     expect(codes).not.toContain('NFO4');

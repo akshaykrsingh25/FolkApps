@@ -376,7 +376,8 @@ export default function App() {
   },[user,organization,view,selectedMapLocationId]);
 
   useEffect(()=>{
-    if(!user||!organization||DEMO_MODE)return;
+    if(!user||!organization)return;
+    if(DEMO_MODE){if(view==='reports')void demoStore.reports().then(setReports);return;}
     if(view==='reports') void api.reports(user.accessToken,organization.id).then(setReports).catch((reason)=>setError(errorMessage(reason)));
     if(view==='transfers') void Promise.all([api.transfers(user.accessToken,organization.id),api.transferBatches(user.accessToken,organization.id)]).then(([items,batches])=>{setTransfers(items);setTransferBatches(batches);}).catch((reason)=>setError(errorMessage(reason)));
   },[user,organization,view]);
@@ -748,15 +749,21 @@ export default function App() {
   }
 
   async function createConditionReport(event:FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if(!user||!organization||DEMO_MODE)return;
+    event.preventDefault(); if(!user||!organization)return;
     const form=event.currentTarget; const data=readForm(form); setSaving(true); setError('');
-    try { await api.createReport(user.accessToken,organization.id,data); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report saved and queued for the responsible centre team.'); form.reset(); }
+    try {
+      if(DEMO_MODE){await demoStore.createReport(data);setReports(await demoStore.reports());setNotice('Sample report saved in this browser only.');form.reset();return;}
+      await api.createReport(user.accessToken,organization.id,data); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report saved and queued for the responsible centre team.'); form.reset();
+    }
     catch(reason){setError(errorMessage(reason));} finally{setSaving(false);}
   }
 
   async function updateConditionReport(report:LifecycleReport,status:string) {
     if(!user||!organization)return;
-    try { await api.updateReport(user.accessToken,organization.id,report.id,{status,resolutionNotes:status==='resolved'?'Issue reviewed and marked resolved.':undefined}); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report status updated.'); }
+    try {
+      if(DEMO_MODE){await demoStore.updateReport(report.id,status);setReports(await demoStore.reports());setNotice('Sample report updated in this browser only.');return;}
+      await api.updateReport(user.accessToken,organization.id,report.id,{status,resolutionNotes:status==='resolved'?'Issue reviewed and marked resolved.':undefined}); setReports(await api.reports(user.accessToken,organization.id)); setNotice('Report status updated.');
+    }
     catch(reason){setError(errorMessage(reason));}
   }
 
@@ -1301,7 +1308,7 @@ export default function App() {
           </section>}
 
           {view === 'reports' && <section className="view-panel lifecycle-view"><p className="eyebrow">ASSET CARE · REPORTS</p><div className="view-title-row"><div><h1>Give every issue an owner.</h1><p className="view-lead">Report damage, repair needs, and items that can no longer work. Each update stays in the asset history.</p></div></div>
-            {DEMO_MODE?<section className="panel verify-empty"><Icon name="asset"/><h2>Reports connect to the live register.</h2><p>Sign in to record and route repairs.</p></section>:<div className="lifecycle-layout"><form className="panel entry-form compact-form" onSubmit={createConditionReport}><p className="eyebrow">NEW REPORT</p><h2>What needs attention?</h2><label>Asset<select name="assetId" required defaultValue=""><option value="" disabled>Choose asset</option>{assets.map((asset)=><option key={asset.id} value={asset.id}>{asset.assetTag} · {asset.name}</option>)}</select></label><label>Issue<select name="kind" defaultValue="damaged"><option value="damaged">Damaged</option><option value="needs_repair">Needs repair</option><option value="not_working">Not working</option><option value="other">Other</option></select></label><label>Urgency<select name="urgency" defaultValue="normal"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>What happened?<textarea name="description" rows={4} minLength={5} maxLength={2000} required placeholder="Describe what you noticed and when." /></label><button className="primary-button" disabled={saving}>{saving?'Saving…':'Submit report'}</button></form><section className="panel lifecycle-list"><div className="panel-heading"><div><p className="eyebrow">AUTHORIZED ASSETS</p><h2>{reports.length} open and recent</h2></div></div>{reports.length===0?<div className="empty-state"><Icon name="check"/><strong>No reports yet.</strong><small>New repair and damage reports will appear here.</small></div>:reports.map((report)=><article className="lifecycle-row" key={report.id}><span className={`urgency-mark urgency-${report.urgency}`}><Icon name="asset"/></span><div className="lifecycle-row-main"><strong>{report.assetName}</strong><small>{report.assetTag} · {report.locationName}</small><p>{report.description}</p><small>{report.kind.replaceAll('_',' ')} · {new Date(report.reportedAt).toLocaleDateString('en-IN')}</small></div><div className="lifecycle-row-actions"><span className={`status-chip status-${report.status}`}>{report.status.replaceAll('_',' ')}</span>{organization?.roles.some((role)=>['head_office','state_head','centre_head'].includes(role.role))&&report.status!=='closed'&&report.status!=='resolved'&&<button className="text-button" onClick={()=>void updateConditionReport(report,report.status==='reported'?'assigned':report.status==='assigned'?'in_repair':'resolved')}>{report.status==='reported'?'Assign':report.status==='assigned'?'Start repair':'Resolve'}</button>}</div></article>)}</section></div>}
+            <div className="lifecycle-layout"><form className="panel entry-form compact-form" onSubmit={createConditionReport}><p className="eyebrow">NEW REPORT</p><h2>What needs attention?</h2><label>Asset<select name="assetId" required defaultValue=""><option value="" disabled>Choose asset</option>{assets.map((asset)=><option key={asset.id} value={asset.id}>{asset.assetTag} · {asset.name}</option>)}</select></label><label>Issue<select name="kind" defaultValue="damaged"><option value="damaged">Damaged</option><option value="needs_repair">Needs repair</option><option value="not_working">Not working</option><option value="other">Other</option></select></label><label>Urgency<select name="urgency" defaultValue="normal"><option value="normal">Normal</option><option value="high">High</option><option value="urgent">Urgent</option></select></label><label>What happened?<textarea name="description" rows={4} minLength={5} maxLength={2000} required placeholder="Describe what you noticed and when." /></label><button className="primary-button" disabled={saving}>{saving?'Saving…':'Submit report'}</button></form><section className="panel lifecycle-list"><div className="panel-heading"><div><p className="eyebrow">AUTHORIZED ASSETS</p><h2>{reports.filter((report) => report.status !== 'closed' && report.status !== 'resolved').length} open reports</h2></div></div>{reports.length===0?<div className="empty-state"><Icon name="check"/><strong>No reports yet.</strong><small>New repair and damage reports will appear here.</small></div>:reports.map((report)=><article className="lifecycle-row" key={report.id}><span className={`urgency-mark urgency-${report.urgency}`}><Icon name="asset"/></span><div className="lifecycle-row-main"><strong>{report.assetName}</strong><small>{report.assetTag} · {report.locationName}</small><p>{report.description}</p><small>{report.kind.replaceAll('_',' ')} · {new Date(report.reportedAt).toLocaleDateString('en-IN')}</small></div><div className="lifecycle-row-actions"><span className={`status-chip status-${report.status}`}>{report.status.replaceAll('_',' ')}</span>{organization?.roles.some((role)=>['head_office','state_head','centre_head'].includes(role.role))&&report.status!=='closed'&&report.status!=='resolved'&&<button className="text-button" onClick={()=>void updateConditionReport(report,report.status==='reported'?'assigned':report.status==='assigned'?'in_repair':'resolved')}>{report.status==='reported'?'Assign':report.status==='assigned'?'Start repair':'Resolve'}</button>}</div></article>)}</section></div>
           </section>}
 
           {view === 'transfers' && <section className="view-panel lifecycle-view"><p className="eyebrow">ASSET MOVEMENT · TRANSFERS</p><div className="view-title-row"><div><h1>Move with a clear handover.</h1><p className="view-lead">The register changes location only after the receiving centre confirms arrival.</p></div></div>

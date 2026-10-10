@@ -1,4 +1,4 @@
-import type { Asset, Location, Organization } from '../domain/types';
+import type { Asset, LifecycleReport, Location, Organization } from '../domain/types';
 import centreDirectory from './centreDirectory.json';
 
 export const DEMO_ORGANIZATION: Organization = {
@@ -54,18 +54,35 @@ const DEMO_ASSETS: Asset[] = [
   { id: '20000000-0000-4000-8000-000000000002', locationId: DEMO_LOCATIONS[1].id, locationName: 'Ahmedabad Krish Cubicle', assetTag: 'OF-00087', qrPublicId: '30000000-0000-4000-8000-000000000002', name: 'Office printer', category: 'Office equipment', serialNumber: 'PR-4432', manufacturer: 'HP', model: 'LaserJet Pro', status: 'in_repair', condition: 'fair', ownershipType: 'INCUSPAZE_OWNED', purchaseDate: '2023-02-18', purchaseAmount: '28900.00', currency: 'INR', sellerName: 'Office Tech', sellerPhone: null, createdAt: new Date().toISOString() },
 ];
 
+const DEMO_REPORTS: LifecycleReport[] = [
+  {
+    id: '40000000-0000-4000-8000-000000000001',
+    assetId: DEMO_ASSETS[1].id,
+    assetTag: DEMO_ASSETS[1].assetTag,
+    assetName: DEMO_ASSETS[1].name,
+    locationId: DEMO_ASSETS[1].locationId,
+    locationName: DEMO_ASSETS[1].locationName,
+    kind: 'needs_repair',
+    status: 'in_repair',
+    urgency: 'high',
+    description: 'Paper feed jams during client print runs; service inspection is in progress.',
+    resolutionNotes: null,
+    reportedAt: '2026-10-08T10:30:00.000Z',
+  },
+];
+
 const STORAGE_KEY = 'incuasset-demo-v3';
-interface DemoState { locations: Location[]; assets: Asset[] }
+interface DemoState { locations: Location[]; assets: Asset[]; reports: LifecycleReport[] }
 
 function read(): DemoState {
   try {
     const value = sessionStorage.getItem(STORAGE_KEY);
     if (value) {
       const saved=JSON.parse(value) as DemoState;
-      return {...saved,locations:saved.locations.map((location)=>({...location,physicalAddress:location.physicalAddress??null,physicalAddressStatus:location.physicalAddressStatus||'unverified'})),assets:saved.assets.map(asset=>({...asset,ownershipType:asset.ownershipType||'INCUSPAZE_OWNED'}))};
+      return {...saved,locations:saved.locations.map((location)=>({...location,physicalAddress:location.physicalAddress??null,physicalAddressStatus:location.physicalAddressStatus||'unverified'})),assets:saved.assets.map(asset=>({...asset,ownershipType:asset.ownershipType||'INCUSPAZE_OWNED'})),reports:Array.isArray(saved.reports)?saved.reports:[...DEMO_REPORTS]};
     }
   } catch { /* use the clean synthetic fixtures */ }
-  return { locations: [...directoryLocations], assets: [...DEMO_ASSETS] };
+  return { locations: [...directoryLocations], assets: [...DEMO_ASSETS], reports: [...DEMO_REPORTS] };
 }
 
 function write(state: DemoState) {
@@ -108,6 +125,29 @@ export const demoStore = {
     Object.assign(asset, Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined && value !== '')));
     if (location) asset.locationName = location.name;
     write(state); return asset;
+  },
+  reports: async () => [...read().reports].sort((a,b)=>b.reportedAt.localeCompare(a.reportedAt)),
+  createReport: async (data: Record<string, unknown>) => {
+    const state = read();
+    const asset = state.assets.find((item)=>item.id===data.assetId);
+    if (!asset) throw new Error('Choose an asset from the sample register');
+    const report: LifecycleReport = {
+      id: crypto.randomUUID(), assetId: asset.id, assetTag: asset.assetTag, assetName: asset.name,
+      locationId: asset.locationId, locationName: asset.locationName,
+      kind: String(data.kind || 'other'), status: 'reported', urgency: String(data.urgency || 'normal'),
+      description: String(data.description || ''), reportedAt: new Date().toISOString(),
+    };
+    state.reports.unshift(report); write(state); return report;
+  },
+  updateReport: async (id: string, status: string) => {
+    const state = read();
+    const report = state.reports.find((item)=>item.id===id);
+    if (!report) throw new Error('Report was not found');
+    const allowed: Record<string,string[]> = { reported:['assigned'], assigned:['in_repair'], in_repair:['resolved'] };
+    if (!allowed[report.status]?.includes(status)) throw new Error('This sample report cannot move to that status');
+    report.status = status;
+    if (status === 'resolved') report.resolvedAt = new Date().toISOString();
+    write(state); return report;
   },
   assetByQr: async (id: string) => read().assets.find((asset) => asset.qrPublicId === id) || null,
 };
