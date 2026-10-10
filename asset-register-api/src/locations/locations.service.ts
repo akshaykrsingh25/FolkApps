@@ -3,6 +3,7 @@ import { DatabaseService } from '../database.service';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { CreateLocationDto, ListLocationsDto } from './location.dto';
+import { parseCentreCsv } from './centre-csv';
 
 export interface LocationRow {
   id: string;
@@ -51,6 +52,81 @@ export class LocationsService {
     return this.database.query<LocationRow>(LIST_LOCATIONS, [
       actor.organizationId, actor.userId, filters.parentId ?? null, filters.kind ?? null, filters.q?.trim() || null,
     ]);
+  }
+
+  async previewCentreImport(actor: ActorContext, csv: string) {
+    this.assertHeadOffice(actor);
+    const rows = parseCentreCsv(csv);
+    const codes = rows.map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
+    const existing = await this.database.query<{ code: string }>(
+      `SELECT code FROM locations WHERE organization_id=$1::uuid AND kind='centre' AND lower(code)=ANY($2::text[])`,
+      [actor.organizationId, codes],
+    );
+    const existingCodes = new Set(existing.map((row) => row.code.toLocaleLowerCase('en-IN')));
+    const reviewedRows = rows.map((row) => ({ ...row, errors: [...row.errors, ...(existingCodes.has(row.code.toLocaleLowerCase('en-IN')) ? ['Centre code already exists in this organization'] : [])] }));
+    const invalidCount = reviewedRows.filter((row) => row.errors.length > 0).length;
+    return { totalRows: reviewedRows.length, validRows: reviewedRows.length - invalidCount, invalidRows: invalidCount, canImport: invalidCount === 0, rows: reviewedRows };
+  }
+
+  async importCentres(actor: ActorContext, csv: string) {
+    this.assertHeadOffice(actor);
+    try {
+      return await this.database.transaction(async (query) => {
+        const rows = parseCentreCsv(csv);
+        const codes = rows.map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
+        const existing = await query<{ code: string }>(
+          `SELECT code FROM locations WHERE organization_id=$1::uuid AND kind='centre' AND lower(code)=ANY($2::text[])`,
+          [actor.organizationId, codes],
+        );
+        const existingCodes = new Set(existing.map((row) => row.code.toLocaleLowerCase('en-IN')));
+        const invalid = rows.filter((row) => row.errors.length > 0 || existingCodes.has(row.code.toLocaleLowerCase('en-IN')));
+        if (invalid.length) throw new ConflictException('Resolve every CSV row issue in preview before importing');
+
+        const stateRows = await query<{ id: string; name: string }>(
+          `SELECT id,name FROM locations WHERE organization_id=$1::uuid AND kind='state'`, [actor.organizationId],
+        );
+        const states = new Map(stateRows.map((state) => [state.name.toLocaleLowerCase('en-IN'), state]));
+        const imported: LocationRow[] = [];
+        for (const row of rows) {
+          const stateKey = row.stateName.toLocaleLowerCase('en-IN');
+          let state = states.get(stateKey);
+          if (!state) {
+            const created = await query<{ id: string; name: string }>(
+              `INSERT INTO locations (organization_id,kind,name,state_name) VALUES ($1::uuid,'state',$2,$2) RETURNING id,name`,
+              [actor.organizationId, row.stateName],
+            );
+            state = created[0];
+            states.set(stateKey, state);
+            await query(
+              `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+               VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
+              [actor.organizationId, actor.userId, state.id, JSON.stringify({ kind: 'state', name: state.name, source: 'centre_csv_import' })],
+            );
+          }
+          const created = await query<LocationRow>(
+            `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name)
+             VALUES ($1::uuid,$2::uuid,'centre',$3,$4,$5,$6)
+             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+            [actor.organizationId, state.id, row.code, row.name, row.city, state.name],
+          );
+          imported.push(created[0]);
+          await query(
+            `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+             VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
+            [actor.organizationId, actor.userId, created[0].id, JSON.stringify({ kind: 'centre', code: row.code, name: row.name, city: row.city, state: state.name, source: 'centre_csv_import' })],
+          );
+        }
+        return { importedCount: imported.length, centres: imported };
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === '23505') throw new ConflictException('A centre code already exists; preview the file again');
+      throw error;
+    }
+  }
+
+  private assertHeadOffice(actor: ActorContext) {
+    const allowed = actor.memberships.some((membership) => membership.role === 'head_office' && membership.scopeLocationId === null);
+    if (!allowed) throw new ForbiddenException('Only Head Office can import the centre directory');
   }
 
   async create(actor: ActorContext, dto: CreateLocationDto): Promise<LocationRow> {
