@@ -102,4 +102,22 @@ describe('phase two: location and asset workflows', () => {
     const viewerActor: ActorContext = { userId: viewer.rows[0].id, organizationId, subject: 'viewer-test', memberships: [{ role: 'viewer', scopeLocationId: targetLocationId }] };
     await expect(assets.update(viewerActor, registered.id, { name: 'Unauthorized edit' })).rejects.toMatchObject({ status: 403 });
   });
+
+  it('previews and imports a centre CSV atomically, with explicit state and duplicate review', async () => {
+    const csv = 'Center Code,Center Name,City,State\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat\nCSV-02,Surat Workspace,Surat,Gujarat\n';
+    const preview = await locations.previewCentreImport(headOffice, csv);
+    expect(preview).toMatchObject({ totalRows: 2, validRows: 2, invalidRows: 0, canImport: true });
+    const imported = await locations.importCentres(headOffice, csv);
+    expect(imported).toMatchObject({ importedCount: 2 });
+    expect(imported.centres[0]).toMatchObject({ code: 'CSV-01', name: 'New, Ahmedabad Centre', stateName: 'Gujarat' });
+    const duplicatePreview = await locations.previewCentreImport(headOffice, csv);
+    expect(duplicatePreview).toMatchObject({ canImport: false, invalidRows: 2 });
+    await expect(locations.importCentres(headOffice, csv)).rejects.toMatchObject({ status: 409 });
+    const stateRows = await db.query<{ count: string }>(`SELECT count(*) FROM locations WHERE organization_id=$1 AND kind='state' AND lower(name)='gujarat'`, [organizationId]);
+    expect(Number(stateRows.rows[0].count)).toBe(1);
+
+    const viewer = await db.query<{ id: string }>(`SELECT id FROM users WHERE organization_id=$1 AND identity_subject='viewer-test'`, [organizationId]);
+    const viewerActor: ActorContext = { userId: viewer.rows[0].id, organizationId, subject: 'viewer-test', memberships: [{ role: 'viewer', scopeLocationId: null }] };
+    await expect(locations.previewCentreImport(viewerActor, csv)).rejects.toMatchObject({ status: 403 });
+  });
 });
