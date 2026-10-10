@@ -224,7 +224,18 @@ describe('phase two API integration', () => {
     const unassignedOrg = await call('/locations', centreToken, undefined, 'ffffffff-ffff-4fff-8fff-ffffffffffff');
     expect(unassignedOrg.status).toBe(403);
 
+    const directoryCsv='Center Code,Center Name,City,State\nE2E-01,First Pilot Centre,Jaipur,Rajasthan\nE2E-02,Second Pilot Centre,Udaipur,Rajasthan\n';
+    expect((await call('/locations/import/preview',centreToken,{csv:directoryCsv})).status).toBe(403);
+    const directoryPreview=await call('/locations/import/preview',hoToken,{csv:directoryCsv});
+    expect(directoryPreview.status).toBe(201);
+    expect(await directoryPreview.json()).toMatchObject({totalRows:2,validRows:2,invalidRows:0,canImport:true});
+    const directoryImport=await call('/locations/import',hoToken,{csv:directoryCsv});
+    expect(directoryImport.status).toBe(201);
+    expect(await directoryImport.json()).toMatchObject({importedCount:2});
+    expect((await call('/locations/import/preview',hoToken,{csv:directoryCsv})).status).toBe(201);
+    expect(await (await call('/locations/import/preview',hoToken,{csv:directoryCsv})).json()).toMatchObject({canImport:false,invalidRows:2});
+
     const audit = await db.query<{ count: number | string }>(`SELECT count(*) FROM audit_events WHERE organization_id=$1`, [organizationId]);
-    expect(Number(audit.rows[0].count)).toBe(17);
+    expect(Number(audit.rows[0].count)).toBe(20);
   });
 });
