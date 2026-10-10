@@ -129,20 +129,22 @@ export class VerificationService {
         UNION ALL SELECT child.id FROM locations child JOIN scope_tree parent ON child.parent_id=parent.id WHERE child.organization_id=$1::uuid)
        SELECT EXISTS(SELECT 1 FROM scope_tree WHERE id=$3::uuid) AS allowed`,[actor.organizationId,cycle.scopeLocationId,assetRows[0].locationId]);
     if (!inScope[0]?.allowed) throw new ForbiddenException('Asset is outside this verification cycle');
-    const saved=await this.database.query<{id:string;duplicate:boolean}>(
-      `INSERT INTO scan_events (organization_id,cycle_id,asset_id,location_id,scanned_by,client_event_id,scanned_at)
-       VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::uuid,$7::timestamptz)
-       ON CONFLICT (organization_id,client_event_id) DO NOTHING RETURNING id,false AS duplicate`,
-      [actor.organizationId,cycleId,dto.assetId,dto.locationId,actor.userId,dto.clientEventId,dto.scannedAt]);
-    if (saved[0]) {
-      await this.database.query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
-        VALUES ($1::uuid,$2::uuid,'verification.asset_scanned','asset',$3::uuid,$4::jsonb)`,
-        [actor.organizationId,actor.userId,dto.assetId,JSON.stringify({cycleId,locationId:dto.locationId,clientEventId:dto.clientEventId})]);
-      return saved[0];
-    }
-    const existing=await this.database.query<{id:string}>(
-      'SELECT id FROM scan_events WHERE organization_id=$1::uuid AND client_event_id=$2::uuid',[actor.organizationId,dto.clientEventId]);
-    return {id:existing[0]?.id,duplicate:true};
+    return this.database.transaction(async query=>{
+      const saved=await query<{id:string;duplicate:boolean}>(
+        `INSERT INTO scan_events (organization_id,cycle_id,asset_id,location_id,scanned_by,client_event_id,scanned_at)
+         VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,$5::uuid,$6::uuid,$7::timestamptz)
+         ON CONFLICT (organization_id,client_event_id) DO NOTHING RETURNING id,false AS duplicate`,
+        [actor.organizationId,cycleId,dto.assetId,dto.locationId,actor.userId,dto.clientEventId,dto.scannedAt]);
+      if (saved[0]) {
+        await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+          VALUES ($1::uuid,$2::uuid,'verification.asset_scanned','asset',$3::uuid,$4::jsonb)`,
+          [actor.organizationId,actor.userId,dto.assetId,JSON.stringify({cycleId,locationId:dto.locationId,clientEventId:dto.clientEventId})]);
+        return saved[0];
+      }
+      const existing=await query<{id:string}>(
+        'SELECT id FROM scan_events WHERE organization_id=$1::uuid AND client_event_id=$2::uuid',[actor.organizationId,dto.clientEventId]);
+      return {id:existing[0]?.id,duplicate:true};
+    });
   }
 
   async progress(actor:ActorContext,cycleId:string) {

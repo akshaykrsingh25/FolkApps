@@ -4,13 +4,13 @@ import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
-import type { Asset, Evidence, Location, LocationKind, Organization, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, Evidence, EligibleCustodian, Location, LocationKind, OperationalAlert, Organization, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
 import { Icon } from './ui/Icon';
 import { CodeScanner } from './capture/CodeScanner';
 import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
-type View = 'home' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
@@ -55,6 +55,33 @@ function readForm(form: HTMLFormElement): Record<string, unknown> {
     .map(([key, value]) => [key, key === 'purchaseAmount' ? Number(value) : value]));
 }
 
+function activityTitle(eventType:string) {
+  const titles:Record<string,string>={
+    'asset.created':'Asset added to the register','asset.updated':'Asset record updated','verification.asset_scanned':'Verification scan recorded',
+    'condition.reported':'Condition report raised','condition.status_changed':'Report status changed','transfer.requested':'Transfer requested',
+    'transfer.approve':'Transfer approved','transfer.dispatch':'Transfer marked in transit','transfer.receive':'Transfer received',
+    'transfer.reject':'Transfer request declined','transfer.cancel':'Transfer cancelled','custody.issued':'Issued to a custodian',
+    'custody.returned':'Custody returned','warranty.recorded':'Coverage recorded',
+  };
+  return titles[eventType]||eventType.replaceAll('.',' · ').replaceAll('_',' ');
+}
+
+function activitySummary(event:AssetActivityEvent) {
+  const details=event.details||{};
+  if(event.eventType==='asset.updated'&&details.changes&&typeof details.changes==='object'){
+    const changes=details.changes as Record<string,{before?:unknown;after?:unknown}>;
+    const fieldSummary=Object.entries(changes).map(([field,change])=>`${field.replace(/[A-Z]/g,(letter)=>` ${letter.toLowerCase()}`)}: ${String(change.before??'—')} → ${String(change.after??'—')}`).join(' · ');
+    return [fieldSummary,details.statusChangeReason?`Reason: ${String(details.statusChangeReason)}`:''].filter(Boolean).join(' · ')||'Record reviewed; no field differences recorded.';
+  }
+  if(event.eventType.startsWith('custody.'))return `${String(details.custodianName||'Custodian')} · ${String(details.condition||'condition not recorded').replaceAll('_',' ')}${details.locationName?` · ${String(details.locationName)}`:''}`;
+  if(event.eventType==='condition.status_changed')return `${String(details.from||'previous status').replaceAll('_',' ')} → ${String(details.to||'updated').replaceAll('_',' ')}`;
+  if(event.eventType.startsWith('transfer.'))return `Movement: ${String(details.from||'requested').replaceAll('_',' ')} → ${String(details.to||event.eventType.split('.')[1]).replaceAll('_',' ')}`;
+  if(event.eventType==='verification.asset_scanned')return 'The asset was scanned during a verification cycle.';
+  if(event.eventType==='warranty.recorded')return `${String(details.coverageKind||'Coverage').toUpperCase()}${details.endsOn?` · Ends ${String(details.endsOn)}`:''}`;
+  if(event.eventType==='asset.created')return 'The asset record and QR identity were created.';
+  return 'A change was recorded in the asset history.';
+}
+
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -66,6 +93,7 @@ export default function App() {
   const [qrImage, setQrImage] = useState('');
   const [search, setSearch] = useState('');
   const [assetStatusFilter,setAssetStatusFilter]=useState('');
+  const [assetStatusChoice,setAssetStatusChoice]=useState('active');
   const [assetCursor,setAssetCursor]=useState<string|null>(null);
   const [loadingMoreAssets,setLoadingMoreAssets]=useState(false);
   const [busy, setBusy] = useState(true);
@@ -103,6 +131,10 @@ export default function App() {
   const [reports,setReports]=useState<LifecycleReport[]>([]);
   const [transfers,setTransfers]=useState<AssetTransfer[]>([]);
   const [warranties,setWarranties]=useState<WarrantyRecord[]>([]);
+  const [assetActivity,setAssetActivity]=useState<AssetActivityEvent[]>([]);
+  const [custodyHistory,setCustodyHistory]=useState<AssetCustody[]>([]);
+  const [eligibleCustodians,setEligibleCustodians]=useState<EligibleCustodian[]>([]);
+  const [operationalAlerts,setOperationalAlerts]=useState<OperationalAlert[]>([]);
   const [overviewData,setOverviewData]=useState<InsightOverview|null>(null);
   const [mapData,setMapData]=useState<IndiaMapData|null>(null);
   const [indiaGeoJson,setIndiaGeoJson]=useState<IndiaGeoJson|null>(null);
@@ -226,6 +258,17 @@ export default function App() {
     if(view==='transfers') void api.transfers(user.accessToken,organization.id).then(setTransfers).catch((reason)=>setError(errorMessage(reason)));
   },[user,organization,view]);
 
+  useEffect(()=>{
+    if(!user||!organization||(view!=='alerts'&&view!=='home'))return;
+    if(DEMO_MODE){
+      setOperationalAlerts(assets.filter((asset)=>asset.status==='missing').map((asset)=>({id:`missing:${asset.id}`,kind:'missing',severity:'high',title:'Asset marked missing',description:'Review the last known location and record the investigation outcome.',assetId:asset.id,assetTag:asset.assetTag,assetName:asset.name,locationName:asset.locationName,occurredAt:asset.createdAt,relatedId:null})));
+      return;
+    }
+    let active=true;
+    void api.alerts(user.accessToken,organization.id).then((rows)=>{if(active)setOperationalAlerts(rows);}).catch((reason)=>{if(active)setError(errorMessage(reason));});
+    return()=>{active=false;};
+  },[user,organization,view,assets]);
+
   useEffect(() => {
     if (!user || !organization || view !== 'verify') return;
     if (DEMO_MODE) { setVerificationPolicies([]); setVerificationCycles([]); setActiveCycle(null); setCycleAssets([]); return; }
@@ -260,6 +303,20 @@ export default function App() {
     if(!user||!organization||!selectedAsset||view!=='asset-detail'||DEMO_MODE)return;
     let active=true;
     void api.warranties(user.accessToken,organization.id,selectedAsset.id).then((rows)=>{if(active)setWarranties(rows);}).catch((reason)=>{if(active)setError(errorMessage(reason));});
+    return()=>{active=false;};
+  },[user,organization,selectedAsset,view]);
+
+  useEffect(()=>{
+    if(!user||!organization||!selectedAsset||view!=='asset-detail')return;
+    if(DEMO_MODE){setAssetActivity([]);setCustodyHistory([]);setEligibleCustodians([]);return;}
+    let active=true;
+    setAssetActivity([]);setCustodyHistory([]);setEligibleCustodians([]);
+    void Promise.all([
+      api.assetActivity(user.accessToken,organization.id,selectedAsset.id),
+      api.assetCustody(user.accessToken,organization.id,selectedAsset.id),
+      api.eligibleCustodians(user.accessToken,organization.id,selectedAsset.id),
+    ]).then(([activity,custody,people])=>{if(active){setAssetActivity(activity);setCustodyHistory(custody);setEligibleCustodians(people);}})
+      .catch((reason)=>{if(active)setError(errorMessage(reason));});
     return()=>{active=false;};
   },[user,organization,selectedAsset,view]);
 
@@ -299,6 +356,8 @@ export default function App() {
   const selectedMapLocation = locations.find((location)=>location.id===selectedMapLocationId) || null;
   const selectedMapChildren = selectedMapLocation ? locations.filter((location)=>location.parentId===selectedMapLocation.id) : [];
   const canConfirmCoordinates = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const activeCustody = custodyHistory.find((item)=>!item.returnedAt) || null;
+  const needsStatusReason = Boolean(selectedAsset&&selectedAsset.status!==assetStatusChoice&&['missing','retired','disposed'].includes(assetStatusChoice));
 
   useEffect(() => {
     if (visibleKinds.length && !visibleKinds.includes(locationKind)) setLocationKind(visibleKinds[0]);
@@ -450,6 +509,45 @@ export default function App() {
     const form=event.currentTarget; setSaving(true); setError('');
     try { await api.createWarranty(user.accessToken,organization.id,selectedAsset.id,readForm(form)); setWarranties(await api.warranties(user.accessToken,organization.id,selectedAsset.id)); setNotice('Coverage details added to the asset history.'); form.reset(); }
     catch(reason){setError(errorMessage(reason));} finally{setSaving(false);}
+  }
+
+  async function refreshAssetTracking(assetId:string) {
+    if(!user||!organization||DEMO_MODE)return;
+    const [activity,custody,people]=await Promise.all([
+      api.assetActivity(user.accessToken,organization.id,assetId),
+      api.assetCustody(user.accessToken,organization.id,assetId),
+      api.eligibleCustodians(user.accessToken,organization.id,assetId),
+    ]);
+    setAssetActivity(activity);setCustodyHistory(custody);setEligibleCustodians(people);
+  }
+
+  async function issueAssetCustody(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();if(!user||!organization||!selectedAsset||DEMO_MODE)return;
+    const form=event.currentTarget;setSaving(true);setError('');
+    try{
+      await api.issueCustody(user.accessToken,organization.id,selectedAsset.id,readForm(form));
+      await refreshAssetTracking(selectedAsset.id);setNotice('Custody issued. The person, condition, and handover are now in the asset history.');form.reset();
+    }catch(reason){setError(errorMessage(reason));}finally{setSaving(false);}
+  }
+
+  async function returnAssetCustody(event:FormEvent<HTMLFormElement>,custody:AssetCustody) {
+    event.preventDefault();if(!user||!organization||!selectedAsset||DEMO_MODE)return;
+    const form=event.currentTarget;setSaving(true);setError('');
+    try{
+      await api.returnCustody(user.accessToken,organization.id,selectedAsset.id,custody.custodyId,readForm(form));
+      await refreshAssetTracking(selectedAsset.id);setNotice('Return recorded with the item’s condition.');form.reset();
+    }catch(reason){setError(errorMessage(reason));}finally{setSaving(false);}
+  }
+
+  async function openAlertAsset(alert:OperationalAlert) {
+    if(!user||!organization)return;
+    try{
+      const asset=assets.find((item)=>item.id===alert.assetId)||(DEMO_MODE?null:await api.assetById(user.accessToken,organization.id,alert.assetId));
+      if(asset){setSelectedAsset(asset);setView('asset-detail');}
+      else if(alert.kind==='urgent_report')setView('reports');
+      else if(alert.kind==='transfer_stalled')setView('transfers');
+      else setView('verify');
+    }catch(reason){setError(errorMessage(reason));}
   }
 
   async function createAsset(event: FormEvent<HTMLFormElement>) {
@@ -635,6 +733,7 @@ export default function App() {
 
   function startNewAsset() {
     assetRequestId.current = null;
+    setAssetStatusChoice('active');
     setSelectedAsset(null); setFormSeed(null); setFormSeedVersion(0); setCaptureSuggestions(null);
     setMatchingAssets([]); setMatchingConfidence(null); setInvoiceFile(null); setAssetPhotoFile(null); setAssetPhotoUrl(''); setView('asset-form');
   }
@@ -659,6 +758,7 @@ export default function App() {
       <div className="workspace-body">
         <nav className="workspace-nav" aria-label="Main navigation">
           <button className={view === 'home' ? 'selected' : ''} onClick={() => setView('home')}><Icon name="home" />Overview</button>
+          <button className={view === 'alerts' ? 'selected' : ''} onClick={() => setView('alerts')}><Icon name="watch" />Watch{operationalAlerts.length>0&&<span className="nav-count">{operationalAlerts.length>99?'99+':operationalAlerts.length}</span>}</button>
           <button className={view === 'map' ? 'selected' : ''} onClick={() => {setSelectedMapState('');setSelectedMapCentreId('');setSelectedMapLocationId('');setView('map');}}><Icon name="pin" />India map</button>
           <button className={view === 'locations' ? 'selected' : ''} onClick={() => setView('locations')}><Icon name="pin" />Locations</button>
           <button className={view === 'assets' || view === 'asset-detail' || view === 'asset-form' || view === 'qr-label' || view === 'scanner' ? 'selected' : ''} onClick={() => setView('assets')}><Icon name="asset" />Assets</button>
@@ -676,8 +776,17 @@ export default function App() {
             <div className="view-title-row"><div><h1>Every asset, in its place.</h1><p className="view-lead">A clear, accountable picture of the network you care for.</p></div><button className="primary-button add-button" onClick={startNewAsset}><Icon name="plus" /> Add asset</button></div>
             {pendingCaptures.length > 0 && <section className="offline-queue"><div className="offline-queue-heading"><div><p className="eyebrow">DEVICE QUEUE · {pendingCaptures.length}</p><h2>Saved here, ready to sync.</h2></div><button className="quiet-button" onClick={() => void syncPendingCaptures()} disabled={syncingCaptures}>{syncingCaptures ? 'Syncing…' : 'Sync now'}</button></div>{pendingCaptures.map((item) => <div className="offline-queue-row" key={item.id}><span className="queue-dot" /><span><strong>{item.payload.name}</strong><small>{item.payload.category} · {locations.find((place) => place.id === item.payload.locationId)?.name || 'Saved location'}</small>{item.lastError && <em>{item.lastError}</em>}</span><small>{item.lastError ? 'Needs attention' : 'Waiting for connection'}</small></div>)}</section>}
             <div className="summary-grid"><Summary label="Registered assets" value={overviewData?.assetCount ?? assetCounts.total} detail="Across your visible locations" /><Summary label="Centres & warehouses" value={overviewData?.centreCount ?? assetCounts.locations} detail="In the active directory" /><Summary label="Need attention" value={(overviewData?.attentionCount ?? assetCounts.attention)+(overviewData?.openReportCount||0)} detail={`${overviewData?.missingCount||0} marked missing · ${overviewData?.unusedCount||0} unused`} /></div>
+            <button className="home-alert-link" onClick={()=>setView('alerts')}><span className="home-alert-icon"><Icon name="watch"/></span><span><strong>Exceptions & review items</strong><small>Missing records, overdue scans, duplicate serials, and stalled handovers</small></span><b>{operationalAlerts.length||overviewData?.missingCount||0}</b><Icon name="arrow"/></button>
             <div className="operations-watch" aria-label="Operational watch"><button onClick={()=>setView('verify')}><span>Verification cycles</span><strong>{overviewData?.activeCycleCount ?? 0}</strong><small>{overviewData?.scanCompletionPercent ?? 0}% scanned · active scope <b>→</b></small></button><button onClick={()=>setView('transfers')}><span>Transfers in motion</span><strong>{overviewData?.openTransferCount ?? 0}</strong><small>awaiting the next step <b>→</b></small></button><button onClick={()=>setView('assets')}><span>Coverage ending soon</span><strong>{overviewData?.warrantyExpiringCount ?? 0}</strong><small>warranty or service <b>→</b></small></button></div>
             <div className="home-columns"><section className="panel"><div className="panel-heading"><div><p className="eyebrow">RECENTLY RECORDED</p><h2>Latest assets</h2></div><button className="text-button" onClick={() => setView('assets')}>Browse register →</button></div><AssetRows assets={assets.slice(0,4)} onSelect={(asset) => { setSelectedAsset(asset); setView('asset-detail'); }} /></section><section className="panel location-teaser"><p className="eyebrow">THE NETWORK</p><h2>Every centre has a place.</h2><p>Browse state, centre, building, floor, and area records. Precise centre pins can be confirmed by the people who know the space.</p><button className="text-button" onClick={() => setView('locations')}>Manage locations →</button></section></div>
+          </section>}
+
+          {view === 'alerts' && <section className="view-panel lifecycle-view alert-view">
+            <p className="eyebrow">ORGANIZATION WATCH · ACTION QUEUE</p>
+            <div className="view-title-row"><div><h1>Review what needs attention.</h1><p className="view-lead">Signals are based on recorded activity. An overdue scan is a prompt to investigate, never a declaration that an asset is stolen.</p></div><button className="quiet-button" onClick={()=>setView('home')}>← Overview</button></div>
+            <div className="alert-queue-summary"><span><strong>{operationalAlerts.length}</strong> open signals in your access scope</span><small>Updated when this view loads · no location or user outside your assigned scope is shown</small></div>
+            {DEMO_MODE?<section className="panel verify-empty"><Icon name="watch"/><h2>Live signals need organization data.</h2><p>Sign in to see overdue scan checks, duplicate serials, transfer delays, and open urgent reports.</p></section>:operationalAlerts.length===0?<section className="panel verify-empty"><Icon name="check"/><h2>No review signals right now.</h2><p>When the register finds an overdue scan window, duplicate serial, stalled transfer, or unresolved urgent report, it will appear here.</p></section>:<div className="alert-list">{operationalAlerts.map((alert)=><article className={`panel alert-row severity-${alert.severity}`} key={alert.id}><span className="alert-mark"><Icon name={alert.kind==='verification_overdue'?'history':alert.kind==='duplicate_serial'?'asset':alert.kind==='transfer_stalled'?'arrow':'watch'}/></span><div className="alert-main"><div className="alert-title-line"><h2>{alert.title}</h2><span className={`status-chip alert-severity-${alert.severity}`}>{alert.severity==='high'?'Review soon':'Check'}</span></div><strong>{alert.assetName} · {alert.assetTag}</strong><small>{alert.locationName} · {new Date(alert.occurredAt).toLocaleDateString('en-IN')}</small><p>{alert.description}</p><button className="text-button" onClick={()=>void openAlertAsset(alert)}>{alert.kind==='verification_overdue'?'Review asset and scan cycle':alert.kind==='transfer_stalled'?'Open asset movement':alert.kind==='urgent_report'?'Open repair report':'Open asset record'} <span aria-hidden="true">→</span></button></div></article>)}</div>}
+            <p className="alert-footnote">Signals help teams notice risks sooner. A person still checks the evidence, contacts the centre, and records any confirmed loss or corrective action.</p>
           </section>}
 
           {view === 'map' && <section className="view-panel map-view">
@@ -747,7 +856,8 @@ export default function App() {
               {invoiceFile && <div className="selected-invoice"><span>{invoiceFile.name}</span><button type="button" className="text-button" onClick={() => void analyzeCapture(invoiceFile, 'invoice')}>{captureBusy ? `Reading ${captureProgress}%` : 'Read invoice'}</button></div>}
               {captureBusy && <div className="capture-progress" role="status"><span style={{ width: `${captureProgress}%` }} /><small>Reading this image on your device · {captureProgress}%</small></div>}
               {captureSuggestions && <section className="capture-review" aria-live="polite"><div><p className="eyebrow">SUGGESTIONS TO REVIEW</p><strong>{matchingConfidence === 'exact' ? 'Possible duplicate · compare these records.' : matchingConfidence === 'similar' ? 'Similar items · compare before adding.' : 'Check these details against the item.'}</strong></div><dl>{[['Suggested name',captureSuggestions.name],['Category',captureSuggestions.category],['Brand',captureSuggestions.manufacturer],['Model',captureSuggestions.model],['Serial number',captureSuggestions.serialNumber],['Seller',captureSuggestions.sellerName],['Invoice date',captureSuggestions.purchaseDate],['Invoice amount',captureSuggestions.purchaseAmount && `₹${captureSuggestions.purchaseAmount}`],['Invoice number',captureSuggestions.invoiceReference]].filter(([,value]) => value).map(([label,value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{matchingAssets.map((asset) => <button type="button" className="possible-match" key={asset.id} onClick={() => { setSelectedAsset(asset); setView('asset-detail'); }}><Icon name="asset" /><span><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.locationName}</small></span><Icon name="arrow" /></button>)}{!selectedAsset && <button type="button" className="text-button" onClick={applyCaptureSuggestions}>Use suggestions in the editable form →</button>}<details><summary>View text read from image</summary><pre>{captureSuggestions.sourceText}</pre></details></section>}
-              <div className="form-grid"><label>Asset name<input name="name" required maxLength={160} defaultValue={selectedAsset?.name || formSeed?.name || ''} placeholder="e.g. Network switch" /></label><label>Category<input name="category" required maxLength={100} defaultValue={selectedAsset?.category || formSeed?.category || ''} placeholder="e.g. IT equipment" /></label><label>Asset tag <small>Optional · assigned if blank</small><input name="assetTag" maxLength={40} defaultValue={selectedAsset?.assetTag || ''} placeholder="e.g. IT-00482" /></label><label>Serial number<input name="serialNumber" maxLength={120} defaultValue={selectedAsset?.serialNumber || formSeed?.serialNumber || ''} placeholder="Manufacturer serial number" /></label><label>Manufacturer<input name="manufacturer" maxLength={120} defaultValue={selectedAsset?.manufacturer || formSeed?.manufacturer || ''} placeholder="Brand or manufacturer" /></label><label>Model<input name="model" maxLength={120} defaultValue={selectedAsset?.model || formSeed?.model || ''} placeholder="Model name or number" /></label><label>Condition<select name="condition" defaultValue={selectedAsset?.condition || 'good'}><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Record status<select name="status" defaultValue={selectedAsset?.status || 'active'}><option value="active">Active</option><option value="unused">Unused · available for transfer</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label></div>
+              <div className="form-grid"><label>Asset name<input name="name" required maxLength={160} defaultValue={selectedAsset?.name || formSeed?.name || ''} placeholder="e.g. Network switch" /></label><label>Category<input name="category" required maxLength={100} defaultValue={selectedAsset?.category || formSeed?.category || ''} placeholder="e.g. IT equipment" /></label><label>Asset tag <small>Optional · assigned if blank</small><input name="assetTag" maxLength={40} defaultValue={selectedAsset?.assetTag || ''} placeholder="e.g. IT-00482" /></label><label>Serial number<input name="serialNumber" maxLength={120} defaultValue={selectedAsset?.serialNumber || formSeed?.serialNumber || ''} placeholder="Manufacturer serial number" /></label><label>Manufacturer<input name="manufacturer" maxLength={120} defaultValue={selectedAsset?.manufacturer || formSeed?.manufacturer || ''} placeholder="Brand or manufacturer" /></label><label>Model<input name="model" maxLength={120} defaultValue={selectedAsset?.model || formSeed?.model || ''} placeholder="Model name or number" /></label><label>Condition<select name="condition" defaultValue={selectedAsset?.condition || 'good'}><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Record status<select name="status" defaultValue={selectedAsset?.status || 'active'} onChange={(event)=>setAssetStatusChoice(event.target.value)}><option value="active">Active</option><option value="unused">Unused · available for transfer</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label></div>
+              {needsStatusReason&&<label className="status-change-reason">Why is this status changing?<small>A reason is required for a missing, retired, or disposed classification.</small><textarea name="statusChangeReason" minLength={5} maxLength={500} required rows={2} placeholder="Record what was checked and who confirmed the status." /></label>}
               <div className="form-section-title"><span>02</span><div><h2>Give it a location</h2><small>Choose the most precise confirmed place.</small></div></div>
               <label>Centre, warehouse, or floor<select name="locationId" required defaultValue={selectedAsset?.locationId || ''}><option value="" disabled>Select a location</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.kind} · {location.name}{location.code ? ` (${location.code})` : ''}</option>)}</select></label>
               <div className="form-section-title"><span>03</span><div><h2>Purchase record</h2><small>Editable information for the asset history.</small></div></div>
@@ -760,7 +870,9 @@ export default function App() {
 
           {view === 'scanner' && <>{verificationScanCycleId && <div className="scan-location-choice"><label>Where are you checking?<select value={scanLocationId} onChange={(event)=>setScanLocationId(event.target.value)}><option value="">Use asset’s current register location</option>{locations.map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label></div>}<CodeScanner onCode={(code) => void (verificationScanCycleId ? recordCycleScan(code) : findScannedCode(code))} onClose={() => {setVerificationScanCycleId(null);setView(verificationScanCycleId?'verify':'assets');}} /></>}
 
-          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
+          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setAssetStatusChoice(selectedAsset.status); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
+            <section className="panel custody-panel"><div className="panel-heading"><div><p className="eyebrow">WHO HAS IT NOW?</p><h2>Custody & handover</h2></div><span className="evidence-count">{activeCustody?'Issued':'Available'}</span></div><p className="custody-intro">Record who takes responsibility for this item, its condition at handover, and when it comes back.</p>{DEMO_MODE?<div className="empty-state custody-empty"><strong>Custody tracking is available in the live register.</strong><small>Sign in to issue an item and keep a handover history.</small></div>:activeCustody?<><div className="custody-active"><span className="custody-person-mark">{activeCustody.custodianName.slice(0,1).toUpperCase()}</span><span><strong>{activeCustody.custodianName}</strong><small>Issued {new Date(activeCustody.issuedAt).toLocaleString('en-IN')} · {activeCustody.issueCondition.replaceAll('_',' ')}</small>{activeCustody.issueNotes&&<small>{activeCustody.issueNotes}</small>}</span></div><form className="custody-form return-custody-form" onSubmit={(event)=>void returnAssetCustody(event,activeCustody)}><label>Condition on return<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Return notes<input name="notes" maxLength={2000} placeholder="Condition, accessories, or discrepancy"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving return…':'Record return'}</button></form></>:eligibleCustodians.length?<form className="custody-form" onSubmit={issueAssetCustody}><label>Issue to<select name="custodianUserId" defaultValue="" required><option value="" disabled>Choose an assigned custodian</option>{eligibleCustodians.map((person)=><option value={person.userId} key={person.userId}>{person.displayName}</option>)}</select></label><label>Condition at handover<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Handover note<input name="notes" maxLength={2000} placeholder="Accessories, location, or purpose"/></label><button className="primary-button" disabled={saving}>{saving?'Recording…':'Issue to custodian'}</button></form>:<div className="empty-state custody-empty"><strong>No eligible custodians are assigned here yet.</strong><small>An organization administrator needs to assign an asset custodian to this centre.</small></div>}{custodyHistory.filter((item)=>item.returnedAt).length>0&&<div className="custody-history"><h3>Previous handovers</h3>{custodyHistory.filter((item)=>item.returnedAt).slice(0,5).map((item)=><article key={item.custodyId}><span><strong>{item.custodianName}</strong><small>Issued {new Date(item.issuedAt).toLocaleDateString('en-IN')} · returned {item.returnedAt?new Date(item.returnedAt).toLocaleDateString('en-IN'):''}</small></span><small>{item.issueCondition.replaceAll('_',' ')} → {item.returnCondition?.replaceAll('_',' ')}</small></article>)}</div>}</section>
+            <section className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNTABILITY TRAIL</p><h2>Asset activity</h2></div><span className="evidence-count">{assetActivity.length} events</span></div>{assetActivity.length?<ol className="activity-timeline">{assetActivity.map((event)=><li key={event.id}><span className="activity-node"><Icon name="history"/></span><div className="activity-copy"><strong>{activityTitle(event.eventType)}</strong><p>{activitySummary(event)}</p><small>{event.actorName} · {new Date(event.occurredAt).toLocaleString('en-IN')}</small></div></li>)}</ol>:<div className="empty-state activity-empty"><strong>No activity has been recorded yet.</strong><small>Scans, handovers, reports, transfers, and record changes will appear here.</small></div>}</section>
             <section className="panel warranty-panel"><div className="panel-heading"><div><p className="eyebrow">COVERAGE WATCH</p><h2>Warranty and service</h2></div><span className="evidence-count">{warranties.length} records</span></div>{warranties.map((warranty)=><article className="warranty-row" key={warranty.id}><span className="warranty-mark"><Icon name="check"/></span><span><strong>{warranty.coverageKind.toUpperCase()} · {warranty.provider||'Provider not listed'}</strong><small>{warranty.startsOn||'Start not recorded'} — {warranty.endsOn||'No end date'}{warranty.servicePhone?` · Service ${warranty.servicePhone}`:''}</small></span></article>)}{!warranties.length&&<p className="evidence-empty">No warranty or service coverage recorded yet.</p>}<form className="warranty-create" onSubmit={createWarrantyRecord}><label>Coverage<select name="coverageKind" defaultValue="warranty"><option value="warranty">Warranty</option><option value="guarantee">Guarantee</option><option value="amc">Annual maintenance</option><option value="other">Other</option></select></label><label>Seller or service provider<input name="provider" maxLength={160} defaultValue={selectedAsset.sellerName||''} placeholder="Provider name"/></label><label>Service centre phone<input name="servicePhone" type="tel" maxLength={40} placeholder="Support number"/></label><label>Coverage ends<input name="endsOn" type="date"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving…':'Add coverage'}</button></form></section>
             <section className="panel evidence-panel"><div className="panel-heading"><div><p className="eyebrow">PRIVATE ASSET RECORD</p><h2>Photos and documents</h2></div><span className="evidence-count">{evidence.length} saved</span></div><p className="evidence-intro">Keep the product photo and purchase proof with this item. Only people with access to this asset can open them.</p><div className="evidence-add-actions"><label className="quiet-button evidence-picker">Take asset photo<input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('asset_photo', file); event.currentTarget.value = ''; }} /></label><label className="quiet-button evidence-picker">Add invoice<input type="file" accept="image/*,application/pdf" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('invoice', file); event.currentTarget.value = ''; }} /></label></div>{evidenceError && <div className="inline-message error-message" role="alert">{evidenceError}</div>}{pendingEvidenceFiles.length > 0 && <div className="pending-evidence" role="status"><span>{pendingEvidenceFiles.length} capture{pendingEvidenceFiles.length === 1 ? '' : 's'} need upload</span><button className="text-button" disabled={uploadingEvidence} onClick={() => void uploadEvidenceFiles(selectedAsset.id, pendingEvidenceFiles)}>{uploadingEvidence ? 'Uploading…' : 'Retry upload'}</button>{pendingEvidenceFiles.map((item) => <small key={item.id}>{item.name}</small>)}</div>}{evidence.length > 0 ? <div className="evidence-list">{evidence.map((item) => <article className="evidence-row" key={item.id}><span className="evidence-type"><Icon name={item.kind === 'invoice' ? 'asset' : 'pin'} /></span><span><strong>{item.kind === 'invoice' ? 'Purchase invoice' : 'Asset photo'}</strong><small>{item.originalName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small></span><button className="text-button" onClick={() => void downloadEvidenceFile(item)}>Open file ↗</button></article>)}</div> : !pendingEvidenceFiles.length && <p className="evidence-empty">No photos or documents attached yet.</p>}</section>
           </section>}

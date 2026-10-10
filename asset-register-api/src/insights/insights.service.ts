@@ -14,6 +14,65 @@ const ACCESSIBLE=`WITH RECURSIVE scope_locations(id) AS (
 export class InsightsService {
   constructor(private readonly database:DatabaseService) {}
 
+  async alerts(actor:ActorContext) {
+    return this.database.query(
+      `${ACCESSIBLE}, visible_ancestors(id) AS (
+         SELECT id FROM visible_locations
+         UNION SELECT parent.id FROM visible_ancestors child
+           JOIN locations current_location ON current_location.organization_id=$1::uuid AND current_location.id=child.id
+           JOIN locations parent ON parent.organization_id=$1::uuid AND parent.id=current_location.parent_id
+       ), cycle_places(cycle_id,location_id) AS (
+         SELECT c.id,c.scope_location_id FROM verification_cycles c
+         WHERE c.organization_id=$1::uuid AND c.grace_ends_at<now() AND c.status<>'closed'
+           AND c.scope_location_id IN (SELECT id FROM visible_ancestors)
+         UNION ALL SELECT p.cycle_id,child.id FROM cycle_places p
+           JOIN locations child ON child.organization_id=$1::uuid AND child.parent_id=p.location_id
+       ), duplicate_serials AS (
+         SELECT lower(btrim(a.serial_number)) AS serial_key,min(a.id::text)::uuid AS asset_id,count(*)::integer AS duplicate_count
+         FROM assets a WHERE a.organization_id=$1::uuid AND a.location_id IN (SELECT id FROM visible_locations)
+           AND NULLIF(btrim(a.serial_number),'') IS NOT NULL
+         GROUP BY lower(btrim(a.serial_number)) HAVING count(*)>1
+       ), alert_rows AS (
+         SELECT 'missing:'||a.id::text AS id,'missing' AS kind,'high' AS severity,'Asset marked missing' AS title,
+           'Review the last known location and record the investigation outcome.' AS description,
+           a.id AS "assetId",a.asset_tag AS "assetTag",a.name AS "assetName",l.name AS "locationName",a.updated_at AS "occurredAt",NULL::uuid AS "relatedId"
+         FROM assets a JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+         WHERE a.organization_id=$1::uuid AND a.status='missing' AND a.location_id IN (SELECT id FROM visible_locations)
+         UNION ALL
+         SELECT 'unseen:'||c.id::text||':'||a.id::text,'verification_overdue','medium','Not seen after the scan window',
+           'Contact the centre and check the last recorded location. This is not a confirmed loss.',
+           a.id,a.asset_tag,a.name,l.name,c.grace_ends_at,c.id
+         FROM cycle_places p JOIN verification_cycles c ON c.organization_id=$1::uuid AND c.id=p.cycle_id
+         JOIN assets a ON a.organization_id=$1::uuid AND a.location_id=p.location_id
+         JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+         WHERE p.location_id IN (SELECT id FROM visible_locations)
+           AND NOT EXISTS(SELECT 1 FROM scan_events s WHERE s.organization_id=$1::uuid AND s.cycle_id=c.id AND s.asset_id=a.id)
+         UNION ALL
+         SELECT 'duplicate-serial:'||d.serial_key,'duplicate_serial','high','Serial number appears more than once',
+           d.duplicate_count::text||' visible asset records share serial number “'||a.serial_number||'”. Compare the item and invoice before merging anything.',
+           a.id,a.asset_tag,a.name,l.name,a.updated_at,NULL::uuid
+         FROM duplicate_serials d JOIN assets a ON a.organization_id=$1::uuid AND a.id=d.asset_id
+         JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+         UNION ALL
+         SELECT 'transfer:'||t.id::text,'transfer_stalled','medium','Transfer needs a next step',
+           'This movement has been open for more than seven days. Confirm approval, dispatch, or receipt.',
+           a.id,a.asset_tag,a.name,src.name,t.requested_at,t.id
+         FROM transfer_requests t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id
+         JOIN locations src ON src.organization_id=t.organization_id AND src.id=t.from_location_id
+         WHERE t.organization_id=$1::uuid AND t.status IN ('requested','approved','in_transit')
+           AND t.requested_at<now()-interval '7 days'
+           AND t.from_location_id IN (SELECT id FROM visible_locations)
+         UNION ALL
+         SELECT 'report:'||r.id::text,'urgent_report','high','Urgent asset report is unresolved',
+           r.description,a.id,a.asset_tag,a.name,l.name,r.reported_at,r.id
+         FROM condition_reports r JOIN assets a ON a.organization_id=r.organization_id AND a.id=r.asset_id
+         JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+         WHERE r.organization_id=$1::uuid AND r.urgency='urgent' AND r.status NOT IN ('resolved','closed') AND a.location_id IN (SELECT id FROM visible_locations)
+       ) SELECT * FROM alert_rows
+       ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"occurredAt" DESC,id LIMIT 200`,
+      [actor.organizationId,actor.userId]);
+  }
+
   async overview(actor:ActorContext) {
     const rows=await this.database.query(
       `${ACCESSIBLE}, visible_ancestors(id) AS (

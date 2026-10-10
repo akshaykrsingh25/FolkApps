@@ -12,6 +12,8 @@ describe('initial PostgreSQL schema', () => {
     db = new PGlite({ extensions: { pgcrypto } });
     const migration = await readFile(new URL('../../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
     await db.exec(migration);
+    const custodyMigration = await readFile(new URL('../../database/migrations/002_custody_history.sql', import.meta.url), 'utf8');
+    await db.exec(custodyMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -23,8 +25,19 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'audit_events', 'notification_outbox',
+      'transfer_requests', 'audit_events', 'notification_outbox', 'asset_custodies',
     ]));
+  });
+
+  it('allows only one open custody handover per asset', async () => {
+    const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Custody Org','custody-org') RETURNING id`);
+    const organizationId=org.rows[0].id;
+    const person=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'custodian','Custodian','custodian@example.test') RETURNING id`,[organizationId]);
+    const place=await db.query<{id:string}>(`INSERT INTO locations (organization_id,kind,name) VALUES ($1,'centre','Custody Centre') RETURNING id`,[organizationId]);
+    const asset=await db.query<{id:string}>(`INSERT INTO assets (organization_id,location_id,asset_tag,name,category) VALUES ($1,$2,'C-001','Laptop','IT') RETURNING id`,[organizationId,place.rows[0].id]);
+    await db.query(`INSERT INTO asset_custodies (organization_id,asset_id,custodian_user_id) VALUES ($1,$2,$3)`,[organizationId,asset.rows[0].id,person.rows[0].id]);
+    await expect(db.query(`INSERT INTO asset_custodies (organization_id,asset_id,custodian_user_id) VALUES ($1,$2,$3)`,[organizationId,asset.rows[0].id,person.rows[0].id]))
+      .rejects.toMatchObject({code:'23505'});
   });
 
   it('blocks cross-organization asset-to-location references', async () => {

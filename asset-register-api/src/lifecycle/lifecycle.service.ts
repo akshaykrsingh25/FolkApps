@@ -2,18 +2,20 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { DatabaseService } from '../database.service';
-import type { CreateReportDto, CreateTransferDto, CreateWarrantyDto, TransferActionDto, UpdateReportDto } from './lifecycle.dto';
+import type { CreateReportDto, CreateTransferDto, CreateWarrantyDto, IssueCustodyDto, ReturnCustodyDto, TransferActionDto, UpdateReportDto } from './lifecycle.dto';
 
 const WRITERS=['head_office','state_head','centre_head','asset_custodian'] as const;
 @Injectable()
 export class LifecycleService {
   constructor(private readonly database:DatabaseService,private readonly authorization:AuthorizationService) {}
 
-  private async assetLocation(actor:ActorContext,assetId:string) {
-    const rows=await this.database.query<{locationId:string;status:string}>(
-      'SELECT location_id AS "locationId",status FROM assets WHERE organization_id=$1::uuid AND id=$2::uuid',[actor.organizationId,assetId]);
+  private async assetLocation(actor:ActorContext,assetId:string,allowedRoles:readonly string[]=WRITERS) {
+    const rows=await this.database.query<{locationId:string;locationName:string;status:string}>(
+      `SELECT a.location_id AS "locationId",l.name AS "locationName",a.status FROM assets a
+       JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+       WHERE a.organization_id=$1::uuid AND a.id=$2::uuid`,[actor.organizationId,assetId]);
     if(!rows[0]) throw new NotFoundException('Asset was not found');
-    await this.authorization.assertLocationAccess(actor,rows[0].locationId,WRITERS);
+    await this.authorization.assertLocationAccess(actor,rows[0].locationId,allowedRoles);
     return rows[0];
   }
 
@@ -81,11 +83,14 @@ export class LifecycleService {
       `WITH RECURSIVE scope_locations(id) AS (SELECT scope_location_id FROM role_assignments WHERE organization_id=$1::uuid AND user_id=$2::uuid AND scope_location_id IS NOT NULL
         UNION SELECT child.id FROM locations child JOIN scope_locations parent ON child.parent_id=parent.id WHERE child.organization_id=$1::uuid),
        visible_locations(id) AS (SELECT id FROM scope_locations UNION SELECT id FROM locations WHERE organization_id=$1::uuid AND EXISTS(SELECT 1 FROM role_assignments WHERE organization_id=$1::uuid AND user_id=$2::uuid AND role_key='head_office' AND scope_location_id IS NULL))
-       SELECT t.id,t.asset_id AS "assetId",a.asset_tag AS "assetTag",a.name AS "assetName",t.from_location_id AS "fromLocationId",src.name AS "fromLocationName",
-        t.to_location_id AS "toLocationId",dst.name AS "toLocationName",t.status,t.requested_at AS "requestedAt",t.received_at AS "receivedAt",t.handover_notes AS "handoverNotes"
+       SELECT t.id,t.asset_id AS "assetId",a.asset_tag AS "assetTag",a.name AS "assetName",t.from_location_id AS "fromLocationId",
+        CASE WHEN t.from_location_id IN (SELECT id FROM visible_locations) THEN src.name ELSE 'Outside your assigned scope' END AS "fromLocationName",
+        t.to_location_id AS "toLocationId",CASE WHEN t.to_location_id IN (SELECT id FROM visible_locations) THEN dst.name ELSE 'Outside your assigned scope' END AS "toLocationName",
+        t.status,t.requested_at AS "requestedAt",t.received_at AS "receivedAt",t.handover_notes AS "handoverNotes"
        FROM transfer_requests t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id
        JOIN locations src ON src.organization_id=t.organization_id AND src.id=t.from_location_id JOIN locations dst ON dst.organization_id=t.organization_id AND dst.id=t.to_location_id
-       WHERE t.organization_id=$1::uuid AND t.from_location_id IN (SELECT id FROM visible_locations) ORDER BY t.requested_at DESC,t.id LIMIT 250`,[actor.organizationId,actor.userId]);
+       WHERE t.organization_id=$1::uuid AND (t.from_location_id IN (SELECT id FROM visible_locations) OR t.to_location_id IN (SELECT id FROM visible_locations))
+       ORDER BY t.requested_at DESC,t.id LIMIT 250`,[actor.organizationId,actor.userId]);
   }
 
   async createTransfer(actor:ActorContext,dto:CreateTransferDto) {
@@ -102,9 +107,10 @@ export class LifecycleService {
   }
 
   async actOnTransfer(actor:ActorContext,id:string,dto:TransferActionDto) {
-    const rows=await this.database.query<{assetId:string;fromLocationId:string;toLocationId:string;status:string}>(
-      'SELECT asset_id AS "assetId",from_location_id AS "fromLocationId",to_location_id AS "toLocationId",status FROM transfer_requests WHERE organization_id=$1::uuid AND id=$2::uuid',[actor.organizationId,id]);
+    const rows=await this.database.query<{assetId:string;fromLocationId:string;toLocationId:string;requestedBy:string|null;status:string}>(
+      'SELECT asset_id AS "assetId",from_location_id AS "fromLocationId",to_location_id AS "toLocationId",requested_by AS "requestedBy",status FROM transfer_requests WHERE organization_id=$1::uuid AND id=$2::uuid',[actor.organizationId,id]);
     const transfer=rows[0]; if(!transfer) throw new NotFoundException('Transfer request was not found');
+    if(dto.action==='approve'&&transfer.requestedBy===actor.userId) throw new ConflictException('A different authorized person must approve this transfer');
     const actionRoles=dto.action==='receive'?WRITERS:['head_office','state_head','centre_head'] as const;
     await this.authorization.assertLocationAccess(actor,dto.action==='receive'?transfer.toLocationId:transfer.fromLocationId,actionRoles);
     const next:Record<string,{from:string[];to:string}>={approve:{from:['requested'],to:'approved'},dispatch:{from:['approved'],to:'in_transit'},receive:{from:['in_transit'],to:'received'},reject:{from:['requested'],to:'rejected'},cancel:{from:['requested','approved'],to:'cancelled'}};
@@ -125,7 +131,7 @@ export class LifecycleService {
   }
 
   async warranties(actor:ActorContext,assetId:string) {
-    await this.assetLocation(actor,assetId);
+    await this.assetLocation(actor,assetId,[]);
     return this.database.query(`SELECT id,coverage_kind AS "coverageKind",provider,service_phone AS "servicePhone",starts_on AS "startsOn",ends_on AS "endsOn",terms FROM warranties WHERE organization_id=$1::uuid AND asset_id=$2::uuid ORDER BY ends_on NULLS LAST`,[actor.organizationId,assetId]);
   }
 
@@ -138,6 +144,104 @@ export class LifecycleService {
         [actor.organizationId,assetId,dto.coverageKind,dto.provider??null,dto.servicePhone??null,dto.startsOn??null,dto.endsOn??null,dto.terms??null]);
       await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details) VALUES ($1::uuid,$2::uuid,'warranty.recorded','asset',$3::uuid,$4::jsonb)`,[actor.organizationId,actor.userId,assetId,JSON.stringify({coverageKind:dto.coverageKind,endsOn:dto.endsOn})]);
       return rows[0];
+    });
+  }
+
+  async assetActivity(actor:ActorContext,assetId:string) {
+    await this.assetLocation(actor,assetId,[]);
+    return this.database.query(
+      `SELECT e.id,e.event_type AS "eventType",e.occurred_at AS "occurredAt",
+         COALESCE(u.display_name,'System') AS "actorName",e.details
+       FROM audit_events e LEFT JOIN users u ON u.organization_id=e.organization_id AND u.id=e.actor_user_id
+       WHERE e.organization_id=$1::uuid AND (
+         (e.entity_type='asset' AND e.entity_id=$2::uuid)
+         OR (e.entity_type='condition_report' AND e.entity_id IN (
+           SELECT id FROM condition_reports WHERE organization_id=$1::uuid AND asset_id=$2::uuid))
+         OR (e.entity_type='transfer' AND e.entity_id IN (
+           SELECT id FROM transfer_requests WHERE organization_id=$1::uuid AND asset_id=$2::uuid))
+       )
+       ORDER BY e.occurred_at DESC,e.id DESC LIMIT 100`,[actor.organizationId,assetId]);
+  }
+
+  async custodyHistory(actor:ActorContext,assetId:string) {
+    await this.assetLocation(actor,assetId,[]);
+    return this.database.query(
+      `SELECT c.id AS "custodyId",c.custodian_user_id AS "custodianUserId",person.display_name AS "custodianName",
+         issuer.display_name AS "issuedByName",c.issued_at AS "issuedAt",c.issue_condition AS "issueCondition",c.issue_notes AS "issueNotes",
+         returner.display_name AS "returnedByName",c.returned_at AS "returnedAt",c.return_condition AS "returnCondition",c.return_notes AS "returnNotes"
+       FROM asset_custodies c
+       JOIN users person ON person.organization_id=c.organization_id AND person.id=c.custodian_user_id
+       LEFT JOIN users issuer ON issuer.organization_id=c.organization_id AND issuer.id=c.issued_by
+       LEFT JOIN users returner ON returner.organization_id=c.organization_id AND returner.id=c.returned_by
+       WHERE c.organization_id=$1::uuid AND c.asset_id=$2::uuid
+       ORDER BY c.issued_at DESC,c.id DESC LIMIT 50`,[actor.organizationId,assetId]);
+  }
+
+  async eligibleCustodians(actor:ActorContext,assetId:string) {
+    const asset=await this.assetLocation(actor,assetId);
+    return this.database.query(
+      `WITH RECURSIVE custodian_places(user_id,location_id) AS (
+         SELECT r.user_id,r.scope_location_id
+         FROM role_assignments r JOIN users u ON u.organization_id=r.organization_id AND u.id=r.user_id
+         WHERE r.organization_id=$1::uuid AND r.role_key='asset_custodian' AND r.scope_location_id IS NOT NULL AND u.active=true
+         UNION
+         SELECT p.user_id,child.id FROM custodian_places p
+         JOIN locations child ON child.organization_id=$1::uuid AND child.parent_id=p.location_id
+       )
+       SELECT DISTINCT u.id AS "userId",u.display_name AS "displayName"
+       FROM users u JOIN custodian_places p ON p.user_id=u.id
+       WHERE u.organization_id=$1::uuid AND u.active=true AND p.location_id=$2::uuid
+       ORDER BY u.display_name,u.id`,[actor.organizationId,asset.locationId]);
+  }
+
+  async issueCustody(actor:ActorContext,assetId:string,dto:IssueCustodyDto) {
+    const asset=await this.assetLocation(actor,assetId);
+    try {
+      return await this.database.transaction(async query=>{
+        const locked=await query<{id:string}>(`SELECT id FROM assets WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,[actor.organizationId,assetId]);
+        if(!locked[0]) throw new NotFoundException('Asset was not found');
+        const active=await query<{id:string}>(`SELECT id FROM asset_custodies WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND returned_at IS NULL`,[actor.organizationId,assetId]);
+        if(active[0]) throw new ConflictException('Return the current custody before issuing this asset again');
+        const eligible=await query<{userId:string;displayName:string}>(
+          `WITH RECURSIVE custodian_places(user_id,location_id) AS (
+             SELECT r.user_id,r.scope_location_id FROM role_assignments r JOIN users u ON u.organization_id=r.organization_id AND u.id=r.user_id
+             WHERE r.organization_id=$1::uuid AND r.role_key='asset_custodian' AND r.scope_location_id IS NOT NULL AND u.active=true
+             UNION SELECT p.user_id,child.id FROM custodian_places p JOIN locations child ON child.organization_id=$1::uuid AND child.parent_id=p.location_id
+           ) SELECT DISTINCT u.id AS "userId",u.display_name AS "displayName" FROM users u JOIN custodian_places p ON p.user_id=u.id
+           WHERE u.organization_id=$1::uuid AND u.active=true AND p.location_id=$3::uuid AND u.id=$2::uuid`,
+          [actor.organizationId,dto.custodianUserId,asset.locationId]);
+        if(!eligible[0]) throw new ConflictException('Choose an active asset custodian assigned to this location');
+        const rows=await query(`INSERT INTO asset_custodies (organization_id,asset_id,custodian_user_id,issued_by,issue_condition,issue_notes)
+          VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,COALESCE($5::asset_condition,'good'),$6) RETURNING id AS "custodyId",issued_at AS "issuedAt"`,
+          [actor.organizationId,assetId,dto.custodianUserId,actor.userId,dto.condition??null,dto.notes?.trim()||null]);
+        await query(`UPDATE assets SET custodian_user_id=$3::uuid,updated_at=now() WHERE organization_id=$1::uuid AND id=$2::uuid`,[actor.organizationId,assetId,dto.custodianUserId]);
+        await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+          VALUES ($1::uuid,$2::uuid,'custody.issued','asset',$3::uuid,$4::jsonb)`,
+          [actor.organizationId,actor.userId,assetId,JSON.stringify({custodyId:rows[0].custodyId,custodianUserId:dto.custodianUserId,custodianName:eligible[0].displayName,condition:dto.condition??'good',locationName:asset.locationName})]);
+        return rows[0];
+      });
+    } catch(error) {
+      if((error as {code?:string}).code==='23505') throw new ConflictException('This asset already has an active custodian');
+      throw error;
+    }
+  }
+
+  async returnCustody(actor:ActorContext,assetId:string,custodyId:string,dto:ReturnCustodyDto) {
+    const asset=await this.assetLocation(actor,assetId);
+    return this.database.transaction(async query=>{
+      await query(`SELECT id FROM assets WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,[actor.organizationId,assetId]);
+      const rows=await query<{custodianUserId:string;custodianName:string;issuedAt:string}>(
+        `UPDATE asset_custodies c SET returned_by=$4::uuid,returned_at=now(),return_condition=$5::asset_condition,return_notes=$6
+         FROM users u WHERE c.organization_id=$1::uuid AND c.asset_id=$2::uuid AND c.id=$3::uuid AND c.returned_at IS NULL
+           AND u.organization_id=c.organization_id AND u.id=c.custodian_user_id
+         RETURNING c.custodian_user_id AS "custodianUserId",u.display_name AS "custodianName",c.issued_at AS "issuedAt"`,
+        [actor.organizationId,assetId,custodyId,actor.userId,dto.condition,dto.notes?.trim()||null]);
+      if(!rows[0]) throw new ConflictException('This custody is already returned or does not belong to this asset');
+      await query(`UPDATE assets SET custodian_user_id=NULL,updated_at=now() WHERE organization_id=$1::uuid AND id=$2::uuid AND custodian_user_id=$3::uuid`,[actor.organizationId,assetId,rows[0].custodianUserId]);
+      await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+        VALUES ($1::uuid,$2::uuid,'custody.returned','asset',$3::uuid,$4::jsonb)`,
+        [actor.organizationId,actor.userId,assetId,JSON.stringify({custodyId,custodianUserId:rows[0].custodianUserId,custodianName:rows[0].custodianName,condition:dto.condition,locationName:asset.locationName})]);
+      return {custodyId,returnedAt:new Date().toISOString(),custodianUserId:rows[0].custodianUserId};
     });
   }
 }

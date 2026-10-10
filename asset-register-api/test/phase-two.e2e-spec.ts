@@ -49,6 +49,8 @@ describe('phase two API integration', () => {
     db = new PGlite({ extensions: { pgcrypto } });
     const migration = await readFile(new URL('../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
     await db.exec(migration);
+    const custodyMigration = await readFile(new URL('../database/migrations/002_custody_history.sql', import.meta.url), 'utf8');
+    await db.exec(custodyMigration);
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -188,6 +190,25 @@ describe('phase two API integration', () => {
     const verifiedProgress=await (await call(`/verification/cycles/${cycle.id}/progress`,centreToken)).json() as {reviewState:string;scanned:boolean}[];
     expect(verifiedProgress[0]).toMatchObject({scanned:true,reviewState:'verified'});
     expect(((await (await call('/verification/cycles',centreToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
+
+    const custodian=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'e2e-custodian','Centre Custodian','e2e-custodian@example.test') RETURNING id`,[organizationId]);
+    await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'asset_custodian',$3)`,[organizationId,custodian.rows[0].id,centre.id]);
+    const peopleResponse=await call(`/assets/${asset.id}/custodians`,centreToken);
+    expect(peopleResponse.status).toBe(200);
+    expect(await peopleResponse.json()).toEqual([{userId:custodian.rows[0].id,displayName:'Centre Custodian'}]);
+    const issueResponse=await call(`/assets/${asset.id}/custody`,centreToken,{custodianUserId:custodian.rows[0].id,condition:'good',notes:'Issued with power adapter.'});
+    expect(issueResponse.status).toBe(201);
+    const issued=await issueResponse.json() as {custodyId:string};
+    expect((await call(`/assets/${asset.id}/custody`,centreToken)).status).toBe(200);
+    expect((await call(`/assets/${asset.id}/custody`,centreToken,{custodianUserId:custodian.rows[0].id},organizationId,'POST')).status).toBe(409);
+    const returnResponse=await call(`/assets/${asset.id}/custody/${issued.custodyId}/return`,centreToken,{condition:'fair',notes:'Returned with light casing wear.'});
+    expect(returnResponse.status).toBe(201);
+    const custodyRows=await call(`/assets/${asset.id}/custody`,centreToken);
+    expect(await custodyRows.json()).toMatchObject([{custodianName:'Centre Custodian',issueCondition:'good',returnCondition:'fair',returnedByName:'Centre Head'}]);
+    const activityResponse=await call(`/assets/${asset.id}/activity`,centreToken);
+    expect(activityResponse.status).toBe(200);
+    expect(((await activityResponse.json()) as {eventType:string}[]).map((event)=>event.eventType)).toEqual(expect.arrayContaining(['verification.asset_scanned','custody.issued','custody.returned']));
+
     const mapResponse=await call('/insights/map',centreToken);
     expect(mapResponse.status).toBe(200);
     const scopedMap=await mapResponse.json() as {states:{stateName:string;centreCount:number;assetCount:number}[];centres:{assetCount:number;coordinatesStatus:string;stateName:string}[]};
@@ -211,13 +232,32 @@ describe('phase two API integration', () => {
     const transferResponse=await call('/transfers',hoToken,{assetId:asset.id,toLocationId:centerBId,handoverNotes:'Move spare switch to UB City IT store.'});
     expect(transferResponse.status).toBe(201);
     const transfer=await transferResponse.json() as {id:string};
-    expect((await call(`/transfers/${transfer.id}`,hoToken,{action:'approve'},organizationId,'PATCH')).status).toBe(200);
+    expect((await call(`/transfers/${transfer.id}`,hoToken,{action:'approve'},organizationId,'PATCH')).status).toBe(409);
+    expect((await call(`/transfers/${transfer.id}`,centreToken,{action:'approve'},organizationId,'PATCH')).status).toBe(200);
     expect((await call(`/transfers/${transfer.id}`,hoToken,{action:'dispatch'},organizationId,'PATCH')).status).toBe(200);
     expect((await call(`/transfers/${transfer.id}`,centreBToken,{action:'receive',handoverNotes:'Received and checked.'},organizationId,'PATCH')).status).toBe(200);
+    const destinationTransfers=await (await call('/transfers',centreBToken)).json() as {fromLocationName:string;toLocationName:string}[];
+    expect(destinationTransfers).toHaveLength(1);
+    expect(destinationTransfers[0]).toMatchObject({fromLocationName:'Outside your assigned scope',toLocationName:'Bangalore UB City'});
     expect(((await (await call('/assets',centreBToken)).json()) as {data:{id:string}[]}).data.map((row)=>row.id)).toContain(asset.id);
     expect(await (await call('/transfers',hoToken)).json()).toHaveLength(1);
     const listResponse = await call('/assets?q=SW-1234', centreToken);
     expect(((await listResponse.json()) as { data: { id: string }[] }).data).toHaveLength(0);
+
+    const duplicateOne=await call('/assets',centreToken,{locationId:centre.id,name:'Duplicate router one',category:'IT equipment',serialNumber:'DUP-777'});
+    const duplicateTwo=await call('/assets',centreToken,{locationId:centre.id,name:'Duplicate router two',category:'IT equipment',serialNumber:'DUP-777'});
+    expect(duplicateOne.status).toBe(201);expect(duplicateTwo.status).toBe(201);
+    const duplicateAsset=await duplicateOne.json() as {id:string};
+    expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing'},organizationId,'PATCH')).status).toBe(409);
+    expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'disposed',statusChangeReason:'Written off'},organizationId,'PATCH')).status).toBe(403);
+    expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing',statusChangeReason:'Checked with centre head; item not located.'},organizationId,'PATCH')).status).toBe(200);
+    await db.query(`INSERT INTO verification_cycles (organization_id,scope_location_id,starts_at,grace_ends_at,status,created_by) VALUES ($1,$2,now()-interval '70 days',now()-interval '10 days','open',$3)`,[organizationId,centre.id,headOfficeId]);
+    const alertsResponse=await call('/insights/alerts',centreToken);
+    expect(alertsResponse.status).toBe(200);
+    const alerts=await alertsResponse.json() as {kind:string;description:string}[];
+    expect(alerts.map((alert)=>alert.kind)).toEqual(expect.arrayContaining(['missing','duplicate_serial','verification_overdue']));
+    expect(alerts.filter((alert)=>alert.kind==='verification_overdue').every((alert)=>alert.description.includes('not a confirmed loss'))).toBe(true);
+    expect(await (await call('/insights/alerts',centreBToken)).json()).toHaveLength(0);
 
     const blocked = await call('/assets', centreToken, { locationId: centerBId, name: 'Out of scope switch', category: 'IT equipment' });
     expect(blocked.status).toBe(403);
@@ -236,6 +276,6 @@ describe('phase two API integration', () => {
     expect(await (await call('/locations/import/preview',hoToken,{csv:directoryCsv})).json()).toMatchObject({canImport:false,invalidRows:2});
 
     const audit = await db.query<{ count: number | string }>(`SELECT count(*) FROM audit_events WHERE organization_id=$1`, [organizationId]);
-    expect(Number(audit.rows[0].count)).toBe(20);
+    expect(Number(audit.rows[0].count)).toBe(25);
   });
 });

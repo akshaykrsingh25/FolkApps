@@ -10,4 +10,5 @@ export class InsightsController {
   constructor(private readonly insights:InsightsService) {}
   @Get('overview') overview(@Req() request:AuthenticatedRequest) { return this.insights.overview(request.actor!); }
   @Get('map') map(@Req() request:AuthenticatedRequest) { return this.insights.map(request.actor!); }
+  @Get('alerts') alerts(@Req() request:AuthenticatedRequest) { return this.insights.alerts(request.actor!); }
 }

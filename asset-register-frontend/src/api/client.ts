@@ -1,4 +1,4 @@
-import type { Asset, Evidence, Location, Organization, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, OperationalAlert, Organization, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -40,6 +40,7 @@ export const api = {
     const query = params.size ? `?${params}` : '';
     return request<{ data: Asset[]; nextCursor: string | null }>(`/assets${query}`, token, organizationId);
   },
+  assetById: (token:string,organizationId:string,id:string)=>request<Asset>(`/assets/${encodeURIComponent(id)}`,token,organizationId),
   createAsset: (token: string, organizationId: string, data: Record<string, unknown>) =>
     request<Asset>('/assets', token, organizationId, data),
   updateAsset: (token: string, organizationId: string, id: string, data: Record<string, unknown>) =>
@@ -70,7 +71,13 @@ export const api = {
   transferAction: (token:string,organizationId:string,id:string,action:string,handoverNotes?:string)=>request<AssetTransfer>(`/transfers/${encodeURIComponent(id)}`,token,organizationId,{action,handoverNotes},'PATCH'),
   warranties: (token:string,organizationId:string,assetId:string)=>request<WarrantyRecord[]>(`/assets/${encodeURIComponent(assetId)}/warranties`,token,organizationId),
   createWarranty: (token:string,organizationId:string,assetId:string,data:Record<string,unknown>)=>request<WarrantyRecord>(`/assets/${encodeURIComponent(assetId)}/warranties`,token,organizationId,data),
+  assetActivity: (token:string,organizationId:string,assetId:string)=>request<AssetActivityEvent[]>(`/assets/${encodeURIComponent(assetId)}/activity`,token,organizationId),
+  assetCustody: (token:string,organizationId:string,assetId:string)=>request<AssetCustody[]>(`/assets/${encodeURIComponent(assetId)}/custody`,token,organizationId),
+  eligibleCustodians: (token:string,organizationId:string,assetId:string)=>request<EligibleCustodian[]>(`/assets/${encodeURIComponent(assetId)}/custodians`,token,organizationId),
+  issueCustody: (token:string,organizationId:string,assetId:string,data:Record<string,unknown>)=>request<{custodyId:string;issuedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody`,token,organizationId,data),
+  returnCustody: (token:string,organizationId:string,assetId:string,custodyId:string,data:Record<string,unknown>)=>request<{custodyId:string;returnedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody/${encodeURIComponent(custodyId)}/return`,token,organizationId,data),
   insightOverview: (token:string,organizationId:string)=>request<InsightOverview>('/insights/overview',token,organizationId),
+  alerts: (token:string,organizationId:string)=>request<OperationalAlert[]>('/insights/alerts',token,organizationId),
   mapData: (token:string,organizationId:string)=>request<IndiaMapData>('/insights/map',token,organizationId),
   confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
   assetByQr: (token: string, organizationId: string, qrPublicId: string) =>

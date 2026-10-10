@@ -30,9 +30,6 @@ export class CreateAssetDto {
   @IsOptional() @IsIn(ASSET_CONDITIONS)
   condition?: typeof ASSET_CONDITIONS[number];
 
-  @IsOptional() @IsUUID()
-  custodianUserId?: string;
-
   @IsOptional() @IsDateString()
   purchaseDate?: string;
 
@@ -55,6 +52,8 @@ export class CreateAssetDto {
 export class UpdateAssetDto {
   @IsOptional() @IsIn(ASSET_STATUSES)
   status?: typeof ASSET_STATUSES[number];
+  @IsOptional() @IsString() @Length(5, 500)
+  statusChangeReason?: string;
   @IsOptional() @IsUUID()
   locationId?: string;
   @IsOptional() @IsString() @Length(1, 40)
@@ -71,8 +70,6 @@ export class UpdateAssetDto {
   model?: string;
   @IsOptional() @IsIn(ASSET_CONDITIONS)
   condition?: typeof ASSET_CONDITIONS[number];
-  @IsOptional() @IsUUID()
-  custodianUserId?: string;
   @IsOptional() @IsDateString()
   purchaseDate?: string;
   @IsOptional() @IsNumber() @Min(0) @Max(999999999999.99)

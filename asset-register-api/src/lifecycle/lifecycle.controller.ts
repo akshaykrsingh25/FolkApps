@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UseGuard
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { OidcAuthGuard } from '../auth/oidc-auth.guard';
 import { TenantMembershipGuard } from '../auth/tenant-membership.guard';
-import { CreateReportDto, CreateTransferDto, CreateWarrantyDto, TransferActionDto, UpdateReportDto } from './lifecycle.dto';
+import { CreateReportDto, CreateTransferDto, CreateWarrantyDto, IssueCustodyDto, ReturnCustodyDto, TransferActionDto, UpdateReportDto } from './lifecycle.dto';
 import { LifecycleService } from './lifecycle.service';
 
 @Controller()
@@ -17,4 +17,9 @@ export class LifecycleController {
   @Patch('transfers/:id') actOnTransfer(@Req() req:AuthenticatedRequest,@Param('id',ParseUUIDPipe) id:string,@Body() body:TransferActionDto) { return this.lifecycle.actOnTransfer(req.actor!,id,body); }
   @Get('assets/:assetId/warranties') warranties(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string) { return this.lifecycle.warranties(req.actor!,assetId); }
   @Post('assets/:assetId/warranties') createWarranty(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string,@Body() body:CreateWarrantyDto) { return this.lifecycle.createWarranty(req.actor!,assetId,body); }
+  @Get('assets/:assetId/activity') assetActivity(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string) { return this.lifecycle.assetActivity(req.actor!,assetId); }
+  @Get('assets/:assetId/custody') custodyHistory(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string) { return this.lifecycle.custodyHistory(req.actor!,assetId); }
+  @Get('assets/:assetId/custodians') eligibleCustodians(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string) { return this.lifecycle.eligibleCustodians(req.actor!,assetId); }
+  @Post('assets/:assetId/custody') issueCustody(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string,@Body() body:IssueCustodyDto) { return this.lifecycle.issueCustody(req.actor!,assetId,body); }
+  @Post('assets/:assetId/custody/:custodyId/return') returnCustody(@Req() req:AuthenticatedRequest,@Param('assetId',ParseUUIDPipe) assetId:string,@Param('custodyId',ParseUUIDPipe) custodyId:string,@Body() body:ReturnCustodyDto) { return this.lifecycle.returnCustody(req.actor!,assetId,custodyId,body); }
 }

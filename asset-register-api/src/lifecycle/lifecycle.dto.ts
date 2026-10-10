@@ -29,3 +29,14 @@ export class CreateWarrantyDto {
   @IsOptional() @IsDateString() endsOn?: string;
   @IsOptional() @IsString() @MaxLength(2000) terms?: string;
 }
+
+export class IssueCustodyDto {
+  @IsUUID() custodianUserId!: string;
+  @IsOptional() @IsIn(['good','fair','damaged','not_working']) condition?: string;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+}
+
+export class ReturnCustodyDto {
+  @IsIn(['good','fair','damaged','not_working']) condition!: string;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+}

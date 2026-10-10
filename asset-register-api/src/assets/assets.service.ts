@@ -92,6 +92,12 @@ export class AssetsService {
   async update(actor: ActorContext, id: string, dto: UpdateAssetDto): Promise<AssetRow> {
     const before = await this.getById(actor, id);
     await this.authorization.assertLocationAccess(actor, before.locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
+    if(before.status==='disposed'&&dto.status&&dto.status!=='disposed') throw new ConflictException('A disposed asset cannot be returned to active service');
+    if(dto.status&&dto.status!==before.status&&['missing','retired','disposed'].includes(dto.status)) {
+      const requiredRoles=dto.status==='missing'?['head_office','state_head','centre_head']:dto.status==='retired'?['head_office','state_head']:['head_office'];
+      await this.authorization.assertLocationAccess(actor,before.locationId,requiredRoles);
+      if(!dto.statusChangeReason?.trim()||dto.statusChangeReason.trim().length<5) throw new ConflictException('A reason of at least five characters is required for this status change');
+    }
     if (dto.locationId) await this.authorization.assertLocationAccess(actor, dto.locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
     try {
       return await this.database.transaction(async (query) => {
@@ -117,10 +123,21 @@ export class AssetsService {
         );
         const updated = rows[0];
         if (!updated) throw new NotFoundException('Asset was not found');
+        const auditedFields: Array<[string, unknown, unknown]> = [
+          ['location', before.locationName, updated.locationName], ['assetTag', before.assetTag, updated.assetTag],
+          ['name', before.name, updated.name], ['category', before.category, updated.category],
+          ['serialNumber', before.serialNumber, updated.serialNumber], ['manufacturer', before.manufacturer, updated.manufacturer],
+          ['model', before.model, updated.model], ['condition', before.condition, updated.condition],
+          ['status', before.status, updated.status], ['purchaseDate', before.purchaseDate, updated.purchaseDate],
+          ['purchaseAmount', before.purchaseAmount, updated.purchaseAmount], ['sellerName', before.sellerName, updated.sellerName],
+          ['sellerPhone', before.sellerPhone, updated.sellerPhone],
+        ];
+        const changes = Object.fromEntries(auditedFields.filter(([, oldValue, newValue]) => oldValue !== newValue)
+          .map(([field, oldValue, newValue]) => [field, { before: oldValue, after: newValue }]));
         await query(
           `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
            VALUES ($1::uuid,$2::uuid,'asset.updated','asset',$3::uuid,$4::jsonb)`,
-          [actor.organizationId,actor.userId,id,JSON.stringify({ before: { locationId: before.locationId, status: before.status }, after: { locationId: updated.locationId, status: updated.status } })],
+          [actor.organizationId,actor.userId,id,JSON.stringify({ changes,...(dto.statusChangeReason?.trim()?{statusChangeReason:dto.statusChangeReason.trim()}: {}) })],
         );
         return updated;
       });
@@ -144,9 +161,9 @@ export class AssetsService {
       return await this.database.transaction(async (query) => {
         const rows = await query<AssetRow>(
           `INSERT INTO assets (organization_id,location_id,asset_tag,name,category,serial_number,manufacturer,model,condition,
-             custodian_user_id,purchase_date,purchase_amount,currency,seller_name,seller_phone,notes,created_by,client_request_id)
+             purchase_date,purchase_amount,currency,seller_name,seller_phone,notes,created_by,client_request_id)
            VALUES ($1::uuid,$2::uuid,COALESCE(NULLIF($3,''),'INC-' || upper(encode(gen_random_bytes(6),'hex'))),$4,$5,$6,$7,$8,
-             COALESCE($9::asset_condition,'good'),$10::uuid,$11::date,$12::numeric,COALESCE($13,'INR'),$14,$15,$16,$17::uuid,$18::uuid)
+             COALESCE($9::asset_condition,'good'),$10::date,$11::numeric,COALESCE($12,'INR'),$13,$14,$15,$16::uuid,$17::uuid)
            ON CONFLICT (organization_id,client_request_id) DO NOTHING
            RETURNING id,location_id AS "locationId",(SELECT name FROM locations WHERE id=location_id) AS "locationName",
              asset_tag AS "assetTag",qr_public_id::text AS "qrPublicId",name,category,serial_number AS "serialNumber",
@@ -154,7 +171,7 @@ export class AssetsService {
              currency,seller_name AS "sellerName",seller_phone AS "sellerPhone",created_at AS "createdAt"`,
           [actor.organizationId,dto.locationId,dto.assetTag?.trim() || null,dto.name.trim(),dto.category.trim(),
             dto.serialNumber?.trim() || null,dto.manufacturer?.trim() || null,dto.model?.trim() || null,dto.condition ?? null,
-            dto.custodianUserId ?? null,dto.purchaseDate ?? null,dto.purchaseAmount ?? null,dto.currency?.toUpperCase() ?? null,
+            dto.purchaseDate ?? null,dto.purchaseAmount ?? null,dto.currency?.toUpperCase() ?? null,
             dto.sellerName?.trim() || null,dto.sellerPhone?.trim() || null,dto.notes?.trim() || null,actor.userId,dto.clientRequestId ?? null],
         );
         if (!rows[0]) throw new ConflictException('This offline capture is already syncing. Retry shortly.');

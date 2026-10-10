@@ -8,6 +8,7 @@
     "build": "nest build",
     "start": "node dist/main.js",
     "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql",
+    "db:migrate:custody": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql",
     "test": "vitest run",
     "test:watch": "vitest"
   },
