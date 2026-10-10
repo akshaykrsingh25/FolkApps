@@ -45,3 +45,8 @@ export class PatchCoordinatesDto {
   @IsNumber() @Min(-90) @Max(90) latitude!: number;
   @IsNumber() @Min(-180) @Max(180) longitude!: number;
 }
+
+export class CentreCsvDto {
+  @IsString() @Length(1, 1_000_000)
+  csv!: string;
+}
