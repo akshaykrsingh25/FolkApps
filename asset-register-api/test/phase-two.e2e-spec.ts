@@ -51,6 +51,8 @@ describe('phase two API integration', () => {
     await db.exec(migration);
     const custodyMigration = await readFile(new URL('../database/migrations/002_custody_history.sql', import.meta.url), 'utf8');
     await db.exec(custodyMigration);
+    const ownershipAndBatchesMigration = await readFile(new URL('../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
+    await db.exec(ownershipAndBatchesMigration);
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -139,18 +141,21 @@ describe('phase two API integration', () => {
     expect(coordinatesResponse.status).toBe(200);
     expect(((await coordinatesResponse.json()) as {coordinatesStatus:string}).coordinatesStatus).toBe('centre_head_confirmed');
 
-    const assetResponse = await call('/assets', centreToken, { locationId: centre.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234' });
+    const assetResponse = await call('/assets', centreToken, { locationId: centre.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234', ownershipType:'CLIENT_DEDICATED' });
     expect(assetResponse.status).toBe(201);
-    const asset = await assetResponse.json() as { id: string; assetTag: string; qrPublicId: string };
+    const asset = await assetResponse.json() as { id: string; assetTag: string; qrPublicId: string; ownershipType:string };
     expect(asset.assetTag).toMatch(/^INC-[0-9A-F]{12}$/);
     expect(asset.qrPublicId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(asset.ownershipType).toBe('CLIENT_DEDICATED');
 
     const qrResponse = await call(`/assets/qr/${asset.qrPublicId}`, centreToken);
     expect(qrResponse.status).toBe(200);
     expect(((await qrResponse.json()) as { id: string }).id).toBe(asset.id);
     const update = await call(`/assets/${asset.id}`, centreToken, { name: 'Core network switch', status: 'in_repair' }, organizationId, 'PATCH');
     expect(update.status).toBe(200);
-    expect(((await update.json()) as { qrPublicId: string; name: string }).name).toBe('Core network switch');
+    expect(await update.json()).toMatchObject({qrPublicId:asset.qrPublicId,name:'Core network switch',ownershipType:'CLIENT_DEDICATED'});
+    expect((await call(`/assets/${asset.id}`,centreToken,{ownershipType:'VENDOR_LEASED'},organizationId,'PATCH')).status).toBe(403);
+    expect(await (await call(`/assets/${asset.id}`,hoToken,{ownershipType:'VENDOR_LEASED'},organizationId,'PATCH')).json()).toMatchObject({ownershipType:'VENDOR_LEASED'});
 
     const uploadResponse = await call(`/assets/${asset.id}/evidence/upload-url`, centreToken, {
       clientEvidenceId: '60000000-0000-4000-8000-000000000001', kind: 'asset_photo', originalName: 'switch.jpg', contentType: 'image/jpeg', byteSize: 5, sha256: 'a'.repeat(64),
@@ -241,6 +246,51 @@ describe('phase two API integration', () => {
     expect(destinationTransfers[0]).toMatchObject({fromLocationName:'Outside your assigned scope',toLocationName:'Bangalore UB City'});
     expect(((await (await call('/assets',centreBToken)).json()) as {data:{id:string}[]}).data.map((row)=>row.id)).toContain(asset.id);
     expect(await (await call('/transfers',hoToken)).json()).toHaveLength(1);
+
+    const batchAssetA=await call('/assets',centreToken,{locationId:centre.id,name:'Meeting-room display',category:'AV',ownershipType:'INCUSPAZE_OWNED'});
+    const batchAssetB=await call('/assets',centreToken,{locationId:centre.id,name:'Conference camera',category:'AV'});
+    const batchAssetC=await call('/assets',centreToken,{locationId:centre.id,name:'Room speaker',category:'AV'});
+    const batchA=await batchAssetA.json() as {id:string}; const batchB=await batchAssetB.json() as {id:string}; const batchC=await batchAssetC.json() as {id:string};
+    const batchCreated=await call('/transfer-batches',hoToken,{assetIds:[batchA.id,batchB.id,batchC.id],toLocationId:centerBId,handoverNotes:'Move AV equipment to the Bangalore centre.'});
+    expect(batchCreated.status).toBe(201);
+    const batch=await batchCreated.json() as {id:string;batchReference:string;itemCount:number};
+    expect(batch).toMatchObject({itemCount:3});
+    expect(batch.batchReference).toMatch(/^BT-[A-F0-9]{20}$/);
+    expect((await call('/transfer-batches',centreBToken,{assetIds:[batchA.id],toLocationId:centerBId},organizationId,'POST')).status).toBe(403);
+    expect((await call(`/transfer-batches/${batch.id}`,hoToken,{action:'approve'},organizationId,'PATCH')).status).toBe(409);
+    expect((await call(`/transfer-batches/${batch.id}`,centreToken,{action:'approve'},organizationId,'PATCH')).status).toBe(200);
+    expect((await call(`/transfer-batches/${batch.id}`,hoToken,{action:'dispatch'},organizationId,'PATCH')).status).toBe(200);
+    expect((await call(`/assets/${batchA.id}`,hoToken,{locationId:centerBId},organizationId,'PATCH')).status).toBe(409);
+    expect((await call(`/assets/${batchA.id}`,hoToken,{status:'missing',statusChangeReason:'Cannot mark while in transit'},organizationId,'PATCH')).status).toBe(409);
+    expect((await call(`/transfer-batches/${batch.id}`,centreToken,{action:'receive',items:[]},organizationId,'PATCH')).status).toBe(403);
+    await db.query(`UPDATE transfer_batches SET auto_flag_after=now()-interval '1 second' WHERE organization_id=$1 AND id=$2`,[organizationId,batch.id]);
+    const batchWatch=await (await call('/insights/alerts',centreToken)).json() as {kind:string;relatedId:string|null}[];
+    expect(batchWatch.some(alert=>alert.kind==='transfer_stalled'&&alert.relatedId===batch.id)).toBe(true);
+    const batchReceive=await call(`/transfer-batches/${batch.id}`,centreBToken,{action:'receive',items:[
+      {assetId:batchA.id,receiptStatus:'accepted'},
+      {assetId:batchB.id,receiptStatus:'not_received',discrepancyNote:'Item was not present in the sealed shipment.'},
+      {assetId:batchC.id,receiptStatus:'damaged',discrepancyNote:'Outer casing cracked during transport.'},
+    ]},organizationId,'PATCH');
+    expect(batchReceive.status).toBe(200);
+    expect(await batchReceive.json()).toMatchObject({status:'received_with_discrepancy'});
+    const destinationBatchList=await (await call('/transfer-batches',centreBToken)).json() as {batchReference:string;fromLocationName:string;toLocationName:string;items:{assetId:string;receiptStatus:string}[]}[];
+    expect(destinationBatchList[0]).toMatchObject({batchReference:batch.batchReference,fromLocationName:'Outside your assigned scope',toLocationName:'Bangalore UB City'});
+    expect(destinationBatchList[0].items).toEqual(expect.arrayContaining([
+      expect.objectContaining({assetId:batchA.id,receiptStatus:'accepted'}),expect.objectContaining({assetId:batchB.id,receiptStatus:'not_received'}),
+      expect.objectContaining({assetId:batchC.id,receiptStatus:'damaged'}),
+    ]));
+    expect(((await (await call('/assets',centreBToken)).json()) as {data:{id:string}[]}).data.map(row=>row.id)).toContain(batchA.id);
+    expect(((await (await call('/assets',centreBToken)).json()) as {data:{id:string;condition:string}[]}).data.find(row=>row.id===batchC.id)?.condition).toBe('damaged');
+    expect(((await (await call('/assets',centreToken)).json()) as {data:{id:string}[]}).data.map(row=>row.id)).toContain(batchB.id);
+    expect(((await (await call('/reports',centreBToken)).json()) as {kind:string}[]).some(report=>report.kind==='damaged')).toBe(true);
+    const discrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {kind:string;assetId:string}[];
+    expect(discrepancyAlerts.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(true);
+    expect((await call('/transfers',hoToken,{assetId:batchB.id,toLocationId:centerBId},organizationId,'POST')).status).toBe(409);
+    await db.query(`INSERT INTO scan_events (organization_id,asset_id,location_id,client_event_id,scanned_at) VALUES ($1,$2,$3,'f0000000-0000-4000-8000-000000000001',now()+interval '1 second')`,[organizationId,batchB.id,centre.id]);
+    const clearedDiscrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {kind:string;assetId:string}[];
+    expect(clearedDiscrepancyAlerts.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(false);
+    expect((await call('/transfers',hoToken,{assetId:batchB.id,toLocationId:centerBId},organizationId,'POST')).status).toBe(201);
+
     const listResponse = await call('/assets?q=SW-1234', centreToken);
     expect(((await listResponse.json()) as { data: { id: string }[] }).data).toHaveLength(0);
 
@@ -275,7 +325,11 @@ describe('phase two API integration', () => {
     expect((await call('/locations/import/preview',hoToken,{csv:directoryCsv})).status).toBe(201);
     expect(await (await call('/locations/import/preview',hoToken,{csv:directoryCsv})).json()).toMatchObject({canImport:false,invalidRows:2});
 
-    const audit = await db.query<{ count: number | string }>(`SELECT count(*) FROM audit_events WHERE organization_id=$1`, [organizationId]);
-    expect(Number(audit.rows[0].count)).toBe(25);
+    const audit = await db.query<{event_type:string;count:number|string}>(`SELECT event_type,count(*) FROM audit_events WHERE organization_id=$1 GROUP BY event_type`, [organizationId]);
+    const auditCounts=Object.fromEntries(audit.rows.map(row=>[row.event_type,Number(row.count)]));
+    expect(auditCounts['transfer_batch.requested']).toBe(1);
+    expect(auditCounts['transfer_batch.receive']).toBe(1);
+    expect(auditCounts['transfer_batch.item_discrepancy']).toBe(2);
+    expect(auditCounts['condition.reported']).toBeGreaterThanOrEqual(2);
   });
 });

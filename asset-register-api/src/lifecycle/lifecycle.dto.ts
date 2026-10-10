@@ -1,4 +1,5 @@
-import { ArrayMaxSize, IsArray, IsDateString, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsDateString, IsIn, IsOptional, IsString, IsUUID, Length, MaxLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateReportDto {
   @IsUUID() assetId!: string;
@@ -20,6 +21,26 @@ export class CreateTransferDto {
 export class TransferActionDto {
   @IsIn(['approve','dispatch','receive','reject','cancel']) action!: string;
   @IsOptional() @IsString() @MaxLength(2000) handoverNotes?: string;
+}
+
+export class CreateTransferBatchDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ArrayUnique() @IsUUID(undefined,{each:true})
+  assetIds!: string[];
+  @IsUUID() toLocationId!: string;
+  @IsOptional() @IsString() @MaxLength(2000) handoverNotes?: string;
+}
+
+export class TransferBatchReceiptItemDto {
+  @IsUUID() assetId!: string;
+  @IsIn(['accepted','damaged','not_received']) receiptStatus!: string;
+  @IsOptional() @IsString() @MaxLength(2000) discrepancyNote?: string;
+}
+
+export class TransferBatchActionDto {
+  @IsIn(['approve','dispatch','receive','reject','cancel']) action!: string;
+  @IsOptional() @IsString() @MaxLength(2000) handoverNotes?: string;
+  @IsOptional() @IsArray() @ArrayMaxSize(100) @ValidateNested({each:true}) @Type(()=>TransferBatchReceiptItemDto)
+  items?: TransferBatchReceiptItemDto[];
 }
 export class CreateWarrantyDto {
   @IsIn(['warranty','guarantee','amc','other']) coverageKind!: string;

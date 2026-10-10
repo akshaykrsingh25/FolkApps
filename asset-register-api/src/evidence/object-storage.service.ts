@@ -5,6 +5,8 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 @Injectable()
 export class ObjectStorageService {
   private readonly bucket = process.env.OBJECT_STORAGE_BUCKET;
+  private readonly kmsKeyId = process.env.OBJECT_STORAGE_KMS_KEY_ID;
+  private readonly enforceKms = process.env.NODE_ENV === 'production';
   private readonly client = new S3Client({
     region: process.env.OBJECT_STORAGE_REGION || 'ap-south-1',
     ...(process.env.OBJECT_STORAGE_ENDPOINT ? { endpoint: process.env.OBJECT_STORAGE_ENDPOINT, forcePathStyle: true } : {}),
@@ -19,10 +21,19 @@ export class ObjectStorageService {
     const command = new PutObjectCommand({
       Bucket: this.bucket, Key: input.key, ContentType: input.contentType,
       ChecksumSHA256: checksum, Metadata: { sha256: input.sha256 },
+      ...(this.enforceKms ? { ServerSideEncryption: 'aws:kms' as const } : {}),
+      ...(this.enforceKms && this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
     });
+    const headers = {
+      'content-type': input.contentType,
+      'x-amz-checksum-sha256': checksum,
+      'x-amz-meta-sha256': input.sha256,
+      ...(this.enforceKms ? { 'x-amz-server-side-encryption': 'aws:kms' } : {}),
+      ...(this.enforceKms && this.kmsKeyId ? { 'x-amz-server-side-encryption-aws-kms-key-id': this.kmsKeyId } : {}),
+    };
     return {
       url: await getSignedUrl(this.client, command, { expiresIn: 600 }),
-      headers: { 'content-type': input.contentType, 'x-amz-checksum-sha256': checksum, 'x-amz-meta-sha256': input.sha256 },
+      headers,
     };
   }
 

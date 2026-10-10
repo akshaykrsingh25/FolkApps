@@ -98,8 +98,21 @@ export class LifecycleService {
     if(asset.locationId===dto.toLocationId) throw new ConflictException('Choose a different destination');
     await this.authorization.assertLocationAccess(actor,dto.toLocationId,WRITERS);
     const result=await this.database.transaction(async query=>{
+      const locked=await query<{locationId:string;status:string}>(
+        `SELECT location_id AS "locationId",status::text AS status FROM assets
+         WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,[actor.organizationId,dto.assetId]);
+      if(!locked[0]) throw new NotFoundException('Asset was not found');
+      if(locked[0].locationId!==asset.locationId) throw new ConflictException('The asset location changed. Refresh and try again.');
+      if(['missing','retired','disposed'].includes(locked[0].status)) throw new ConflictException('A missing or written-off asset cannot be transferred');
+      const open=await query<{id:string}>(
+        `SELECT id FROM transfer_requests WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND status IN ('requested','approved','in_transit')
+         UNION ALL SELECT i.batch_id AS id FROM transfer_batch_items i WHERE i.organization_id=$1::uuid AND i.asset_id=$2::uuid
+           AND (i.receipt_status='pending' OR (i.receipt_status='not_received' AND NOT EXISTS(
+             SELECT 1 FROM scan_events s WHERE s.organization_id=i.organization_id AND s.asset_id=i.asset_id AND s.scanned_at>i.scanned_at_receipt))) LIMIT 1`,
+        [actor.organizationId,dto.assetId]);
+      if(open[0]) throw new ConflictException('This asset already has an open transfer');
       const rows=await query<{id:string}>(`INSERT INTO transfer_requests (organization_id,asset_id,from_location_id,to_location_id,status,requested_by,handover_notes)
-        VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,'requested',$5::uuid,$6) RETURNING id`,[actor.organizationId,dto.assetId,asset.locationId,dto.toLocationId,actor.userId,dto.handoverNotes??null]);
+        VALUES ($1::uuid,$2::uuid,$3::uuid,$4::uuid,'requested',$5::uuid,$6) RETURNING id`,[actor.organizationId,dto.assetId,locked[0].locationId,dto.toLocationId,actor.userId,dto.handoverNotes??null]);
       await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details) VALUES ($1::uuid,$2::uuid,'transfer.requested','transfer',$3::uuid,$4::jsonb)`,[actor.organizationId,actor.userId,rows[0].id,JSON.stringify({assetId:dto.assetId,from:asset.locationId,to:dto.toLocationId})]);
       return rows[0];
     });
@@ -159,6 +172,8 @@ export class LifecycleService {
            SELECT id FROM condition_reports WHERE organization_id=$1::uuid AND asset_id=$2::uuid))
          OR (e.entity_type='transfer' AND e.entity_id IN (
            SELECT id FROM transfer_requests WHERE organization_id=$1::uuid AND asset_id=$2::uuid))
+         OR (e.entity_type='transfer_batch' AND e.entity_id IN (
+           SELECT batch_id FROM transfer_batch_items WHERE organization_id=$1::uuid AND asset_id=$2::uuid))
        )
        ORDER BY e.occurred_at DESC,e.id DESC LIMIT 100`,[actor.organizationId,assetId]);
   }

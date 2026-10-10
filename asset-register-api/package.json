@@ -7,8 +7,9 @@
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
-    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql",
+    "db:migrate": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/001_initial_schema.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql && psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/003_ownership_and_transfer_batches.sql",
     "db:migrate:custody": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/002_custody_history.sql",
+    "db:migrate:ownership-batches": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f database/migrations/003_ownership_and_transfer_batches.sql",
     "test": "vitest run",
     "test:watch": "vitest"
   },

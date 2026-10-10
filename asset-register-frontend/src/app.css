@@ -102,3 +102,50 @@ h1,h2,p { margin-top: 0; }
 .india-state-shape.has-centres{fill:#d5e5dc}
 .india-state-shape:hover,.india-state-shape:focus-visible{fill:#bfd8c9;stroke:#456e5d;stroke-width:1.2}
 .india-state-shape.chosen{fill:#a9cbb7;stroke:#315d4c;stroke-width:1.45}
+
+/* Grouped transfer manifests: the handover is visible and receivable per item. */
+.batch-workspace,.batch-history{margin-top:16px;padding:22px}
+.batch-workspace>.panel-heading{margin-bottom:7px}
+.batch-workspace .panel-heading h2,.batch-history .panel-heading h2{margin:0;color:#2e485a;font:700 18px/1.25 Manrope,sans-serif}
+.batch-intro{max-width:720px;margin:0 0 18px;color:#71808b;font-size:11px;line-height:1.55}
+.batch-create-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(250px,.95fr);gap:18px;align-items:start}
+.batch-field{min-width:0;display:grid;gap:6px;margin:0 0 12px;color:#455b70;font-size:10px;font-weight:700}
+.batch-field select,.batch-field textarea,.batch-note-control input,.batch-receipt-control select{width:100%;min-height:39px;padding:8px 10px;border:1px solid #dce4e8;border-radius:8px;background:#fff;color:#30485b;font:inherit;font-size:11px}
+.batch-field textarea{resize:vertical}
+.batch-field :focus-visible,.batch-note-control input:focus-visible,.batch-receipt-control select:focus-visible{border-color:#7898a9;outline:3px solid #d9e7eb;outline-offset:1px}
+.batch-asset-picker{max-height:330px;overflow:auto;border:1px solid #e1e8eb;border-radius:10px;background:#fbfcfc}
+.batch-picker-heading{position:sticky;top:0;z-index:1;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #e6ecee;background:#f8fafb;color:#40586b;font-size:10px}
+.batch-picker-heading span{color:#6c7c87;font-weight:500;white-space:nowrap}
+.batch-asset-option{min-height:48px;padding:8px 11px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #edf0f2;cursor:pointer}
+.batch-asset-option:last-of-type{border-bottom:0}
+.batch-asset-option input{width:16px;height:16px;flex:none;accent-color:#365c78}
+.batch-asset-option>span{min-width:0;display:grid;gap:3px}
+.batch-asset-option strong{overflow:hidden;color:#354d5d;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.batch-asset-option small,.batch-loading{color:#7b8992;font-size:9px}
+.batch-loading{padding:10px 12px}
+.batch-more{width:100%;min-height:38px;margin:0;border:0;border-top:1px solid #e6ecee;border-radius:0;justify-content:center;font-size:10px}
+.batch-destination-form{padding:14px;border:1px solid #e1e8eb;border-radius:11px;background:#fbfcfc}
+.batch-helper{margin:0;color:#75848d;font-size:9px;line-height:1.55}
+.batch-destination-form .primary-button{min-height:42px;margin-top:13px;font-size:11px}
+.batch-history>.panel-heading{margin-bottom:8px}
+.batch-card{padding:16px 0;border-top:1px solid #e8edef}
+.batch-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:15px}
+.batch-card-heading .eyebrow{margin:0 0 5px;color:#798791;font-size:8px;letter-spacing:.1em}
+.batch-card-heading h3{margin:0;color:#30495c;font:700 13px/1.4 Manrope,sans-serif;overflow-wrap:anywhere}
+.batch-card-heading h3 span{padding:0 4px;color:#789080}
+.batch-card-notes{margin:7px 0 10px;color:#74818a;font-size:10px;line-height:1.5}
+.batch-card-items{border-top:1px solid #edf0f2}
+.batch-receipt-row{padding:10px 0;display:grid;grid-template-columns:minmax(120px,1fr) minmax(180px,.8fr) minmax(190px,1fr);align-items:center;gap:10px;border-bottom:1px solid #edf0f2}
+.batch-receipt-row>span:first-child{min-width:0;display:grid;gap:4px}
+.batch-receipt-row>span:first-child strong{overflow:hidden;color:#354d5d;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.batch-receipt-row>span:first-child small{color:#7b8992;font-size:9px}
+.batch-receipt-control,.batch-note-control{min-width:0;display:grid;gap:4px;color:#73818a;font-size:8px;font-weight:700}
+.batch-receipt-control select,.batch-note-control input{min-height:34px;padding:6px 8px;font-size:9px}
+.batch-discrepancy{grid-column:2/-1;color:#875748;font-size:9px;line-height:1.4}
+.batch-card-footer{padding-top:11px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.batch-card-footer>small{color:#7b8992;font-size:9px}
+.batch-card-footer .lifecycle-row-actions{display:flex;align-items:center;gap:12px}
+.batch-card-footer .primary-button{width:auto;min-height:38px;margin:0;padding:0 14px;font-size:10px}
+.batch-card .status-chip{font-size:8px}
+@media(max-width:760px){.batch-create-grid{grid-template-columns:1fr}.batch-receipt-row{grid-template-columns:minmax(0,1fr) minmax(160px,.8fr)}.batch-note-control{grid-column:1/-1}.batch-discrepancy{grid-column:1/-1}}
+@media(max-width:620px){.batch-workspace,.batch-history{padding:15px}.batch-workspace .panel-heading h2,.batch-history .panel-heading h2{font-size:16px}.batch-create-grid{gap:11px}.batch-asset-picker{max-height:260px}.batch-card{padding:13px 0}.batch-card-heading{gap:8px}.batch-card-heading h3{font-size:11px}.batch-receipt-row{grid-template-columns:minmax(0,1fr);gap:7px}.batch-note-control,.batch-discrepancy{grid-column:auto}.batch-card-footer{align-items:flex-start;flex-direction:column}.batch-card-footer .lifecycle-row-actions{width:100%;flex-wrap:wrap}.batch-card-footer .primary-button{width:100%}}

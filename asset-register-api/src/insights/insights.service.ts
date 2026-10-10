@@ -63,6 +63,28 @@ export class InsightsService {
            AND t.requested_at<now()-interval '7 days'
            AND t.from_location_id IN (SELECT id FROM visible_locations)
          UNION ALL
+         SELECT 'batch-transfer:'||b.id::text||':'||a.id::text,'transfer_stalled','medium','Batch transfer needs a next step',
+           'Manifest '||b.batch_reference||' has been in transit beyond its seven-day review window.',
+           a.id,a.asset_tag,a.name,src.name,b.auto_flag_after,b.id
+         FROM transfer_batches b JOIN transfer_batch_items i ON i.organization_id=b.organization_id AND i.batch_id=b.id AND i.receipt_status='pending'
+         JOIN assets a ON a.organization_id=i.organization_id AND a.id=i.asset_id
+         JOIN locations src ON src.organization_id=b.organization_id AND src.id=b.from_location_id
+         WHERE b.organization_id=$1::uuid AND b.status='in_transit' AND b.auto_flag_after<=now()
+           AND b.from_location_id IN (SELECT id FROM visible_locations)
+         UNION ALL
+         SELECT 'batch-discrepancy:'||b.id::text||':'||a.id::text,'transfer_discrepancy',
+           CASE WHEN i.receipt_status='not_received' THEN 'high' ELSE 'medium' END,
+           CASE WHEN i.receipt_status='not_received' THEN 'Item not confirmed at destination' ELSE 'Asset arrived damaged' END,
+           'Manifest '||b.batch_reference||': '||COALESCE(i.receipt_discrepancy_note,'Review the item and confirm its recorded condition.'),
+           a.id,a.asset_tag,a.name,l.name,i.scanned_at_receipt,b.id
+         FROM transfer_batch_items i JOIN transfer_batches b ON b.organization_id=i.organization_id AND b.id=i.batch_id
+         JOIN assets a ON a.organization_id=i.organization_id AND a.id=i.asset_id
+         JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+         WHERE i.organization_id=$1::uuid AND i.receipt_status='not_received'
+           AND NOT EXISTS(SELECT 1 FROM scan_events s WHERE s.organization_id=i.organization_id AND s.asset_id=i.asset_id AND s.scanned_at>i.scanned_at_receipt)
+           AND a.status<>'missing'
+           AND (a.location_id IN (SELECT id FROM visible_locations) OR b.from_location_id IN (SELECT id FROM visible_locations) OR b.to_location_id IN (SELECT id FROM visible_locations))
+         UNION ALL
          SELECT 'report:'||r.id::text,'urgent_report','high','Urgent asset report is unresolved',
            r.description,a.id,a.asset_tag,a.name,l.name,r.reported_at,r.id
          FROM condition_reports r JOIN assets a ON a.organization_id=r.organization_id AND a.id=r.asset_id
@@ -103,7 +125,8 @@ export class InsightsService {
         (SELECT count(*) FROM condition_reports r JOIN assets a ON a.organization_id=r.organization_id AND a.id=r.asset_id WHERE r.organization_id=$1::uuid AND r.status NOT IN ('resolved','closed') AND a.location_id IN (SELECT id FROM visible_locations)) AS "openReportCount",
         (SELECT count(*) FROM warranties w JOIN assets a ON a.organization_id=w.organization_id AND a.id=w.asset_id WHERE w.organization_id=$1::uuid AND w.ends_on BETWEEN current_date AND current_date+90 AND a.location_id IN (SELECT id FROM visible_locations)) AS "warrantyExpiringCount",
         (SELECT count(*) FROM active_cycles) AS "activeCycleCount",
-        (SELECT count(*) FROM transfer_requests t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id WHERE t.organization_id=$1::uuid AND t.status IN ('requested','approved','in_transit') AND (a.location_id IN (SELECT id FROM visible_locations) OR t.from_location_id IN (SELECT id FROM visible_locations) OR t.to_location_id IN (SELECT id FROM visible_locations))) AS "openTransferCount",
+        ((SELECT count(*) FROM transfer_requests t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id WHERE t.organization_id=$1::uuid AND t.status IN ('requested','approved','in_transit') AND (a.location_id IN (SELECT id FROM visible_locations) OR t.from_location_id IN (SELECT id FROM visible_locations) OR t.to_location_id IN (SELECT id FROM visible_locations))) +
+         (SELECT count(*) FROM transfer_batches b WHERE b.organization_id=$1::uuid AND b.status IN ('requested','approved','in_transit') AND (b.from_location_id IN (SELECT id FROM visible_locations) OR b.to_location_id IN (SELECT id FROM visible_locations)))) AS "openTransferCount",
         CASE WHEN (SELECT total FROM cycle_totals)=0 THEN 0 ELSE round(100.0*(SELECT total FROM scanned_totals)/(SELECT total FROM cycle_totals))::integer END AS "scanCompletionPercent"`,[actor.organizationId,actor.userId]);
     return rows[0];
   }

@@ -14,6 +14,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(migration);
     const custodyMigration = await readFile(new URL('../../database/migrations/002_custody_history.sql', import.meta.url), 'utf8');
     await db.exec(custodyMigration);
+    const ownershipAndBatchesMigration = await readFile(new URL('../../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
+    await db.exec(ownershipAndBatchesMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -25,7 +27,7 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'audit_events', 'notification_outbox', 'asset_custodies',
+      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies',
     ]));
   });
 
@@ -38,6 +40,19 @@ describe('initial PostgreSQL schema', () => {
     await db.query(`INSERT INTO asset_custodies (organization_id,asset_id,custodian_user_id) VALUES ($1,$2,$3)`,[organizationId,asset.rows[0].id,person.rows[0].id]);
     await expect(db.query(`INSERT INTO asset_custodies (organization_id,asset_id,custodian_user_id) VALUES ($1,$2,$3)`,[organizationId,asset.rows[0].id,person.rows[0].id]))
       .rejects.toMatchObject({code:'23505'});
+  });
+
+  it('defaults assets to Incuspaze ownership and prevents an asset appearing in two open manifests', async () => {
+    const org=await db.query<{id:string}>(`INSERT INTO organizations(name,slug) VALUES ('Manifest Org','manifest-org') RETURNING id`);
+    const organizationId=org.rows[0].id;
+    const user=await db.query<{id:string}>(`INSERT INTO users(organization_id,identity_subject,display_name,email) VALUES ($1,'manifest-user','Manifest User','manifest@example.test') RETURNING id`,[organizationId]);
+    const places=await db.query<{id:string}>(`INSERT INTO locations(organization_id,kind,name) VALUES ($1,'centre','Manifest Centre'),($1,'centre','Manifest Destination') RETURNING id`,[organizationId]);
+    const asset=await db.query<{id:string;ownership_type:string}>(`INSERT INTO assets(organization_id,location_id,asset_tag,name,category) VALUES ($1,$2,'M-001','Switch','IT') RETURNING id,ownership_type`,[organizationId,places.rows[0].id]);
+    expect(asset.rows[0].ownership_type).toBe('INCUSPAZE_OWNED');
+    const first=await db.query<{id:string}>(`INSERT INTO transfer_batches(organization_id,batch_reference,from_location_id,to_location_id,requested_by) VALUES ($1,'BT-ONE',$2,$3,$4) RETURNING id`,[organizationId,places.rows[0].id,places.rows[1].id,user.rows[0].id]);
+    await db.query(`INSERT INTO transfer_batch_items(organization_id,batch_id,asset_id) VALUES ($1,$2,$3)`,[organizationId,first.rows[0].id,asset.rows[0].id]);
+    const second=await db.query<{id:string}>(`INSERT INTO transfer_batches(organization_id,batch_reference,from_location_id,to_location_id,requested_by) VALUES ($1,'BT-TWO',$2,$3,$4) RETURNING id`,[organizationId,places.rows[0].id,places.rows[1].id,user.rows[0].id]);
+    await expect(db.query(`INSERT INTO transfer_batch_items(organization_id,batch_id,asset_id) VALUES ($1,$2,$3)`,[organizationId,second.rows[0].id,asset.rows[0].id])).rejects.toMatchObject({code:'23505'});
   });
 
   it('blocks cross-organization asset-to-location references', async () => {

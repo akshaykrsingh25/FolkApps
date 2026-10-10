@@ -50,8 +50,8 @@ const directoryLocations = (() => {
 })();
 
 const DEMO_ASSETS: Asset[] = [
-  { id: '20000000-0000-4000-8000-000000000001', locationId: DEMO_LOCATIONS[5].id, locationName: 'Floor 4', assetTag: 'IT-00482', qrPublicId: '30000000-0000-4000-8000-000000000001', name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-2488', manufacturer: 'Cisco', model: 'Catalyst 9200', status: 'active', condition: 'good', purchaseDate: '2024-09-12', purchaseAmount: '48500.00', currency: 'INR', sellerName: 'Network Systems India', sellerPhone: null, createdAt: new Date().toISOString() },
-  { id: '20000000-0000-4000-8000-000000000002', locationId: DEMO_LOCATIONS[1].id, locationName: 'Ahmedabad Krish Cubicle', assetTag: 'OF-00087', qrPublicId: '30000000-0000-4000-8000-000000000002', name: 'Office printer', category: 'Office equipment', serialNumber: 'PR-4432', manufacturer: 'HP', model: 'LaserJet Pro', status: 'in_repair', condition: 'fair', purchaseDate: '2023-02-18', purchaseAmount: '28900.00', currency: 'INR', sellerName: 'Office Tech', sellerPhone: null, createdAt: new Date().toISOString() },
+  { id: '20000000-0000-4000-8000-000000000001', locationId: DEMO_LOCATIONS[5].id, locationName: 'Floor 4', assetTag: 'IT-00482', qrPublicId: '30000000-0000-4000-8000-000000000001', name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-2488', manufacturer: 'Cisco', model: 'Catalyst 9200', status: 'active', condition: 'good', ownershipType: 'INCUSPAZE_OWNED', purchaseDate: '2024-09-12', purchaseAmount: '48500.00', currency: 'INR', sellerName: 'Network Systems India', sellerPhone: null, createdAt: new Date().toISOString() },
+  { id: '20000000-0000-4000-8000-000000000002', locationId: DEMO_LOCATIONS[1].id, locationName: 'Ahmedabad Krish Cubicle', assetTag: 'OF-00087', qrPublicId: '30000000-0000-4000-8000-000000000002', name: 'Office printer', category: 'Office equipment', serialNumber: 'PR-4432', manufacturer: 'HP', model: 'LaserJet Pro', status: 'in_repair', condition: 'fair', ownershipType: 'INCUSPAZE_OWNED', purchaseDate: '2023-02-18', purchaseAmount: '28900.00', currency: 'INR', sellerName: 'Office Tech', sellerPhone: null, createdAt: new Date().toISOString() },
 ];
 
 const STORAGE_KEY = 'incuasset-demo-v3';
@@ -60,7 +60,10 @@ interface DemoState { locations: Location[]; assets: Asset[] }
 function read(): DemoState {
   try {
     const value = sessionStorage.getItem(STORAGE_KEY);
-    if (value) return JSON.parse(value) as DemoState;
+    if (value) {
+      const saved=JSON.parse(value) as DemoState;
+      return {...saved,assets:saved.assets.map(asset=>({...asset,ownershipType:asset.ownershipType||'INCUSPAZE_OWNED'}))};
+    }
   } catch { /* use the clean synthetic fixtures */ }
   return { locations: [...directoryLocations], assets: [...DEMO_ASSETS] };
 }
@@ -90,6 +93,7 @@ export const demoStore = {
       qrPublicId: crypto.randomUUID(), name: String(data.name), category: String(data.category),
       serialNumber: String(data.serialNumber || '') || null, manufacturer: String(data.manufacturer || '') || null,
       model: String(data.model || '') || null, status: 'active', condition: String(data.condition || 'good'),
+      ownershipType: String(data.ownershipType || 'INCUSPAZE_OWNED') as Asset['ownershipType'],
       purchaseDate: String(data.purchaseDate || '') || null, purchaseAmount: String(data.purchaseAmount || '') || null,
       currency: String(data.currency || 'INR'), sellerName: String(data.sellerName || '') || null,
       sellerPhone: String(data.sellerPhone || '') || null, createdAt: new Date().toISOString(),

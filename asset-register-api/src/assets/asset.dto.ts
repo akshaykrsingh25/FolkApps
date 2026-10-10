@@ -2,12 +2,16 @@ import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Max
 
 export const ASSET_STATUSES = ['active', 'unused', 'in_repair', 'out_of_service', 'missing', 'retired', 'disposed'] as const;
 export const ASSET_CONDITIONS = ['good', 'fair', 'damaged', 'not_working'] as const;
+export const ASSET_OWNERSHIP_TYPES = ['INCUSPAZE_OWNED','CLIENT_DEDICATED','VENDOR_LEASED','TRIAL_DEMO'] as const;
 
 export class CreateAssetDto {
   @IsOptional() @IsUUID()
   clientRequestId?: string;
   @IsUUID()
   locationId!: string;
+
+  @IsOptional() @IsIn(ASSET_OWNERSHIP_TYPES)
+  ownershipType?: typeof ASSET_OWNERSHIP_TYPES[number];
 
   @IsOptional() @IsString() @Length(1, 40)
   assetTag?: string;
@@ -50,6 +54,9 @@ export class CreateAssetDto {
 }
 
 export class UpdateAssetDto {
+  @IsOptional() @IsIn(ASSET_OWNERSHIP_TYPES)
+  ownershipType?: typeof ASSET_OWNERSHIP_TYPES[number];
+
   @IsOptional() @IsIn(ASSET_STATUSES)
   status?: typeof ASSET_STATUSES[number];
   @IsOptional() @IsString() @Length(5, 500)

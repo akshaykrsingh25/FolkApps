@@ -20,6 +20,8 @@ describe('phase two: location and asset workflows', () => {
     db = new PGlite({ extensions: { pgcrypto } });
     const migration = await readFile(new URL('../../database/migrations/001_initial_schema.sql', import.meta.url), 'utf8');
     await db.exec(migration);
+    const ownershipAndBatchesMigration = await readFile(new URL('../../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
+    await db.exec(ownershipAndBatchesMigration);
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(

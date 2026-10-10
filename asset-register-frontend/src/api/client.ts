@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, OperationalAlert, Organization, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, OperationalAlert, Organization, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -69,6 +69,9 @@ export const api = {
   transfers: (token:string,organizationId:string)=>request<AssetTransfer[]>('/transfers',token,organizationId),
   createTransfer: (token:string,organizationId:string,data:Record<string,unknown>)=>request<{id:string}>('/transfers',token,organizationId,data),
   transferAction: (token:string,organizationId:string,id:string,action:string,handoverNotes?:string)=>request<AssetTransfer>(`/transfers/${encodeURIComponent(id)}`,token,organizationId,{action,handoverNotes},'PATCH'),
+  transferBatches: (token:string,organizationId:string)=>request<TransferBatch[]>('/transfer-batches',token,organizationId),
+  createTransferBatch: (token:string,organizationId:string,data:{assetIds:string[];toLocationId:string;handoverNotes?:string})=>request<{id:string;batchReference:string;itemCount:number}>('/transfer-batches',token,organizationId,data),
+  transferBatchAction: (token:string,organizationId:string,id:string,data:{action:string;handoverNotes?:string;items?:{assetId:string;receiptStatus:'accepted'|'damaged'|'not_received';discrepancyNote?:string}[]})=>request<{id:string;status:string}>(`/transfer-batches/${encodeURIComponent(id)}`,token,organizationId,data,'PATCH'),
   warranties: (token:string,organizationId:string,assetId:string)=>request<WarrantyRecord[]>(`/assets/${encodeURIComponent(assetId)}/warranties`,token,organizationId),
   createWarranty: (token:string,organizationId:string,assetId:string,data:Record<string,unknown>)=>request<WarrantyRecord>(`/assets/${encodeURIComponent(assetId)}/warranties`,token,organizationId,data),
   assetActivity: (token:string,organizationId:string,assetId:string)=>request<AssetActivityEvent[]>(`/assets/${encodeURIComponent(assetId)}/activity`,token,organizationId),

@@ -3,6 +3,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AuthorizationModule } from '../authorization/authorization.module';
 import { LifecycleController } from './lifecycle.controller';
 import { LifecycleService } from './lifecycle.service';
+import { TransferBatchesService } from './transfer-batches.service';
 
-@Module({imports:[AuthModule,AuthorizationModule],controllers:[LifecycleController],providers:[LifecycleService]})
+@Module({imports:[AuthModule,AuthorizationModule],controllers:[LifecycleController],providers:[LifecycleService,TransferBatchesService]})
 export class LifecycleModule {}

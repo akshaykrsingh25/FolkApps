@@ -34,6 +34,7 @@ export interface Asset {
   model: string | null;
   status: string;
   condition: string;
+  ownershipType: 'INCUSPAZE_OWNED'|'CLIENT_DEDICATED'|'VENDOR_LEASED'|'TRIAL_DEMO';
   purchaseDate: string | null;
   purchaseAmount: string | null;
   currency: string;
@@ -67,6 +68,8 @@ export interface VerificationAsset {
 
 export interface LifecycleReport { id:string; assetId:string; assetTag:string; assetName:string; locationId:string; locationName:string; kind:string; status:string; urgency:string; description:string; resolutionNotes?:string|null; reportedAt:string; resolvedAt?:string|null; }
 export interface AssetTransfer { id:string; assetId:string; assetTag:string; assetName:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; receivedAt?:string|null; handoverNotes?:string|null; }
+export interface TransferBatchItem { assetId:string; assetTag:string; assetName:string; receiptStatus:'pending'|'accepted'|'damaged'|'not_received'|'cancelled'; discrepancyNote:string|null; }
+export interface TransferBatch { id:string; batchReference:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; dispatchedAt:string|null; autoFlagAfter:string|null; completedAt:string|null; handoverNotes:string|null; overdue:boolean; itemCount:number; pendingCount:number; items:TransferBatchItem[]; }
 export interface WarrantyRecord { id:string; coverageKind:string; provider:string|null; servicePhone:string|null; startsOn:string|null; endsOn:string|null; terms:string|null; }
 export interface AssetActivityEvent { id:string; eventType:string; occurredAt:string; actorName:string; details:Record<string,unknown>; }
 export interface AssetCustody { custodyId:string; custodianUserId:string; custodianName:string; issuedByName:string|null; issuedAt:string; issueCondition:string; issueNotes:string|null; returnedByName:string|null; returnedAt:string|null; returnCondition:string|null; returnNotes:string|null; }
