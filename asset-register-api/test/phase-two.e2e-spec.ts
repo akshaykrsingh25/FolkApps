@@ -68,6 +68,7 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/013_verification_escalation_policy.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/015_audit_feed_and_notification_preferences.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/016_asset_visual_matching.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -212,7 +213,7 @@ describe('phase two API integration', () => {
     expect(await (await call(`/assets/${asset.id}`,hoToken,{ownershipType:'VENDOR_LEASED'},organizationId,'PATCH')).json()).toMatchObject({ownershipType:'VENDOR_LEASED'});
 
     const uploadResponse = await call(`/assets/${asset.id}/evidence/upload-url`, centreToken, {
-      clientEvidenceId: '60000000-0000-4000-8000-000000000001', kind: 'asset_photo', originalName: 'switch.jpg', contentType: 'image/jpeg', byteSize: 5, sha256: 'a'.repeat(64),
+      clientEvidenceId: '60000000-0000-4000-8000-000000000001', kind: 'asset_photo', originalName: 'switch.jpg', contentType: 'image/jpeg', byteSize: 5, sha256: 'a'.repeat(64), visualHash:'0123456789abcdef',
     });
     expect(uploadResponse.status).toBe(201);
     const upload = await uploadResponse.json() as { evidenceId: string; uploadUrl: string };
@@ -441,7 +442,26 @@ describe('phase two API integration', () => {
     const duplicateOne=await call('/assets',centreToken,{locationId:centre.id,name:'Duplicate router one',category:'IT equipment',serialNumber:'DUP-777'});
     const duplicateTwo=await call('/assets',centreToken,{locationId:centre.id,name:'Duplicate router two',category:'IT equipment',serialNumber:'DUP-777'});
     expect(duplicateOne.status).toBe(201);expect(duplicateTwo.status).toBe(201);
-    const duplicateAsset=await duplicateOne.json() as {id:string};
+    const duplicateOneAsset=await duplicateOne.json() as {id:string};
+    const duplicateTwoAsset=await duplicateTwo.json() as {id:string};
+    for (const [index,visualAsset] of [duplicateOneAsset,duplicateTwoAsset].entries()) {
+      const upload=await call(`/assets/${visualAsset.id}/evidence/upload-url`,centreToken,{
+        clientEvidenceId:`60000000-0000-4000-8000-00000000000${index+2}`,kind:'asset_photo',originalName:`duplicate-router-${index+1}.jpg`,contentType:'image/jpeg',byteSize:5,
+        sha256:(index===0?'c':'d').repeat(64),visualHash:index===0?'0123456789abcdef':'0123456789abcdee',
+      });
+      expect(upload.status).toBe(201);
+      const uploadBody=await upload.json() as {evidenceId:string};
+      expect((await call(`/assets/${visualAsset.id}/evidence/complete`,centreToken,{evidenceId:uploadBody.evidenceId})).status).toBe(201);
+    }
+    const visualPage=await call(`/assets/visual-matches?visualHash=0123456789abcdef&locationId=${centre.id}`,centreToken);
+    expect(visualPage.status).toBe(200);
+    const visualMatches=(await visualPage.json()) as {matches:{id:string;similarityPercent:number}[]};
+    expect(visualMatches.matches.map((match)=>match.id)).toEqual(expect.arrayContaining([duplicateOneAsset.id,duplicateTwoAsset.id]));
+    expect(visualMatches.matches.find((match)=>match.id===duplicateOneAsset.id)?.similarityPercent).toBe(100);
+    expect(visualMatches.matches.find((match)=>match.id===duplicateTwoAsset.id)?.similarityPercent).toBeGreaterThanOrEqual(98);
+    expect((await call(`/assets/visual-matches?visualHash=0123456789abcdef&locationId=${centre.id}`,centreBToken)).status).toBe(403);
+    expect((await call('/assets/visual-matches?visualHash=not-a-hash',centreToken)).status).toBe(400);
+    const duplicateAsset=duplicateOneAsset;
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing'},organizationId,'PATCH')).status).toBe(409);
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'disposed',statusChangeReason:'Written off'},organizationId,'PATCH')).status).toBe(403);
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing',statusChangeReason:'Checked with centre head; item not located.'},organizationId,'PATCH')).status).toBe(200);

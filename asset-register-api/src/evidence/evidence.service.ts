@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { DatabaseService } from '../database.service';
@@ -10,6 +10,7 @@ interface UploadIntent {
   id: string; assetId: string; objectKey: string; kind: string; originalName: string;
   contentType: string; byteSize: number; expiresAt: string;
   sha256: string;
+  visualHash: string | null;
 }
 
 @Injectable()
@@ -26,6 +27,7 @@ export class EvidenceService {
   }
 
   async createUpload(actor: ActorContext, assetId: string, dto: CreateEvidenceUploadDto) {
+    if (dto.visualHash && dto.kind !== 'asset_photo') throw new BadRequestException('Visual matching is available for asset photos only');
     await this.assertWritableAsset(actor, assetId);
     const id = dto.clientEvidenceId || randomUUID();
     const completed = await this.database.query<{ id: string }>(
@@ -36,13 +38,13 @@ export class EvidenceService {
     const objectKey = `${actor.organizationId}/assets/${assetId}/${id}`;
     const signed = await this.storage.createUploadUrl({ key: objectKey, contentType: dto.contentType, sha256: dto.sha256.toLowerCase() });
     await this.database.query(
-      `INSERT INTO evidence_upload_intents (id,organization_id,asset_id,object_key,kind,original_name,content_type,byte_size,sha256,uploaded_by)
-       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5::evidence_kind,$6,$7,$8,$9,$10::uuid)
+      `INSERT INTO evidence_upload_intents (id,organization_id,asset_id,object_key,kind,original_name,content_type,byte_size,sha256,uploaded_by,visual_hash)
+       VALUES ($1::uuid,$2::uuid,$3::uuid,$4,$5::evidence_kind,$6,$7,$8,$9,$10::uuid,$11)
        ON CONFLICT (id) DO UPDATE SET kind=EXCLUDED.kind,original_name=EXCLUDED.original_name,
          content_type=EXCLUDED.content_type,byte_size=EXCLUDED.byte_size,sha256=EXCLUDED.sha256,
-         uploaded_by=EXCLUDED.uploaded_by,expires_at=now()+interval '20 minutes'
+         uploaded_by=EXCLUDED.uploaded_by,visual_hash=EXCLUDED.visual_hash,expires_at=now()+interval '20 minutes'
        WHERE evidence_upload_intents.organization_id=EXCLUDED.organization_id AND evidence_upload_intents.asset_id=EXCLUDED.asset_id`,
-      [id,actor.organizationId,assetId,objectKey,dto.kind,dto.originalName,dto.contentType,dto.byteSize,dto.sha256.toLowerCase(),actor.userId],
+      [id,actor.organizationId,assetId,objectKey,dto.kind,dto.originalName,dto.contentType,dto.byteSize,dto.sha256.toLowerCase(),actor.userId,dto.visualHash?.toLowerCase()??null],
     );
     return { evidenceId: id, uploadUrl: signed.url, headers: signed.headers, expiresInSeconds: 600 };
   }
@@ -50,7 +52,7 @@ export class EvidenceService {
   async completeUpload(actor: ActorContext, assetId: string, evidenceId: string) {
     const intents = await this.database.query<UploadIntent>(
       `SELECT id,asset_id AS "assetId",object_key AS "objectKey",kind,original_name AS "originalName",
-              content_type AS "contentType",byte_size AS "byteSize",sha256,"expires_at" AS "expiresAt"
+              content_type AS "contentType",byte_size AS "byteSize",sha256,visual_hash AS "visualHash","expires_at" AS "expiresAt"
          FROM evidence_upload_intents WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND id=$3::uuid AND expires_at>now()`,
       [actor.organizationId,assetId,evidenceId],
     );
@@ -60,14 +62,25 @@ export class EvidenceService {
     await this.storage.verifyUpload(intent.objectKey, { contentType: intent.contentType, byteSize: Number(intent.byteSize), sha256: intent.sha256 });
     return this.database.transaction(async (query) => {
       const saved = await query<{ id: string; kind: string; originalName: string; contentType: string; byteSize: number; createdAt: string }>(
-        `INSERT INTO evidence (id,organization_id,asset_id,kind,object_key,original_name,content_type,byte_size,sha256,uploaded_by)
-         SELECT id,organization_id,asset_id,kind,object_key,original_name,content_type,byte_size,sha256,uploaded_by
+        `INSERT INTO evidence (id,organization_id,asset_id,kind,object_key,original_name,content_type,byte_size,sha256,uploaded_by,visual_hash)
+         SELECT id,organization_id,asset_id,kind,object_key,original_name,content_type,byte_size,sha256,uploaded_by,visual_hash
            FROM evidence_upload_intents WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND id=$3::uuid
          ON CONFLICT (organization_id,id) DO NOTHING
          RETURNING id,kind,original_name AS "originalName",content_type AS "contentType",byte_size AS "byteSize",created_at AS "createdAt"`,
         [actor.organizationId,assetId,evidenceId],
       );
       if (!saved[0]) throw new NotFoundException('The upload was already completed');
+      if (intent.kind==='asset_photo'&&intent.visualHash) {
+        const visualHash=intent.visualHash.toLowerCase();
+        const bandValues=Array.from({length:8},(_,index)=>Number.parseInt(visualHash.slice(index*2,index*2+2),16));
+        await query('UPDATE assets SET visual_hash=$3 WHERE organization_id=$1::uuid AND id=$2::uuid',[actor.organizationId,assetId,visualHash]);
+        await query('DELETE FROM asset_visual_hash_bands WHERE organization_id=$1::uuid AND asset_id=$2::uuid',[actor.organizationId,assetId]);
+        await query(
+          `INSERT INTO asset_visual_hash_bands(organization_id,asset_id,band,band_hash)
+           SELECT $1::uuid,$2::uuid,(ordinality-1)::smallint,value FROM unnest($3::smallint[]) WITH ORDINALITY AS bands(value,ordinality)`,
+          [actor.organizationId,assetId,bandValues],
+        );
+      }
       await query('DELETE FROM evidence_upload_intents WHERE organization_id=$1::uuid AND id=$2::uuid', [actor.organizationId,evidenceId]);
       await query(
         `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)

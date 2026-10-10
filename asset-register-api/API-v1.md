@@ -11,6 +11,7 @@ List endpoints use cursor pagination (`limit` capped at 100, opaque `nextCursor`
 | `GET /api/v1/locations?parentId=` | Browse state → centre/warehouse → building → floor → area | Read locations inside assigned scope |
 | `POST /api/v1/locations` | Add a centre or internal location | Head Office for centre; Centre Head for descendants of own centre |
 | `GET /api/v1/assets?locationId=&status=&q=` | Search and list registered assets | Read assets inside assigned scope |
+| `GET /api/v1/assets/visual-matches?visualHash=&locationId=` | Find likely visual look-alikes using on-device photo signatures | Asset read permission; candidates stay inside current tenant and location scope |
 | `POST /api/v1/assets` | Create asset and allocate opaque QR identity | Asset create permission in target location |
 | `GET /api/v1/assets/:id` | Asset, coverage, evidence metadata and latest verification | Read asset inside assigned scope |
 | `POST /api/v1/scans` | Record a verification scan | Centre scan permission; `Idempotency-Key` required |
@@ -38,7 +39,7 @@ List endpoints use cursor pagination (`limit` capped at 100, opaque `nextCursor`
 
 Enabled policies open the first cycle immediately and create later cycles on the configured cadence only after the previous cycle is closed. The worker transitions scheduled cycles to open/grace and creates tiered in-app escalation notices after the scan window. Missing scan evidence remains an investigation signal; it does not change asset status automatically. Push, email, and WhatsApp delivery require an approved provider.
 
-Scan and transfer writes append audit records in the same database transaction as the business change. Scan retries with the same idempotency key return the original result. Media bytes go directly to private object storage; API records retain metadata and object keys only.
+Scan and transfer writes append audit records in the same database transaction as the business change. Scan retries with the same idempotency key return the original result. Media bytes go directly to private object storage; API records retain metadata and object keys only. Asset-photo visual signatures are calculated in the browser and compared with previously registered signatures; the matching request does not send the image itself.
 
 ## Error shape
 

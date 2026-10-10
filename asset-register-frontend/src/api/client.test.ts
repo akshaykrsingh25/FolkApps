@@ -4,6 +4,15 @@ import { api, ApiError } from './client';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('asset register API client', () => {
+  it('sends a tenant-scoped visual matching request and optional location filter', async () => {
+    const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({matches:[]}),{status:200}));
+    vi.stubGlobal('fetch',fetchMock);
+    await expect(api.visualMatches('signed-token','org-123','0123456789abcdef','floor-4')).resolves.toEqual({matches:[]});
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4000/api/v1/assets/visual-matches?visualHash=0123456789abcdef&locationId=floor-4',expect.objectContaining({
+      method:'GET',headers:expect.objectContaining({authorization:'Bearer signed-token','x-organization-id':'org-123'}),
+    }));
+  });
+
   it('sends scoped bearer requests and safely encodes search text', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: [], nextCursor: null }), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);

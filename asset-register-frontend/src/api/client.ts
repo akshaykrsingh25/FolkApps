@@ -45,6 +45,10 @@ export const api = {
     const query = params.size ? `?${params}` : '';
     return request<{ data: Asset[]; nextCursor: string | null }>(`/assets${query}`, token, organizationId);
   },
+  visualMatches: (token:string,organizationId:string,visualHash:string,locationId?:string)=>{
+    const params=new URLSearchParams({visualHash}); if(locationId)params.set('locationId',locationId);
+    return request<{matches:Asset[]}>(`/assets/visual-matches?${params.toString()}`,token,organizationId);
+  },
   assetById: (token:string,organizationId:string,id:string)=>request<Asset>(`/assets/${encodeURIComponent(id)}`,token,organizationId),
   createAsset: (token: string, organizationId: string, data: Record<string, unknown>) =>
     request<Asset>('/assets', token, organizationId, data),
@@ -52,7 +56,7 @@ export const api = {
     request<Asset>(`/assets/${encodeURIComponent(id)}`, token, organizationId, data),
   evidence: (token: string, organizationId: string, assetId: string) =>
     request<Evidence[]>(`/assets/${encodeURIComponent(assetId)}/evidence`, token, organizationId),
-  createEvidenceUpload: (token: string, organizationId: string, assetId: string, data: { clientEvidenceId: string; kind: string; originalName: string; contentType: string; byteSize: number; sha256: string }) =>
+  createEvidenceUpload: (token: string, organizationId: string, assetId: string, data: { clientEvidenceId: string; kind: string; originalName: string; contentType: string; byteSize: number; sha256: string; visualHash?: string }) =>
     request<{ evidenceId: string; alreadyCompleted?: boolean; uploadUrl: string | null; headers: Record<string, string>; expiresInSeconds: number }>(`/assets/${encodeURIComponent(assetId)}/evidence/upload-url`, token, organizationId, data),
   completeEvidenceUpload: (token: string, organizationId: string, assetId: string, evidenceId: string) =>
     request<Evidence>(`/assets/${encodeURIComponent(assetId)}/evidence/complete`, token, organizationId, { evidenceId }),

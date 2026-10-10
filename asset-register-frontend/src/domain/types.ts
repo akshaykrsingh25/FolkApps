@@ -53,6 +53,7 @@ export interface Asset {
   sellerName: string | null;
   sellerPhone: string | null;
   createdAt: string;
+  similarityPercent?: number;
 }
 
 export interface Evidence {

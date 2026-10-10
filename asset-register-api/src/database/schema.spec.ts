@@ -39,6 +39,7 @@ describe('initial PostgreSQL schema', () => {
     const verificationCycleClosureMigration = await readFile(new URL('../../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8');
     await db.exec(verificationCycleClosureMigration);
     await db.exec(await readFile(new URL('../../database/migrations/015_audit_feed_and_notification_preferences.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../database/migrations/016_asset_visual_matching.sql', import.meta.url), 'utf8'));
   });
 
   afterAll(async () => { await db.close(); });
@@ -50,7 +51,7 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence', 'notification_inbox',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'notification_preferences', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
+      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'notification_preferences', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings', 'asset_visual_hash_bands',
     ]));
     const outboxColumns = await db.query<{ column_name: string }>(
       `SELECT column_name FROM information_schema.columns WHERE table_name='notification_outbox'`,
@@ -60,7 +61,7 @@ describe('initial PostgreSQL schema', () => {
       `SELECT indexname FROM pg_indexes WHERE schemaname='public'`,
     );
     expect(watchIndexes.rows.map((row) => row.indexname)).toEqual(expect.arrayContaining([
-      'scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx', 'verification_cycles_policy_start_uq',
+      'scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx', 'verification_cycles_policy_start_uq','asset_visual_hash_bands_lookup_idx',
       'locations_org_parent_idx','assets_org_normalized_serial_location_idx','condition_reports_open_urgent_idx','audit_events_org_time_id_idx',
     ]));
   });

@@ -1,4 +1,4 @@
-import { IsIn, IsInt, IsString, IsUUID, Length, Max, Min, Matches } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Length, Max, Min, Matches } from 'class-validator';
 
 export const EVIDENCE_KINDS = ['asset_photo', 'invoice', 'label', 'condition_photo', 'handover', 'other'] as const;
 export const EVIDENCE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'] as const;
@@ -21,6 +21,9 @@ export class CreateEvidenceUploadDto {
 
   @IsString() @Matches(/^[0-9a-f]{64}$/i)
   sha256!: string;
+
+  @IsOptional() @IsString() @Matches(/^[0-9a-f]{16}$/i)
+  visualHash?: string;
 }
 
 export class CompleteEvidenceUploadDto {

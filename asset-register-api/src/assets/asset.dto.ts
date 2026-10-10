@@ -116,3 +116,11 @@ export class ListAssetsDto {
   @IsOptional() @IsNumber() @Min(1) @Max(100)
   limit?: number;
 }
+
+export class VisualMatchesDto {
+  @IsString() @Matches(/^[0-9a-f]{16}$/i)
+  visualHash!: string;
+
+  @IsOptional() @IsUUID()
+  locationId?: string;
+}

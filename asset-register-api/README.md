@@ -21,7 +21,7 @@ Production access uses the configured OIDC provider. The app does not issue loca
 
 ## Local setup
 
-Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. On an existing database, apply each missing migration in order; the notification, verification-index, recurring-cycle, escalation-policy, and cycle-closure scripts are listed below. Install dependencies, then run `npm run start:dev`.
+Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. On an existing database, apply each missing migration in order; `npm run db:migrate:visual-matching` applies migration 016 after migrations 001–015. Install dependencies, then run `npm run start:dev`.
 
 Run `npm test` for authentication, tenant-membership, location-scope, and PostgreSQL schema checks. The schema tests use an embedded PostgreSQL runtime and do not need a running database service.
 Run `npm run test:recovery` against two disposable PostgreSQL 16 databases to exercise all migrations, checksummed backup, restore, and tamper rejection. The CI workflow runs this drill with synthetic data.
@@ -87,6 +87,8 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - Audit access requires the `audit:read` permission. Head office, state heads, and centre heads receive it by default; returned events are filtered against each user's current location scope. Custodians and read-only viewers cannot access the organization-wide audit feed.
 - Apply migration `015_audit_feed_and_notification_preferences.sql` using `npm run db:migrate` or `npm run db:migrate:audit-preferences`.
 - `GET /api/v1/insights/alerts?limit=&cursor=` returns prioritized Watch signals in keyset pages (50 by default, at most 200). The inbox refresh snapshots up to 200 current signals; older Watch results remain available through the paged Watch endpoint.
+- Phase 3 visual matching compares compact 64-bit difference hashes of saved asset photos. The browser calculates the signature; image pixels are not sent to the matching endpoint. Results are tenant- and location-scoped, ranked by visual similarity, and shown as review hints. OCR text matching continues to suggest readable names, categories, brands, models, and invoice fields; no suggestion is applied without user review.
+- Apply migration `016_asset_visual_matching.sql` using `npm run db:migrate` or `npm run db:migrate:visual-matching` on an existing database. Existing asset photos are not automatically re-read; new asset-photo uploads populate signatures for subsequent comparisons.
 - The worker checks enabled verification policies and overdue cycles every five minutes. Missed assets escalate in the app from assigned Custodian to Centre Head, State Head, and Head Office at the interval configured on each policy (default seven days per step). It stops when an eligible scan is recorded, the asset is marked missing/retired/disposed, or Head Office closes the cycle with a required reason; closure records the unresolved asset count. Other live Watch signals can still be captured when the signed-in app loads or refreshes. Push, email, and WhatsApp delivery still need an approved provider.
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
 - Run `npm run db:migrate:notification-outbox-worker` to add retry and dead-letter scheduling fields to an existing notification outbox.

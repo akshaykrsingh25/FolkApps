@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { DatabaseService } from '../database.service';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
-import type { CreateAssetDto, ListAssetsDto, UpdateAssetDto } from './asset.dto';
+import type { CreateAssetDto, ListAssetsDto, UpdateAssetDto, VisualMatchesDto } from './asset.dto';
 import { SignedQrService } from './signed-qr.service';
 
 export interface AssetRow {
@@ -26,6 +26,7 @@ export interface AssetRow {
   sellerName: string | null;
   sellerPhone: string | null;
   createdAt: string;
+  similarityPercent?: number;
 }
 
 const ACCESSIBLE_LOCATION_CTE = `WITH RECURSIVE scope_locations(id) AS (
@@ -76,6 +77,40 @@ export class AssetsService {
     const hasMore = rows.length > limit;
     const data = hasMore ? rows.slice(0, limit) : rows;
     return { data, nextCursor: hasMore ? data[data.length - 1].id : null };
+  }
+
+  async visualMatches(actor: ActorContext, query: VisualMatchesDto) {
+    const visualHash = query.visualHash.toLowerCase();
+    const target = BigInt(`0x${visualHash}`);
+    const bands = Array.from({ length: 8 }, (_, index) => Number.parseInt(visualHash.slice(index * 2, index * 2 + 2), 16));
+    if (query.locationId) await this.authorization.assertLocationAccess(actor, query.locationId);
+    const candidates = await this.database.query<AssetRow & { visualHash: string; bandMatches: number }>(
+      `${ACCESSIBLE_LOCATION_CTE}, input_bands(band,band_hash) AS (
+         SELECT (ordinality-1)::smallint,value FROM unnest($3::smallint[]) WITH ORDINALITY AS input(value,ordinality)
+       ), matching_assets AS (
+         SELECT stored.asset_id,count(*)::integer AS band_matches
+           FROM asset_visual_hash_bands stored JOIN input_bands input
+             ON input.band=stored.band AND input.band_hash=stored.band_hash
+          WHERE stored.organization_id=$1::uuid
+          GROUP BY stored.asset_id
+       )
+       SELECT ${ASSET_COLUMNS},a.visual_hash AS "visualHash",m.band_matches AS "bandMatches"
+         FROM matching_assets m JOIN assets a ON a.organization_id=$1::uuid AND a.id=m.asset_id
+         JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+        WHERE a.location_id IN (SELECT id FROM visible_locations)
+          AND ($4::uuid IS NULL OR a.location_id=$4::uuid)
+        ORDER BY CASE WHEN a.location_id=$4::uuid THEN 0 ELSE 1 END,m.band_matches DESC,a.updated_at DESC,a.id
+        LIMIT 300`,
+      [actor.organizationId,actor.userId,bands,query.locationId??null],
+    );
+    const matches = candidates.map((candidate) => {
+      const distance = bitCount(target ^ BigInt(`0x${candidate.visualHash}`));
+      return { ...candidate, similarityPercent: Math.round((64 - distance) * 100 / 64), distance };
+    }).filter((candidate) => candidate.distance <= 12)
+      .sort((left,right) => right.similarityPercent-left.similarityPercent || right.bandMatches-left.bandMatches || left.locationId.localeCompare(right.locationId))
+      .slice(0,5)
+      .map(({visualHash:_visualHash,bandMatches:_bandMatches,distance:_distance,...asset}) => asset);
+    return { matches };
   }
 
   async getById(actor: ActorContext, id: string): Promise<AssetRow> {
@@ -285,4 +320,14 @@ export class AssetsService {
     await this.authorization.assertLocationAccess(actor, row.locationId);
     return row;
   }
+}
+
+function bitCount(value: bigint) {
+  let bits = value;
+  let count = 0;
+  while (bits) {
+    bits &= bits - 1n;
+    count += 1;
+  }
+  return count;
 }

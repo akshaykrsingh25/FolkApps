@@ -34,6 +34,7 @@ describe('scoped user management', () => {
     await db.exec(await readFile(new URL('../../database/migrations/013_verification_escalation_policy.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../../database/migrations/014_verification_cycle_closure.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../../database/migrations/015_audit_feed_and_notification_preferences.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../database/migrations/016_asset_visual_matching.sql', import.meta.url), 'utf8'));
     const query = async <Row extends import('pg').QueryResultRow>(sql: string, values: readonly unknown[] = []) =>
       (await db.query<Row>(sql, [...values])).rows;
     const database = {

@@ -5,7 +5,7 @@ import { TenantMembershipGuard } from '../auth/tenant-membership.guard';
 import { PermissionsGuard } from '../authorization/permissions.guard';
 import { RequirePermission } from '../authorization/permissions.decorator';
 import { AssetsService } from './assets.service';
-import { CreateAssetDto, ListAssetsDto, UpdateAssetDto } from './asset.dto';
+import { CreateAssetDto, ListAssetsDto, UpdateAssetDto, VisualMatchesDto } from './asset.dto';
 
 @Controller('assets')
 @UseGuards(OidcAuthGuard, TenantMembershipGuard, PermissionsGuard)
@@ -16,6 +16,12 @@ export class AssetsController {
   @RequirePermission('asset:read')
   list(@Req() request: AuthenticatedRequest, @Query() query: ListAssetsDto) {
     return this.assets.list(request.actor!, query);
+  }
+
+  @Get('visual-matches')
+  @RequirePermission('asset:read')
+  visualMatches(@Req() request: AuthenticatedRequest, @Query() query: VisualMatchesDto) {
+    return this.assets.visualMatches(request.actor!, query);
   }
 
   @Post()
