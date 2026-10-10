@@ -59,6 +59,7 @@ describe('phase two API integration', () => {
     const dualIdentifierMigration = await readFile(new URL('../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
     await db.exec(dualIdentifierMigration);
     await db.exec(await readFile(new URL('../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -259,6 +260,18 @@ describe('phase two API integration', () => {
     expect(await maximumBatchResponse.json()).toMatchObject({receivedCount:5000,recordedCount:1,duplicateCount:4999});
     const overLimitResponse=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,{locationId:floor.id,readings:[...maximumBatch,{epc:asset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000009000',scannedAt:new Date().toISOString()}]});
     expect(overLimitResponse.status).toBe(400);
+    expect((await call(`/assets/${asset.id}`,centreToken,{rfidEpc:'E2801160600000000000034D'},organizationId,'PATCH')).status).toBe(400);
+    const rebindResponse=await call(`/assets/${asset.id}`,centreToken,{rfidEpc:'E2801160600000000000034D',rfidChangeReason:'Original tag damaged and replaced'},organizationId,'PATCH');
+    expect(rebindResponse.status).toBe(200);
+    expect(await rebindResponse.json()).toMatchObject({id:asset.id,rfidEpc:'E2801160600000000000034D'});
+    expect((await call(`/assets/rfid/${asset.rfidEpc}`,centreToken)).status).toBe(404);
+    expect((await call('/assets/rfid/E2801160600000000000034D',centreToken)).status).toBe(200);
+    const bindingHistory=await db.query<{epc:string;retired:boolean;retirement_reason:string|null}>(
+      `SELECT epc,retired_at IS NOT NULL AS retired,retirement_reason FROM asset_rfid_bindings WHERE organization_id=$1::uuid AND asset_id=$2::uuid ORDER BY bound_at`,[organizationId,asset.id]);
+    expect(bindingHistory.rows).toHaveLength(2);
+    expect(bindingHistory.rows[0]).toMatchObject({epc:asset.rfidEpc,retired:true,retirement_reason:'Original tag damaged and replaced'});
+    expect(bindingHistory.rows[1]).toMatchObject({epc:'E2801160600000000000034D',retired:false,retirement_reason:null});
+    expect((await call('/assets',centreToken,{locationId:centre.id,name:'Recycled RFID tag must fail',category:'IT equipment',rfidEpc:asset.rfidEpc})).status).toBe(409);
     const privateProgress=await call(`/verification/cycles/${cycle.id}/progress`,custodianToken);
     expect(await privateProgress.json()).toMatchObject([{assetId:asset.id,scanned:true,reviewState:'verified'}]);
     expect(((await (await call('/verification/cycles',custodianToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
@@ -277,7 +290,10 @@ describe('phase two API integration', () => {
     expect(await custodyRows.json()).toMatchObject([{custodianName:'Centre Custodian',issueCondition:'good',returnCondition:'fair',returnedByName:'Centre Head'}]);
     const activityResponse=await call(`/assets/${asset.id}/activity`,centreToken);
     expect(activityResponse.status).toBe(200);
-    expect(((await activityResponse.json()) as {eventType:string}[]).map((event)=>event.eventType)).toEqual(expect.arrayContaining(['verification.asset_scanned','custody.issued','custody.returned']));
+    const activity=await activityResponse.json() as {eventType:string;details:Record<string,unknown>}[];
+    expect(activity.map((event)=>event.eventType)).toEqual(expect.arrayContaining(['verification.asset_scanned','asset.rfid_binding_changed','custody.issued','custody.returned']));
+    expect(activity.find((event)=>event.eventType==='asset.rfid_binding_changed')?.details)
+      .toMatchObject({previousEpc:asset.rfidEpc,nextEpc:'E2801160600000000000034D',reason:'Original tag damaged and replaced'});
 
     const mapResponse=await call('/insights/map',centreToken);
     expect(mapResponse.status).toBe(200);

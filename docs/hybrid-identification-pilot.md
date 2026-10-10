@@ -19,6 +19,8 @@ This is a software foundation and a corrected pilot design. A physical pilot sti
 3. If the centre is in the RFID pilot, a managed Android app and vendor SDK write the EPC to the selected UHF inlay. Read the tag back and scan the QR before completing the binding. If either check fails, leave the asset clearly marked for tag review; do not silently claim that both identifiers were programmed.
 4. Keep the asset's internal asset tag and signed QR identity as the human-readable lookup path. Treat EPC as an optional machine-read key, not as a location, owner, or permission claim.
 
+The API now keeps an organization-scoped RFID binding history. Replacing or removing an assigned EPC requires a reason; the old value stops resolving and remains reserved so it cannot be silently rebound to another asset. A future tag-writer adapter should report a successful write and read-back before staff save the EPC association. A failed or interrupted write must leave the existing binding intact. The current browser form can record an EPC manually but cannot verify a physical write. QR signing, EPC binding, and physical printing/writing remain separate steps until a selected printer and reader adapter can demonstrate one recoverable workflow.
+
 The current browser cannot perform steps 2–3 as a single automated thermal print/encode pass. That needs a selected printer, reader/writer SDK, managed device, and a tested native adapter. A half-completed print or write must be recoverable without issuing a second asset identity.
 
 ### Scheduled floor verification
@@ -40,6 +42,9 @@ Do not enable an automatic gate alarm from EPC detection alone. A portal can rea
 - Choose on-metal and non-metal inlays against the actual asset surfaces. Adhesive durability, antenna tuning, orientation, nearby metal/liquid, furniture, walls, and reader position affect performance. “Reads through drywall” and quoted range/read-rate figures are not reliable acceptance criteria.
 - For India, confirm the exact reader model, regional firmware, frequency, power, and type-approval path against the current DoT/WPC short-range-device rules and supplier documentation. Do not treat the proposal's 865–867 MHz range as a complete equipment specification.
 - Keep QR and RFID tag lifecycle separate from asset lifecycle. A damaged or replaced tag needs an auditable rebind/reissue trail and the old EPC must stop resolving to the asset. Do not treat tamper-evident label stock as proof that a tag has not been copied or moved.
+- The QR payload uses the API's asymmetric Ed25519 signature format; do not replace it with the proposal's shared HMAC secret in a mobile client. The signature proves trusted issuance, not that a photographed code is still attached to its original asset.
+- Treat any signal-strength/proximity view as an approximate local aid. It is not a surveyed indoor location, and the app should not persist a precise position from RSSI alone.
+- The proposed label sample, centre-specific EPC bit layout, 500–700 tag-per-second rates, 3–10 metre ranges, and automatic gate relay are not approved product specifications. Select and test the actual EPC scheme, inlay, printer/writer, and India-configured reader against representative centre environments first.
 
 ## Pilot exit checks
 

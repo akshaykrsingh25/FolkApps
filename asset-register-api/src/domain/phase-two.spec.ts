@@ -17,6 +17,8 @@ describe('phase two: location and asset workflows', () => {
   let headOffice: ActorContext;
   let locations: LocationsService;
   let assets: AssetsService;
+  let legacyRfidOrganizationId: string;
+  let legacyRfidAssetId: string;
 
   beforeAll(async () => {
     db = new PGlite({ extensions: { pgcrypto } });
@@ -29,6 +31,17 @@ describe('phase two: location and asset workflows', () => {
     const dualIdentifierMigration = await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
     await db.exec(dualIdentifierMigration);
     await db.exec(await readFile(new URL('../../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
+    const legacyOrganization = await db.query<{id:string}>(`INSERT INTO organizations(name,slug) VALUES ('Legacy RFID Org','legacy-rfid-org') RETURNING id`);
+    legacyRfidOrganizationId = legacyOrganization.rows[0].id;
+    const legacyUser = await db.query<{id:string}>(`INSERT INTO users(organization_id,identity_subject,display_name,email) VALUES ($1,'legacy-rfid-user','Legacy RFID User','legacy-rfid@example.test') RETURNING id`,[legacyRfidOrganizationId]);
+    const legacyLocation = await db.query<{id:string}>(`INSERT INTO locations(organization_id,kind,name) VALUES ($1,'centre','Legacy RFID Centre') RETURNING id`,[legacyRfidOrganizationId]);
+    const legacyAsset = await db.query<{id:string}>(
+      `INSERT INTO assets(organization_id,location_id,asset_tag,name,category,rfid_epc,created_by)
+       VALUES ($1,$2,'LEGACY-RFID-1','Legacy switch','IT equipment','E2801160600000000000034A',$3::uuid) RETURNING id`,
+      [legacyRfidOrganizationId,legacyLocation.rows[0].id,legacyUser.rows[0].id],
+    );
+    legacyRfidAssetId = legacyAsset.rows[0].id;
+    await db.exec(await readFile(new URL('../../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(
@@ -54,6 +67,16 @@ describe('phase two: location and asset workflows', () => {
   });
 
   afterAll(async () => { await db.close(); });
+
+  it('backfills existing EPC assignments into the permanent tag history', async () => {
+    const rows = await db.query<{epc:string;bound_by:string;retired_at:string|null}>(
+      `SELECT epc,bound_by,retired_at FROM asset_rfid_bindings WHERE organization_id=$1::uuid AND asset_id=$2::uuid`,
+      [legacyRfidOrganizationId,legacyRfidAssetId],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({epc:'E2801160600000000000034A',retired_at:null});
+    expect(rows.rows[0].bound_by).toBeTruthy();
+  });
 
   it('creates the location hierarchy, audits it, and rejects invalid parent levels', async () => {
     const state = await locations.create(headOffice, { kind: 'state', name: 'Gujarat' });
@@ -112,6 +135,30 @@ describe('phase two: location and asset workflows', () => {
     await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'viewer',$3)`, [organizationId,viewer.rows[0].id,targetLocationId]);
     const viewerActor: ActorContext = { userId: viewer.rows[0].id, organizationId, subject: 'viewer-test', memberships: [{ role: 'viewer', scopeLocationId: targetLocationId }] };
     await expect(assets.update(viewerActor, registered.id, { name: 'Unauthorized edit' })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('requires a reason to retire an RFID EPC and prevents retired tags from being reused', async () => {
+    const centre = await db.query<{ id: string }>(`SELECT id FROM locations WHERE organization_id=$1 AND code='AHKC'`, [organizationId]);
+    const asset = await assets.create(actor, { locationId: centre.rows[0].id, name: 'RFID lifecycle test', category: 'IT', rfidEpc: 'e2801160600000000000034a' });
+    expect(asset.rfidEpc).toBe('E2801160600000000000034A');
+    await expect(assets.update(actor, asset.id, { rfidEpc: 'E2801160600000000000034B' }))
+      .rejects.toMatchObject({ status: 400 });
+
+    const rebound = await assets.update(actor, asset.id, { rfidEpc: 'E2801160600000000000034B', rfidChangeReason: 'Original tag damaged and replaced' });
+    expect(rebound.rfidEpc).toBe('E2801160600000000000034B');
+    await expect(assets.getByRfidEpc(actor, 'E2801160600000000000034A')).rejects.toMatchObject({ status: 404 });
+    await expect(assets.getByRfidEpc(actor, 'E2801160600000000000034B')).resolves.toMatchObject({ id: asset.id });
+    await expect(assets.create(actor, { locationId: centre.rows[0].id, name: 'Attempted recycled tag', category: 'IT', rfidEpc: 'E2801160600000000000034A' }))
+      .rejects.toMatchObject({ status: 409 });
+
+    const history = await db.query<{ epc: string; retired: boolean; retirement_reason: string | null; bound_by: string; retired_by: string | null }>(
+      `SELECT epc,retired_at IS NOT NULL AS retired,retirement_reason,bound_by,retired_by
+         FROM asset_rfid_bindings WHERE organization_id=$1::uuid AND asset_id=$2::uuid ORDER BY bound_at`,
+      [organizationId, asset.id],
+    );
+    expect(history.rows).toHaveLength(2);
+    expect(history.rows[0]).toMatchObject({ epc: 'E2801160600000000000034A', retired: true, retirement_reason: 'Original tag damaged and replaced', bound_by: userId, retired_by: userId });
+    expect(history.rows[1]).toMatchObject({ epc: 'E2801160600000000000034B', retired: false, retirement_reason: null, bound_by: userId, retired_by: null });
   });
 
   it('issues signed labels only for assets in the caller scope and resolves them tenant-safely', async () => {

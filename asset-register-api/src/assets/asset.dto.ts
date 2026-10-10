@@ -93,6 +93,9 @@ export class UpdateAssetDto {
   @IsOptional() @IsString() @Length(1, 2000)
   notes?: string;
 
+  @IsOptional() @IsString() @Length(5, 500)
+  rfidChangeReason?: string;
+
   @IsOptional() @IsString() @Matches(/^(?:[A-Fa-f0-9]{2}){4,32}$/)
   rfidEpc?: string | null;
 }

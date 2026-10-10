@@ -119,6 +119,13 @@ export class AssetsService {
   async update(actor: ActorContext, id: string, dto: UpdateAssetDto): Promise<AssetRow> {
     const before = await this.getById(actor, id);
     await this.authorization.assertLocationAccess(actor, before.locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
+    const currentRfidEpc = before.rfidEpc?.trim().toUpperCase() || null;
+    const nextRfidEpc = dto.rfidEpc === undefined ? currentRfidEpc : dto.rfidEpc?.trim().toUpperCase() || null;
+    const rfidChanged = nextRfidEpc !== currentRfidEpc;
+    const rfidChangeReason = dto.rfidChangeReason?.trim() || '';
+    if (rfidChanged && before.rfidEpc && rfidChangeReason.length < 5) {
+      throw new BadRequestException('A reason of at least five characters is required when replacing or removing an RFID tag');
+    }
     if(dto.ownershipType&&dto.ownershipType!==before.ownershipType)
       await this.authorization.assertLocationAccess(actor,before.locationId,['head_office','state_head']);
     if(before.status==='disposed'&&dto.status&&dto.status!=='disposed') throw new ConflictException('A disposed asset cannot be returned to active service');
@@ -130,11 +137,12 @@ export class AssetsService {
     if (dto.locationId) await this.authorization.assertLocationAccess(actor, dto.locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
     try {
       return await this.database.transaction(async (query) => {
-        const locked = await query<{locationId:string;status:string}>(
-          `SELECT location_id AS "locationId",status::text AS status FROM assets
+        const locked = await query<{locationId:string;status:string;rfidEpc:string|null}>(
+          `SELECT location_id AS "locationId",status::text AS status,rfid_epc AS "rfidEpc" FROM assets
            WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE`,[actor.organizationId,id]);
         if(!locked[0]) throw new NotFoundException('Asset was not found');
         if(locked[0].locationId!==before.locationId) throw new ConflictException('The asset location changed. Refresh the record and try again.');
+        if(locked[0].rfidEpc!==before.rfidEpc) throw new ConflictException('The RFID tag changed. Refresh the record and try again.');
         if((dto.locationId&&dto.locationId!==locked[0].locationId)||(dto.status&&dto.status!==locked[0].status)) {
           const openTransfer=await query<{id:string}>(
             `SELECT id FROM transfer_requests WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND status IN ('requested','approved','in_transit')
@@ -168,6 +176,29 @@ export class AssetsService {
         );
         const updated = rows[0];
         if (!updated) throw new NotFoundException('Asset was not found');
+        if (rfidChanged) {
+          if (before.rfidEpc) {
+            const retired = await query<{id:string}>(
+              `UPDATE asset_rfid_bindings SET retired_at=now(),retired_by=$3::uuid,retirement_reason=$4
+                WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND upper(epc)=$5 AND retired_at IS NULL
+                RETURNING id`,
+              [actor.organizationId,id,actor.userId,rfidChangeReason,before.rfidEpc.toUpperCase()],
+            );
+            if (!retired[0]) throw new ConflictException('The active RFID binding is missing. Refresh the record and contact an administrator.');
+          }
+          if (updated.rfidEpc) {
+            await query(
+              `INSERT INTO asset_rfid_bindings (organization_id,asset_id,epc,bound_by)
+               VALUES ($1::uuid,$2::uuid,$3,$4::uuid)`,
+              [actor.organizationId,id,updated.rfidEpc,actor.userId],
+            );
+          }
+          await query(
+            `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+             VALUES ($1::uuid,$2::uuid,'asset.rfid_binding_changed','asset',$3::uuid,$4::jsonb)`,
+            [actor.organizationId,actor.userId,id,JSON.stringify({ previousEpc:before.rfidEpc,nextEpc:updated.rfidEpc,reason:rfidChangeReason || 'Initial RFID binding' })],
+          );
+        }
         const auditedFields: Array<[string, unknown, unknown]> = [
           ['location', before.locationName, updated.locationName], ['assetTag', before.assetTag, updated.assetTag],
           ['name', before.name, updated.name], ['category', before.category, updated.category],
@@ -184,7 +215,7 @@ export class AssetsService {
         await query(
           `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
            VALUES ($1::uuid,$2::uuid,'asset.updated','asset',$3::uuid,$4::jsonb)`,
-          [actor.organizationId,actor.userId,id,JSON.stringify({ changes,...(dto.statusChangeReason?.trim()?{statusChangeReason:dto.statusChangeReason.trim()}: {}) })],
+          [actor.organizationId,actor.userId,id,JSON.stringify({ changes,...(dto.statusChangeReason?.trim()?{statusChangeReason:dto.statusChangeReason.trim()}: {}),...(rfidChanged&&rfidChangeReason?{rfidChangeReason}: {}) })],
         );
         return updated;
       });
@@ -223,6 +254,13 @@ export class AssetsService {
         );
         if (!rows[0]) throw new ConflictException('This offline capture is already syncing. Retry shortly.');
         const asset = rows[0];
+        if (asset.rfidEpc) {
+          await query(
+            `INSERT INTO asset_rfid_bindings (organization_id,asset_id,epc,bound_by)
+             VALUES ($1::uuid,$2::uuid,$3,$4::uuid)`,
+            [actor.organizationId,asset.id,asset.rfidEpc,actor.userId],
+          );
+        }
         await query(
           `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
            VALUES ($1::uuid,$2::uuid,'asset.created','asset',$3::uuid,$4::jsonb)`,

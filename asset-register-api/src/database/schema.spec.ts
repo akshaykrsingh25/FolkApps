@@ -22,6 +22,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(dualIdentifierMigration);
     const exportMigration = await readFile(new URL('../../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8');
     await db.exec(exportMigration);
+    const rfidBindingMigration = await readFile(new URL('../../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8');
+    await db.exec(rfidBindingMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -33,7 +35,7 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs',
+      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
     ]));
   });
 

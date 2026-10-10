@@ -24,7 +24,7 @@ describe('scoped background asset exports', () => {
     db = new PGlite({ extensions: { pgcrypto } });
     for (const name of [
       '001_initial_schema.sql', '002_custody_history.sql', '003_ownership_and_transfer_batches.sql',
-      '004_scoped_rbac_and_user_profiles.sql', '005_dual_asset_identifiers.sql', '006_background_asset_exports.sql',
+      '004_scoped_rbac_and_user_profiles.sql', '005_dual_asset_identifiers.sql', '006_background_asset_exports.sql', '007_rfid_binding_history.sql',
     ]) await db.exec(await readFile(new URL(`../../database/migrations/${name}`, import.meta.url), 'utf8'));
 
     const database = {
