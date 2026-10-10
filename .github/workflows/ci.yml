@@ -50,6 +50,10 @@ jobs:
         if: matrix.package == 'asset-register-frontend'
         run: npm run verify:offline-ocr --prefix asset-register-frontend
 
+      - name: Verify offline photo-classifier assets
+        if: matrix.package == 'asset-register-frontend'
+        run: npm run verify:photo-classifier --prefix asset-register-frontend
+
   database-recovery:
     name: Verify PostgreSQL backup and restore
     runs-on: ubuntu-24.04

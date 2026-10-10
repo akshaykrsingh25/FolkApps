@@ -10,6 +10,8 @@ export interface CaptureSuggestions {
   sellerName?: string;
   sellerPhone?: string;
   invoiceReference?: string;
+  photoHint?: string;
+  photoConfidence?: number;
   sourceText: string;
 }
 

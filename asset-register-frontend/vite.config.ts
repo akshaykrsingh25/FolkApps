@@ -22,7 +22,17 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/',
         globPatterns: ['**/*.{js,css,html,svg,woff2,wasm,gz}'],
+        globIgnores: ['vision/**'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        runtimeCaching: [{
+          urlPattern: /\/vision\/(?:wasm\/.*|efficientnet_lite0_int8_v1\.tflite)$/,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'incuasset-on-device-photo-model-v1',
+            expiration: { maxEntries: 3, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            cacheableResponse: { statuses: [200] },
+          },
+        }],
       },
     }),
   ],

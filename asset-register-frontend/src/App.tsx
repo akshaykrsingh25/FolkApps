@@ -12,6 +12,7 @@ import { Icon } from './ui/Icon';
 import { CodeScanner } from './capture/CodeScanner';
 import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
 import { createVisualHash } from './capture/visualMatch';
+import { isPhotoClassifierCached, preparePhotoClassifier, suggestAssetFromPhoto } from './capture/photoClassifier';
 import { parseRfidBatchText } from './capture/rfidBatch';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
@@ -160,9 +161,13 @@ export default function App() {
   const [assetCaptureSuggestions, setAssetCaptureSuggestions] = useState<CaptureSuggestions | null>(null);
   const [invoiceCaptureSuggestions, setInvoiceCaptureSuggestions] = useState<CaptureSuggestions | null>(null);
   const [matchingAssets, setMatchingAssets] = useState<Asset[]>([]);
-  const [matchingConfidence, setMatchingConfidence] = useState<'exact' | 'similar' | 'visual' | null>(null);
+  const [matchingConfidence, setMatchingConfidence] = useState<'exact' | 'similar' | 'visual' | 'photo' | null>(null);
   const [captureBusy, setCaptureBusy] = useState(false);
   const [captureProgress, setCaptureProgress] = useState(0);
+  const [photoClassifierReady, setPhotoClassifierReady] = useState(false);
+  const [photoClassifierLoading, setPhotoClassifierLoading] = useState(false);
+  const [photoClassifierProgress, setPhotoClassifierProgress] = useState(0);
+  const [photoClassifierStage, setPhotoClassifierStage] = useState('');
   const [formSeed, setFormSeed] = useState<CaptureSuggestions | null>(null);
   const [formSeedVersion, setFormSeedVersion] = useState(0);
   const captureSuggestions = useMemo(() => {
@@ -171,6 +176,11 @@ export default function App() {
       .filter(Boolean).join('\n\n--- Invoice capture ---\n\n');
     return { ...(assetCaptureSuggestions || {}), ...(invoiceCaptureSuggestions || {}), sourceText };
   }, [assetCaptureSuggestions, invoiceCaptureSuggestions]);
+  useEffect(() => {
+    let active = true;
+    void isPhotoClassifierCached().then((cached) => { if (active) setPhotoClassifierReady(cached); });
+    return () => { active = false; };
+  }, []);
   const [pendingCaptures, setPendingCaptures] = useState<PendingCapture[]>([]);
   const [syncingCaptures, setSyncingCaptures] = useState(false);
   const syncLock = useRef(false);
@@ -1149,12 +1159,23 @@ export default function App() {
 
   async function analyzeCapture(file: File, origin: 'asset' | 'invoice') {
     setCaptureBusy(true); setCaptureProgress(0); setError('');
+    let photoClassifierFailed = false;
     try {
-      const [text,visualHash] = await Promise.all([
+      const [text,visualHash,photoSuggestion] = await Promise.all([
         readImageText(file, setCaptureProgress).catch((reason) => origin === 'asset' ? '' : Promise.reject(reason)),
         origin === 'asset' ? createVisualHash(file).catch(() => null) : Promise.resolve(null),
+        origin === 'asset' && photoClassifierReady
+          ? (async () => {
+              setPhotoClassifierLoading(true); setPhotoClassifierProgress(0);
+              try {
+                await preparePhotoClassifier((percent, stage) => { setPhotoClassifierProgress(percent); setPhotoClassifierStage(stage); });
+                return await suggestAssetFromPhoto(file);
+              } catch { photoClassifierFailed = true; setPhotoClassifierReady(false); return undefined; }
+              finally { setPhotoClassifierLoading(false); }
+            })()
+          : Promise.resolve(undefined),
       ]);
-      if (!text.trim() && !visualHash) throw new Error('The photo did not contain readable text or a usable image signature.');
+      if (!text.trim() && !visualHash && !photoSuggestion) throw new Error('The photo did not contain readable text or a usable image signature.');
       let suggestions:CaptureSuggestions = extractInvoiceSuggestions(text);
       const searchTerms = [suggestions.serialNumber, suggestions.model, suggestions.manufacturer, suggestions.category].filter((value): value is string => Boolean(value));
       const [textCandidates,visualCandidates] = await Promise.all([
@@ -1171,6 +1192,15 @@ export default function App() {
       if (!suggestions.category && visual[0]?.similarityPercent!==undefined && visual[0].similarityPercent>=88) {
         suggestions={...suggestions,name:visual[0].name,category:visual[0].category};
       }
+      if (photoSuggestion) {
+        suggestions = {
+          ...suggestions,
+          name: suggestions.name || photoSuggestion.name,
+          category: suggestions.category || photoSuggestion.category,
+          photoHint: `${photoSuggestion.label} · ${Math.round(photoSuggestion.confidence * 100)}% model match`,
+          photoConfidence: photoSuggestion.confidence,
+        };
+      }
       const textSimilar = unique.filter((asset) => suggestions.category && asset.category.toLowerCase() === suggestions.category.toLowerCase()).slice(0, 4);
       const match = exact.length ? exact : visual.length ? visual : textSimilar;
       if (origin === 'asset') setAssetCaptureSuggestions(suggestions);
@@ -1178,14 +1208,46 @@ export default function App() {
       if (origin === 'asset') setMatchingAssets(match.slice(0, 5));
       else if (match.length) setMatchingAssets((current)=>[...new Map([...current,...match].map((asset)=>[asset.id,asset])).values()].slice(0,5));
       if (exact.length || visual.length || match.length) setMatchingConfidence(exact.length ? 'exact' : visual.length ? 'visual' : 'similar');
+      else if (photoSuggestion) setMatchingConfidence('photo');
       else if (origin === 'asset') setMatchingConfidence(null);
       if (exact.length) setNotice(`A likely existing item matched by product label. Review it before adding another.`);
       else if (visual.length) setNotice(`Compared the photo with saved asset photos on your register. Review these visual matches before adding another.`);
       else if (match.length) setNotice(`Similar ${suggestions.category} assets are in the register. Compare before adding another.`);
-      else setNotice(origin === 'invoice' ? 'Invoice read on this device. Review every suggestion before saving.' : 'Photo checked on this device. Confirm the category and item details; no close visual match was found.');
+      else if (photoSuggestion) setNotice('On-device photo recognition suggested a common equipment type. Confirm it before saving.');
+      else if (photoClassifierFailed) setNotice('On-device photo recognition could not load. Prepare it again when this device is online; label reading and photo matching still work.');
+      else setNotice(origin === 'invoice' ? 'Invoice read on this device. Review every suggestion before saving.' : photoClassifierReady ? 'Photo checked on this device. No confident equipment category was recognized; review the label or enter the details manually.' : 'Photo checked on this device. Review the label and prepare on-device photo suggestions if useful.');
     } catch {
       setError('Could not read this image. Retake it with the label or invoice text in focus, or enter the details manually.');
     } finally { setCaptureBusy(false); }
+  }
+
+  async function preparePhotoSuggestions() {
+    setPhotoClassifierLoading(true); setPhotoClassifierProgress(0); setPhotoClassifierStage('Preparing on-device photo recognition'); setError('');
+    try {
+      await preparePhotoClassifier((percent, stage) => { setPhotoClassifierProgress(percent); setPhotoClassifierStage(stage); });
+      setPhotoClassifierReady(true);
+      if (assetPhotoFile) {
+        const suggestion = await suggestAssetFromPhoto(assetPhotoFile);
+        if (suggestion) {
+          setAssetCaptureSuggestions((current) => ({
+            ...(current || { sourceText: '' }),
+            name: current?.name || suggestion.name,
+            category: current?.category || suggestion.category,
+            photoHint: `${suggestion.label} · ${Math.round(suggestion.confidence * 100)}% model match`,
+            photoConfidence: suggestion.confidence,
+          }));
+          setMatchingConfidence((current) => current || 'photo');
+          setNotice('On-device photo recognition suggested a common equipment type. Confirm it before saving.');
+        } else {
+          setNotice('Photo suggestions are ready on this device. This image did not produce a confident common equipment match.');
+        }
+      } else {
+        setNotice('On-device photo suggestions are ready. They will be available offline on this device.');
+      }
+    } catch {
+      setNotice('Photo recognition could not be prepared. Label reading and saved-photo matching are still available.');
+      setPhotoClassifierReady(false);
+    } finally { setPhotoClassifierLoading(false); }
   }
 
   function applyCaptureSuggestions() {
@@ -1383,13 +1445,16 @@ export default function App() {
             <form key={`${selectedAsset?.id || 'new'}-${formSeedVersion}`} className="panel entry-form asset-form" onSubmit={createAsset}>
               <div className="form-section-title"><span>01</span><div><h2>Identify the item</h2><small>Name and category are required.</small></div></div>
               <div className="capture-grid">
-                <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{assetPhotoFile ? 'Retake product photo' : 'Photograph the asset'}</strong><small>Read its label and compare its appearance to registered asset photos</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setAssetPhotoFile(file); setAssetPhotoUrl(URL.createObjectURL(file)); setAssetCaptureSuggestions(null); setMatchingAssets([]); setMatchingConfidence(null); void analyzeCapture(file, 'asset'); }} /></label>
+                <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{assetPhotoFile ? 'Retake product photo' : 'Photograph the asset'}</strong><small>Suggest a common item type, read its label, and compare with registered photos</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setAssetPhotoFile(file); setAssetPhotoUrl(URL.createObjectURL(file)); setAssetCaptureSuggestions(null); setMatchingAssets([]); setMatchingConfidence(null); void analyzeCapture(file, 'asset'); }} /></label>
                 <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{invoiceFile ? 'Choose another invoice' : 'Scan purchase invoice'}</strong><small>Extract seller, date, amount, and product clues</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) { setInvoiceFile(file); setInvoiceCaptureSuggestions(null); void analyzeCapture(file, 'invoice'); } }} /></label>
               </div>
               {assetPhotoUrl && <img className="capture-preview" src={assetPhotoUrl} alt="Captured asset for review" />}
+              {assetPhotoFile && !photoClassifierReady && <section className="photo-ai-setup"><div><strong>Suggest a product type from this photo</strong><small>Recognizes common office items on this device. A one-time download of about 18 MB makes it available offline.</small></div><button type="button" className="quiet-button" disabled={photoClassifierLoading || captureBusy} onClick={() => void preparePhotoSuggestions()}>{photoClassifierLoading ? 'Preparing…' : 'Prepare photo suggestions'}</button></section>}
+              {photoClassifierLoading && <div className="capture-progress" role="status"><span style={{ width: `${photoClassifierProgress}%` }} /><small>{photoClassifierStage || 'Preparing photo recognition'}{photoClassifierProgress ? ` · ${photoClassifierProgress}%` : ''}</small></div>}
+              {assetPhotoFile && photoClassifierReady && !photoClassifierLoading && <p className="photo-ai-ready" role="status">On-device photo suggestions are ready for this capture. Review the model guess before using it.</p>}
               {invoiceFile && <div className="selected-invoice"><span>{invoiceFile.name}</span><button type="button" className="text-button" onClick={() => void analyzeCapture(invoiceFile, 'invoice')}>{captureBusy ? `Reading ${captureProgress}%` : 'Read invoice'}</button></div>}
               {captureBusy && <div className="capture-progress" role="status"><span style={{ width: `${captureProgress}%` }} /><small>Reading this image on your device · {captureProgress}%</small></div>}
-              {captureSuggestions && <section className="capture-review" aria-live="polite"><div><p className="eyebrow">SUGGESTIONS TO REVIEW</p><strong>{matchingConfidence === 'exact' ? 'Possible duplicate · compare these records.' : matchingConfidence === 'visual' ? 'Visual look-alikes · compare before adding.' : matchingConfidence === 'similar' ? 'Similar items · compare before adding.' : 'Check these details against the item.'}</strong><small className="visual-privacy-note">Photo similarity is calculated on this device. Only a compact visual signature is used to find registered matches.</small></div><dl>{[['Suggested name',captureSuggestions.name],['Category',captureSuggestions.category],['Brand',captureSuggestions.manufacturer],['Model',captureSuggestions.model],['Serial number',captureSuggestions.serialNumber],['Seller',captureSuggestions.sellerName],['Invoice date',captureSuggestions.purchaseDate],['Invoice amount',captureSuggestions.purchaseAmount && `₹${captureSuggestions.purchaseAmount}`],['Invoice number',captureSuggestions.invoiceReference]].filter(([,value]) => value).map(([label,value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{matchingAssets.map((asset) => <button type="button" className="possible-match" key={asset.id} onClick={() => { setSelectedAsset(asset); setView('asset-detail'); }}><Icon name="asset" /><span><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.locationName}{asset.similarityPercent!==undefined?` · ${asset.similarityPercent}% visual similarity`:''}</small></span><Icon name="arrow" /></button>)}{!selectedAsset && <button type="button" className="text-button" onClick={applyCaptureSuggestions}>Use suggestions in the editable form →</button>}{captureSuggestions.sourceText&&<details><summary>View text read from image</summary><pre>{captureSuggestions.sourceText}</pre></details>}</section>}
+              {captureSuggestions && <section className="capture-review" aria-live="polite"><div><p className="eyebrow">SUGGESTIONS TO REVIEW</p><strong>{matchingConfidence === 'exact' ? 'Possible duplicate · compare these records.' : matchingConfidence === 'visual' ? 'Visual look-alikes · compare before adding.' : matchingConfidence === 'similar' ? 'Similar items · compare before adding.' : matchingConfidence === 'photo' ? 'Photo category guess · confirm before saving.' : 'Check these details against the item.'}</strong><small className="visual-privacy-note">Text reading, photo recognition, and image comparison run on this device. Only a compact visual signature is sent to find registered matches.</small></div>{captureSuggestions.photoHint && <p className="photo-hint">Photo model: <strong>{captureSuggestions.photoHint}</strong></p>}<dl>{[['Suggested name',captureSuggestions.name],['Category',captureSuggestions.category],['Brand',captureSuggestions.manufacturer],['Model',captureSuggestions.model],['Serial number',captureSuggestions.serialNumber],['Seller',captureSuggestions.sellerName],['Invoice date',captureSuggestions.purchaseDate],['Invoice amount',captureSuggestions.purchaseAmount && `₹${captureSuggestions.purchaseAmount}`],['Invoice number',captureSuggestions.invoiceReference]].filter(([,value]) => value).map(([label,value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{matchingAssets.map((asset) => <button type="button" className="possible-match" key={asset.id} onClick={() => { setSelectedAsset(asset); setView('asset-detail'); }}><Icon name="asset" /><span><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.locationName}{asset.similarityPercent!==undefined?` · ${asset.similarityPercent}% visual similarity`:''}</small></span><Icon name="arrow" /></button>)}{!selectedAsset && <button type="button" className="text-button" onClick={applyCaptureSuggestions}>Use suggestions in the editable form →</button>}{captureSuggestions.sourceText&&<details><summary>View text read from image</summary><pre>{captureSuggestions.sourceText}</pre></details>}</section>}
           <div className="form-grid"><label>Asset name<input name="name" required maxLength={160} defaultValue={selectedAsset?.name || formSeed?.name || ''} placeholder="e.g. Network switch" /></label><label>Category<input name="category" required maxLength={100} defaultValue={selectedAsset?.category || formSeed?.category || ''} placeholder="e.g. IT equipment" /></label><label>Asset tag <small>Optional · assigned if blank</small><input name="assetTag" maxLength={40} defaultValue={selectedAsset?.assetTag || ''} placeholder="e.g. IT-00482" /></label><label>Serial number<input name="serialNumber" maxLength={120} defaultValue={selectedAsset?.serialNumber || formSeed?.serialNumber || ''} placeholder="Manufacturer serial number" /></label><label>Manufacturer<input name="manufacturer" maxLength={120} defaultValue={selectedAsset?.manufacturer || formSeed?.manufacturer || ''} placeholder="Brand or manufacturer" /></label><label>Model<input name="model" maxLength={120} defaultValue={selectedAsset?.model || formSeed?.model || ''} placeholder="Model name or number" /></label><label>Ownership<select name="ownershipType" defaultValue={selectedAsset?.ownershipType || 'INCUSPAZE_OWNED'}><option value="INCUSPAZE_OWNED">Incuspaze owned</option><option value="CLIENT_DEDICATED">Client dedicated</option><option value="VENDOR_LEASED">Vendor leased</option><option value="TRIAL_DEMO">Trial or demo</option></select></label><label>Condition<select name="condition" defaultValue={selectedAsset?.condition || 'good'}><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Record status<select name="status" defaultValue={selectedAsset?.status || 'active'} onChange={(event)=>setAssetStatusChoice(event.target.value)}><option value="active">Active</option><option value="unused">Unused · available for transfer</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label></div>
               <label>UHF RFID EPC <small>Optional · bind an EPC read from the physical tag. This form does not write the chip.</small><input name="rfidEpc" maxLength={64} pattern="(?:[A-Fa-f0-9]{2}){4,32}" defaultValue={selectedAsset?.rfidEpc || ''} placeholder="Hexadecimal EPC from the selected reader" autoCapitalize="characters" /></label>
               {selectedAsset?.rfidEpc&&<label>RFID tag change reason <small>Required only when replacing or removing this tag. The retired EPC stays reserved.</small><textarea name="rfidChangeReason" minLength={5} maxLength={500} rows={2} placeholder="e.g. Tag damaged during service; replaced and read back" /></label>}
