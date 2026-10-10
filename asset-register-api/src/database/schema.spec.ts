@@ -32,6 +32,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(notificationOutboxWorkerMigration);
     const verificationWatchIndexesMigration = await readFile(new URL('../../database/migrations/011_verification_watch_indexes.sql', import.meta.url), 'utf8');
     await db.exec(verificationWatchIndexesMigration);
+    const recurringVerificationCyclesMigration = await readFile(new URL('../../database/migrations/012_recurring_verification_cycles.sql', import.meta.url), 'utf8');
+    await db.exec(recurringVerificationCyclesMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -52,7 +54,9 @@ describe('initial PostgreSQL schema', () => {
     const watchIndexes = await db.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes WHERE schemaname='public'`,
     );
-    expect(watchIndexes.rows.map((row) => row.indexname)).toEqual(expect.arrayContaining(['scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx']));
+    expect(watchIndexes.rows.map((row) => row.indexname)).toEqual(expect.arrayContaining([
+      'scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx', 'verification_cycles_policy_start_uq',
+    ]));
   });
 
   it('adds optional physical addresses with an unverified default and a bounded value', async () => {

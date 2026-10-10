@@ -11,6 +11,16 @@ The Asset Register has the software foundation for two identifiers:
 
 This is a software foundation and a corrected pilot design. A physical pilot still needs approved devices, a managed native adapter, and site validation; no RFID hardware is connected or assumed by the web app.
 
+## Review of the supplied operating model
+
+Keep its single physical label concept: a readable, signed QR for one-item work and an optional UHF inlay for faster floor audits. Choose on-metal or general-purpose stock to match the surface, and treat destructible vinyl as tamper evidence rather than proof of authenticity. The app keeps these identities linked without making RFID mandatory for every asset.
+
+Use the existing Ed25519 QR signature format; do not put a shared HMAC key in the phone app or add tenant and centre claims that the server does not validate. Select a valid GS1 identifier with the tag supplier: the proposed SGTIN-96 diagram is not a valid field layout, and its 38-bit field is the serial-number field, not a checksum. The API keeps EPC opaque until the organization and supplier approve the scheme.
+
+Do not add the proposed chip access password or factory TID as ordinary asset columns. A writer integration may need a per-tag write credential, but it must be provisioned and protected by the managed hardware adapter; it must not be returned to browsers, stored in plaintext in the asset database, or written to logs. The current API intentionally has no such credential field.
+
+Treat the named printer/reader models, one-pass print-and-encode process, read distances, tag-per-second rates, and indoor RSSI proximity claims as candidates to measure, not delivered capabilities. A portal pilot should log a reviewable read event and compare it with an approved transfer and a tested direction/zone signal. Do not connect a portal directly to a door relay or automatically change an asset to missing or stolen based on one read.
+
 ## Recommended operating model
 
 ### Purchase intake and tag binding

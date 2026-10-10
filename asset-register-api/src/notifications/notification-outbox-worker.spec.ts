@@ -26,7 +26,7 @@ describe('notification outbox worker', () => {
       '001_initial_schema.sql', '002_custody_history.sql', '003_ownership_and_transfer_batches.sql',
       '004_scoped_rbac_and_user_profiles.sql', '005_dual_asset_identifiers.sql', '006_background_asset_exports.sql',
       '007_rfid_binding_history.sql', '008_location_physical_addresses.sql', '009_notification_inbox.sql',
-      '010_notification_outbox_worker.sql', '011_verification_watch_indexes.sql',
+      '010_notification_outbox_worker.sql', '011_verification_watch_indexes.sql', '012_recurring_verification_cycles.sql',
     ]) await db.exec(await readFile(new URL(`../../database/migrations/${name}`, import.meta.url), 'utf8'));
 
     const database = {
@@ -117,6 +117,55 @@ describe('notification outbox worker', () => {
       [organizationId, key],
     );
     expect(secondSweep.rows[0].count).toBe(3);
+  });
+
+  it('opens recurring verification cycles from enabled policies on cadence and records the system action', async () => {
+    const policy = await db.query<{ id: string }>(
+      `INSERT INTO verification_policies(organization_id,scope_location_id,cadence_months,grace_days)
+       VALUES ($1,$2,6,60) RETURNING id`, [organizationId, centreAId],
+    );
+
+    await worker.runScheduledVerificationCycles();
+    const first = await db.query<{ id: string; starts_at: Date; grace_ends_at: Date; created_by: string | null; status: string }>(
+      `SELECT id,starts_at,grace_ends_at,created_by,status FROM verification_cycles
+        WHERE organization_id=$1 AND policy_id=$2`, [organizationId, policy.rows[0].id],
+    );
+    expect(first.rows).toHaveLength(1);
+    expect(first.rows[0].status).toBe('open');
+    expect(first.rows[0].created_by).toBeNull();
+    const firstDates = await db.query<{ window_days: number; audit_count: number }>(
+      `SELECT extract(epoch FROM (grace_ends_at-starts_at))/86400 AS window_days,
+              (SELECT count(*)::int FROM audit_events WHERE organization_id=$1 AND entity_id=$2 AND event_type='verification.cycle_auto_opened') AS audit_count
+         FROM verification_cycles WHERE organization_id=$1 AND id=$2`, [organizationId, first.rows[0].id],
+    );
+    expect(Number(firstDates.rows[0].window_days)).toBe(60);
+    expect(firstDates.rows[0].audit_count).toBe(1);
+
+    await worker.runScheduledVerificationCycles();
+    await expect(db.query(`SELECT id FROM verification_cycles WHERE organization_id=$1 AND policy_id=$2`, [organizationId, policy.rows[0].id]))
+      .resolves.toMatchObject({ rows: [{ id: first.rows[0].id }] });
+
+    await db.query(
+      `UPDATE verification_cycles SET starts_at=now()-interval '9 months',grace_ends_at=now()-interval '7 months',status='closed'
+        WHERE organization_id=$1 AND id=$2`, [organizationId, first.rows[0].id],
+    );
+    await worker.runScheduledVerificationCycles();
+    const recurring = await db.query<{ id: string; starts_at: Date; grace_ends_at: Date; status: string }>(
+      `SELECT id,starts_at,grace_ends_at,status FROM verification_cycles
+        WHERE organization_id=$1 AND policy_id=$2 ORDER BY starts_at`, [organizationId, policy.rows[0].id],
+    );
+    expect(recurring.rows).toHaveLength(2);
+    expect(recurring.rows[1].status).toBe('grace');
+    const cadenceCheck = await db.query<{ matches: boolean; window_days: number }>(
+      `SELECT next.starts_at=prior.starts_at+interval '6 months' AS matches,
+              extract(epoch FROM (next.grace_ends_at-next.starts_at))/86400 AS window_days
+         FROM verification_cycles prior JOIN verification_cycles next
+           ON next.organization_id=prior.organization_id AND next.policy_id=prior.policy_id AND next.id<>prior.id
+        WHERE prior.organization_id=$1 AND prior.id=$2 AND next.id=$3`,
+      [organizationId, first.rows[0].id, recurring.rows[1].id],
+    );
+    expect(cadenceCheck.rows[0].matches).toBe(true);
+    expect(Number(cadenceCheck.rows[0].window_days)).toBe(60);
   });
 
   it('fans report and transfer events to only authorized recipients and deduplicates Watch signals', async () => {

@@ -64,6 +64,7 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/010_notification_outbox_worker.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/011_verification_watch_indexes.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/012_recurring_verification_cycles.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(

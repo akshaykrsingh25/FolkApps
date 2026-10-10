@@ -32,6 +32,7 @@ const VERIFICATION_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 @Injectable()
 export class NotificationOutboxWorkerService {
   private readonly logger = new Logger(NotificationOutboxWorkerService.name);
+  private lastVerificationScheduleAt = 0;
   private lastVerificationSweepAt = 0;
 
   constructor(private readonly database: DatabaseService) {}
@@ -39,6 +40,10 @@ export class NotificationOutboxWorkerService {
   async run(signal: AbortSignal): Promise<void> {
     while (!signal.aborted) {
       try {
+        if (Date.now() - this.lastVerificationScheduleAt >= VERIFICATION_SWEEP_INTERVAL_MS) {
+          await this.runScheduledVerificationCycles();
+          this.lastVerificationScheduleAt = Date.now();
+        }
         if (Date.now() - this.lastVerificationSweepAt >= VERIFICATION_SWEEP_INTERVAL_MS) {
           await this.runOverdueVerificationSweep();
           this.lastVerificationSweepAt = Date.now();
@@ -50,6 +55,45 @@ export class NotificationOutboxWorkerService {
         await waitForPoll(signal);
       }
     }
+  }
+
+  async runScheduledVerificationCycles(): Promise<void> {
+    await this.database.transaction(async (query) => {
+      const lock = await query<{ acquired: boolean }>(`SELECT pg_try_advisory_xact_lock(183456720,2) AS acquired`);
+      if (!lock[0]?.acquired) return;
+      await query(
+        `WITH due_policies AS (
+           SELECT policy.organization_id,policy.id AS policy_id,policy.scope_location_id,
+                  policy.cadence_months,policy.grace_days,
+                  CASE WHEN prior.starts_at IS NULL THEN now()
+                       ELSE prior.starts_at+make_interval(months=>policy.cadence_months) END AS starts_at
+             FROM verification_policies policy
+             LEFT JOIN LATERAL (
+               SELECT cycle.starts_at FROM verification_cycles cycle
+                WHERE cycle.organization_id=policy.organization_id AND cycle.policy_id=policy.id
+                ORDER BY cycle.starts_at DESC,cycle.created_at DESC LIMIT 1
+             ) prior ON true
+            WHERE policy.enabled=true
+              AND (prior.starts_at IS NULL OR prior.starts_at+make_interval(months=>policy.cadence_months)<=now())
+         ), opened AS (
+           INSERT INTO verification_cycles (
+             organization_id,scope_location_id,policy_id,starts_at,grace_ends_at,status,created_by
+           )
+           SELECT organization_id,scope_location_id,policy_id,starts_at,
+                  starts_at+make_interval(days=>grace_days),
+                  CASE WHEN starts_at+make_interval(days=>grace_days)<=now() THEN 'grace'::cycle_status ELSE 'open'::cycle_status END,
+                  NULL
+             FROM due_policies
+           ON CONFLICT (organization_id,policy_id,starts_at) DO NOTHING
+           RETURNING organization_id,id,policy_id,scope_location_id,starts_at,grace_ends_at
+         )
+         INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+         SELECT organization_id,NULL,'verification.cycle_auto_opened','verification_cycle',id,
+                jsonb_build_object('policyId',policy_id,'scopeLocationId',scope_location_id,
+                  'startsAt',starts_at,'graceEndsAt',grace_ends_at,'source','recurring_policy')
+           FROM opened`,
+      );
+    });
   }
 
   async runOverdueVerificationSweep(): Promise<void> {

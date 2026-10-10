@@ -83,6 +83,7 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
 - Run `npm run db:migrate:notification-outbox-worker` to add retry and dead-letter scheduling fields to an existing notification outbox.
 - Run `npm run db:migrate:verification-watch-indexes` to add the scan/cycle indexes used by the scheduled overdue-cycle sweep.
+- Run `npm run db:migrate:recurring-verification-cycles` to enforce one generated cycle per policy start time. The notification worker opens the first enabled policy cycle immediately, then repeats from the previous cycle start using its configured cadence and grace window; each generated cycle receives a system audit event.
 
 ## Production boundary
 
