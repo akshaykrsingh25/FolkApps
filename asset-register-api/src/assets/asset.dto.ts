@@ -1,4 +1,5 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 
 export const ASSET_STATUSES = ['active', 'unused', 'in_repair', 'out_of_service', 'missing', 'retired', 'disposed'] as const;
 export const ASSET_CONDITIONS = ['good', 'fair', 'damaged', 'not_working'] as const;
@@ -113,7 +114,7 @@ export class ListAssetsDto {
   @IsOptional() @IsUUID()
   cursor?: string;
 
-  @IsOptional() @IsNumber() @Min(1) @Max(100)
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
   limit?: number;
 }
 

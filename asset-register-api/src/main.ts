@@ -17,7 +17,7 @@ async function bootstrap() {
   app.enableCors({ origin: webOrigins, credentials: true, exposedHeaders: ['x-request-id'] });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableShutdownHooks();
-  await app.listen(Number(process.env.PORT ?? 4000), '0.0.0.0');
+  await app.listen(Number(process.env.PORT ?? 4000), process.env.HOST ?? '0.0.0.0');
 }
 
 void bootstrap();

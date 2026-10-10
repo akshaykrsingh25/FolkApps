@@ -18,7 +18,8 @@ The workers handle `SIGTERM` and `SIGINT` and stop their loops before closing da
 
 - Configure the platform liveness probe to call `GET /api/v1/health/live`. It confirms the process can answer and intentionally stays independent of PostgreSQL.
 - Configure the readiness probe to call `GET /api/v1/health/ready`. It returns `503` when PostgreSQL is unavailable. The existing `GET /api/v1/health` is retained as a readiness alias.
-- Build with the repository-pinned Node.js version in `.nvmrc`; install each package from its lockfile with `npm ci`, run its tests, and run its production build.
+- Build with the repository-pinned Node.js version in `.nvmrc`; install each package from its lockfile with `npm ci`, run its tests, run its production build, and verify the API/worker entrypoints with `npm run verify:entrypoints --prefix asset-register-api`.
+- Bind the API and workers to private service interfaces behind the selected platform's ingress. Set `HOST=127.0.0.1` for local-only API testing; the container-friendly default remains `0.0.0.0`.
 - Apply database migrations as a separately controlled deployment step. On an existing database, apply only the unapplied migrations in numeric order after testing that same sequence against a staging restore. The convenience `db:migrate` script applies the full migration sequence and is intended for a fresh database, not an unreviewed release hook.
 - Deploy the API and both workers from the same immutable commit and migration version. Verify liveness, readiness, authenticated sign-in, scoped reads/writes, private evidence upload/download, an in-app notification, an export, and worker restart before sending pilot users to the release.
 - Prefer additive, backward-compatible schema changes. Do not automatically reverse migrations during a rollback; first restore a compatible API version or ship a forward fix.

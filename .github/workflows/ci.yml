@@ -42,6 +42,10 @@ jobs:
       - name: Build production package
         run: npm run build --prefix "${{ matrix.package }}"
 
+      - name: Verify API runtime entrypoints
+        if: matrix.package == 'asset-register-api'
+        run: npm run verify:entrypoints --prefix asset-register-api
+
   database-recovery:
     name: Verify PostgreSQL backup and restore
     runs-on: ubuntu-24.04
