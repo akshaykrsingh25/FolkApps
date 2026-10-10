@@ -1,7 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { extractInvoiceSuggestions } from './ocr';
+import { extractInvoiceSuggestions, localOcrAssetPaths } from './ocr';
 
 describe('on-device invoice and label extraction', () => {
+  it('uses same-origin OCR assets so the installed app can recognize labels offline', () => {
+    expect(localOcrAssetPaths('/register/')).toEqual({
+      workerPath: '/register/ocr/worker.min.js',
+      corePath: '/register/ocr/core/tesseract-core-lstm.wasm.js',
+      langPath: '/register/ocr/lang',
+      gzip: true,
+      workerBlobURL: false,
+    });
+    const paths = localOcrAssetPaths('/register/');
+    for (const path of [paths.workerPath, paths.corePath, paths.langPath]) {
+      expect(path.startsWith('/register/ocr/')).toBe(true);
+    }
+  });
+
   it('suggests a category and editable purchase details from invoice text', () => {
     const result = extractInvoiceSuggestions(`ACME TECHNOLOGY\nTAX INVOICE\nInvoice No: INV-2025-17\nInvoice Date: 04/05/2025\nBrand: Cisco\nModel: C9200-24P\nSerial No: SN-778899\nDescription: Network switch\nSeller: Acme Technology Services\nPhone: +91 98765 43210\nGrand Total: ₹48,500.00`);
 

@@ -8,6 +8,7 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
+    "verify:offline-ocr": "node scripts/verify-offline-ocr-assets.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -19,6 +20,7 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19.1.10",
     "@types/react-dom": "^19.1.9",

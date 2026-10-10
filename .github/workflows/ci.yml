@@ -46,6 +46,10 @@ jobs:
         if: matrix.package == 'asset-register-api'
         run: npm run verify:entrypoints --prefix asset-register-api
 
+      - name: Verify offline OCR assets
+        if: matrix.package == 'asset-register-frontend'
+        run: npm run verify:offline-ocr --prefix asset-register-frontend
+
   database-recovery:
     name: Verify PostgreSQL backup and restore
     runs-on: ubuntu-24.04

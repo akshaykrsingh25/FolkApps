@@ -13,6 +13,17 @@ export interface CaptureSuggestions {
   sourceText: string;
 }
 
+export function localOcrAssetPaths(baseUrl = '/') {
+  const root = `${baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`}ocr/`;
+  return {
+    workerPath: `${root}worker.min.js`,
+    corePath: `${root}core/tesseract-core-lstm.wasm.js`,
+    langPath: `${root}lang`,
+    gzip: true,
+    workerBlobURL: false,
+  };
+}
+
 const CATEGORY_HINTS: Array<[RegExp, string, string]> = [
   [/\b(laptop|notebook|computer|desktop|workstation)\b/i, 'IT equipment', 'Computer'],
   [/\b(network switch|router|firewall|access point|server)\b/i, 'IT equipment', 'Network equipment'],
@@ -69,6 +80,7 @@ function normalizeDate(value: string) {
 export async function readImageText(file: File, onProgress?: (percent: number) => void): Promise<string> {
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker('eng', undefined, {
+    ...localOcrAssetPaths(import.meta.env.BASE_URL),
     logger: (message) => { if (message.status === 'recognizing text') onProgress?.(Math.round(message.progress * 100)); },
   });
   try {

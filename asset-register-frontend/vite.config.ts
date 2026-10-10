@@ -19,7 +19,11 @@ export default defineConfig({
         start_url: '/',
         icons: [{ src: '/favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' }],
       },
-      workbox: { navigateFallback: '/', globPatterns: ['**/*.{js,css,html,svg,woff2}'] },
+      workbox: {
+        navigateFallback: '/',
+        globPatterns: ['**/*.{js,css,html,svg,woff2,wasm,gz}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
     }),
   ],
   server: { port: 5173 },
