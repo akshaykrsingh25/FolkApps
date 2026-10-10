@@ -13,6 +13,7 @@ NestJS + TypeScript service foundation for the nationwide asset register. This p
 - `database/migrations/005_dual_asset_identifiers.sql` — optional tenant-unique RFID EPCs on assets and identification method on every scan event.
 - `database/migrations/006_background_asset_exports.sql` — background CSV export jobs, retry leases, short retention, and least-privilege `asset:export` grants.
 - Asset labels can use tenant-bound Ed25519 signatures. The private signing key remains server-side; the public verification key is distributed to the web client for offline checks.
+- The dual-identifier software boundary and its hardware pilot plan are documented in `docs/hybrid-identification-pilot.md`. RFID reader, tag writer, printer, and portal hardware are not connected by the current web application.
 - `.env.example` — configuration names only; copy to a local ignored `.env` and never commit credentials.
 
 Production access uses the configured OIDC provider. The app does not issue local passwords, store password hashes, or create a second JWT/MFA system. After authentication, the API resolves the OIDC subject to an active organization user and checks that user's scoped roles and permission grants on each protected route.

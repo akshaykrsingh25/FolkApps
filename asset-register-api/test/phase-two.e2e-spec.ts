@@ -4,7 +4,8 @@ import type { AddressInfo } from 'node:net';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { Test } from '@nestjs/testing';
-import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { exportJWK, generateKeyPair, SignJWT, type JWK } from 'jose';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -13,7 +14,7 @@ import { ObjectStorageService } from '../src/evidence/object-storage.service';
 
 describe('phase two API integration', () => {
   let db: PGlite;
-  let app: INestApplication;
+  let app: NestExpressApplication;
   let server: Server;
   let baseUrl: string;
   let privateKey: CryptoKey;
@@ -97,7 +98,9 @@ describe('phase two API integration', () => {
         createDownloadUrl: async () => 'https://private-storage.test/signed-get',
       })
       .compile();
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
+    app.useBodyParser('json', { limit: '2mb' });
+    app.useBodyParser('urlencoded', { extended: true, limit: '2mb' });
     app.setGlobalPrefix('api/v1');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.listen(0, '127.0.0.1');
@@ -234,17 +237,24 @@ describe('phase two API integration', () => {
       {epc:asset.rfidEpc,clientEventId:rfidEvent,scannedAt:new Date().toISOString()},
       {epc:otherCentreAsset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000000011',scannedAt:new Date().toISOString()},
       {epc:'E2801160600000000000034C',clientEventId:'70000000-0000-4000-8000-000000000012',scannedAt:new Date().toISOString()},
-      {epc:asset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000000013',scannedAt:new Date().toISOString()},
+      {epc:asset.rfidEpc.toLowerCase(),clientEventId:'70000000-0000-4000-8000-000000000013',scannedAt:new Date().toISOString()},
     ]};
     const rfidResponse=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,rfidBatch);
     expect(rfidResponse.status).toBe(201);
-    expect(await rfidResponse.json()).toMatchObject({receivedCount:4,recordedCount:1,duplicateCount:1,wrongLocationCount:0,notRegisteredCount:2,
+    const rfidBody=await rfidResponse.json();
+    expect(rfidBody).toMatchObject({receivedCount:4,recordedCount:1,duplicateCount:1,wrongLocationCount:0,notRegisteredCount:2,
       results:[{epc:asset.rfidEpc,status:'recorded',assetId:asset.id},{epc:otherCentreAsset.rfidEpc,status:'not_registered'},{epc:'E2801160600000000000034C',status:'not_registered'},{epc:asset.rfidEpc,status:'duplicate_read'}]});
     expect((await db.query<{identification_method:string;asset_id:string}>(`SELECT identification_method,asset_id FROM scan_events WHERE organization_id=$1 AND client_event_id=$2`,[organizationId,rfidEvent])).rows[0]).toMatchObject({identification_method:'rfid',asset_id:asset.id});
     const repeatedRfid=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,rfidBatch);
     expect(await repeatedRfid.json()).toMatchObject({recordedCount:0,duplicateCount:2,notRegisteredCount:2,
       results:[{epc:asset.rfidEpc,status:'duplicate'},{epc:otherCentreAsset.rfidEpc,status:'not_registered'},{epc:'E2801160600000000000034C',status:'not_registered'},{epc:asset.rfidEpc,status:'duplicate_read'}]});
     expect((await call(`/verification/cycles/${cycle.id}/rfid-scans`,centreToken,{locationId:centre.id,readings:[{epc:asset.rfidEpc,clientEventId:rfidEvent,scannedAt:new Date().toISOString()}]})).status).toBe(409);
+    const maximumBatch=Array.from({length:5000},(_,index)=>({epc:asset.rfidEpc,clientEventId:`70000000-0000-4000-8000-${(1000+index).toString(16).padStart(12,'0')}`,scannedAt:new Date().toISOString()}));
+    const maximumBatchResponse=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,{locationId:floor.id,readings:maximumBatch});
+    expect(maximumBatchResponse.status).toBe(201);
+    expect(await maximumBatchResponse.json()).toMatchObject({receivedCount:5000,recordedCount:1,duplicateCount:4999});
+    const overLimitResponse=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,{locationId:floor.id,readings:[...maximumBatch,{epc:asset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000009000',scannedAt:new Date().toISOString()}]});
+    expect(overLimitResponse.status).toBe(400);
     const privateProgress=await call(`/verification/cycles/${cycle.id}/progress`,custodianToken);
     expect(await privateProgress.json()).toMatchObject([{assetId:asset.id,scanned:true,reviewState:'verified'}]);
     expect(((await (await call('/verification/cycles',custodianToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
