@@ -4,10 +4,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { requestIdMiddleware } from './common/request-id.middleware';
-import { parseWebOrigins } from './common/web-origin-config';
+import { validateRuntimeConfiguration } from './common/runtime-config';
 
 async function bootstrap() {
-  const webOrigins = parseWebOrigins(process.env.WEB_ORIGIN);
+  const { webOrigins } = validateRuntimeConfiguration();
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   app.use(requestIdMiddleware);
   app.useBodyParser('json', { limit: '2mb' });

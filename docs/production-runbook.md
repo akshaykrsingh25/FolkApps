@@ -40,6 +40,8 @@ All `VITE_*` values are included in the browser bundle. They must contain public
 
 The API trims and validates `WEB_ORIGIN` values at startup. Production requires at least one exact HTTPS origin; wildcard origins, localhost, credentials, and URL paths are rejected before the HTTP server starts.
 
+Production startup also fails if database TLS is not set to `sslmode=verify-full`, OIDC issuer/audience/JWKS values are incomplete or insecure, or private evidence storage lacks both a bucket and customer-managed KMS key ID. A custom S3-compatible endpoint must use HTTPS. Supply a provider CA file through the PostgreSQL connection URL when the managed database certificate is not signed by a system-trusted CA. These checks prevent the API from serving a partially configured production deployment; they do not replace provider-side least-privilege, bucket privacy, or MFA configuration.
+
 ## Monitoring and alert response
 
 The application currently exposes health probes and structured service logs, but no production metrics endpoint or provider integration. The platform owner must configure monitoring and paging before the pilot. At minimum, alert on:
