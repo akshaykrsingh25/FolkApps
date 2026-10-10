@@ -151,6 +151,10 @@ describe('phase two API integration', () => {
     const coordinatesResponse=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.9716,longitude:77.5946},organizationId,'PATCH');
     expect(coordinatesResponse.status).toBe(200);
     expect(((await coordinatesResponse.json()) as {coordinatesStatus:string}).coordinatesStatus).toBe('centre_head_confirmed');
+    const correctedCoordinates=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.972,longitude:77.595},organizationId,'PATCH');
+    expect(correctedCoordinates.status).toBe(200);
+    expect(await correctedCoordinates.json()).toMatchObject({latitude:12.972,longitude:77.595,coordinatesStatus:'centre_head_confirmed'});
+    expect((await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:40.7128,longitude:-74.006},organizationId,'PATCH')).status).toBe(400);
 
     const assetResponse = await call('/assets', centreToken, { locationId: floor.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234', ownershipType:'CLIENT_DEDICATED', rfidEpc:'E2801160600000000000034A' });
     expect(assetResponse.status).toBe(201);

@@ -23,10 +23,10 @@ export class CreateLocationDto {
   @IsOptional() @IsString() @Length(1, 80)
   stateName?: string;
 
-  @IsOptional() @IsNumber() @Min(-90) @Max(90)
+  @IsOptional() @IsNumber() @Min(6.5) @Max(37.5)
   latitude?: number;
 
-  @IsOptional() @IsNumber() @Min(-180) @Max(180)
+  @IsOptional() @IsNumber() @Min(68) @Max(98)
   longitude?: number;
 }
 
@@ -42,8 +42,8 @@ export class ListLocationsDto {
 }
 
 export class PatchCoordinatesDto {
-  @IsNumber() @Min(-90) @Max(90) latitude!: number;
-  @IsNumber() @Min(-180) @Max(180) longitude!: number;
+  @IsNumber() @Min(6.5) @Max(37.5) latitude!: number;
+  @IsNumber() @Min(68) @Max(98) longitude!: number;
 }
 
 export class CentreCsvDto {
