@@ -10,7 +10,7 @@ The source sheet's city column appears misaligned for the two rows named Akaya O
 
 Only a Head Office member can import this directory. First send the CSV text to `POST /api/v1/locations/import/preview` in the JSON field `csv`. Review every row. Then send the same CSV to `POST /api/v1/locations/import`. The importer creates the states, centres, and floor children together in one transaction, and records each creation in the audit log. It never adds coordinates from a city name.
 
-Centre map pins remain unconfirmed until a person with location authority checks an exact address and confirms the coordinates. This prevents a city-centre estimate from looking like a verified building location.
+Centre map pins remain unconfirmed until a person with location authority checks an exact address and confirms the coordinates. This prevents a city-centre estimate from looking like a verified building location. An optional `Physical Address` CSV column is accepted, but imported addresses remain unverified. Centre Heads may confirm an address and pin for their centre; State Heads and Head Office can verify it. Address edits and clearing an address are audited together with coordinate changes. The supplied directory contains no verified street addresses or exact pins, so those values must be confirmed by centre teams before map pins are shown.
 
 ## Public references consulted
 

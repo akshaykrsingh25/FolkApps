@@ -4,6 +4,7 @@ export interface CentreCsvRow {
   name: string;
   city: string;
   stateName: string;
+  physicalAddress: string;
   kind: 'centre' | 'floor';
   parentCentreCode: string;
   errors: string[];
@@ -19,6 +20,7 @@ export function parseCentreCsv(csv: string): CentreCsvRow[] {
   if (missing.length) throw new BadRequestException(`Required columns: ${missing.join(', ')}`);
   const kindIndex = headers.indexOf('location_kind');
   const parentCodeIndex = headers.indexOf('parent_center_code');
+  const addressIndex = headers.indexOf('physical_address') >= 0 ? headers.indexOf('physical_address') : headers.indexOf('address');
   const rows: CentreCsvRow[] = [];
   const seenCodes = new Set<string>();
 
@@ -28,6 +30,7 @@ export function parseCentreCsv(csv: string): CentreCsvRow[] {
     const name = record[indexes.center_name]?.trim() ?? '';
     const city = record[indexes.city]?.trim() ?? '';
     const stateName = record[indexes.state]?.trim() ?? '';
+    const physicalAddress = addressIndex < 0 ? '' : record[addressIndex]?.trim() ?? '';
     const kindValue = (kindIndex < 0 ? 'centre' : record[kindIndex]?.trim().toLocaleLowerCase('en-IN') || 'centre');
     const kind = kindValue === 'floor' ? 'floor' : 'centre';
     const parentCentreCode = parentCodeIndex < 0 ? '' : record[parentCodeIndex]?.trim() ?? '';
@@ -43,11 +46,12 @@ export function parseCentreCsv(csv: string): CentreCsvRow[] {
     if (name.length > 120) errors.push('Centre name must be 120 characters or fewer');
     if (city.length > 80) errors.push('City must be 80 characters or fewer');
     if (stateName.length > 80) errors.push('State must be 80 characters or fewer');
+    if (physicalAddress.length > 300) errors.push('Physical address must be 300 characters or fewer');
     if (parentCentreCode.length > 40) errors.push('Parent centre code must be 40 characters or fewer');
     const normalizedCode = code.toLocaleUpperCase('en-IN');
     if (kind === 'centre' && normalizedCode && seenCodes.has(normalizedCode)) errors.push('Duplicate centre code in this CSV');
     if (kind === 'centre' && normalizedCode) seenCodes.add(normalizedCode);
-    rows.push({ rowNumber: index + 2, code, name, city, stateName, kind, parentCentreCode, errors });
+    rows.push({ rowNumber: index + 2, code, name, city, stateName, physicalAddress, kind, parentCentreCode, errors });
   });
 
   const centreCodes = new Set(rows.filter((row) => row.kind === 'centre' && row.code).map((row) => row.code.toLocaleUpperCase('en-IN')));

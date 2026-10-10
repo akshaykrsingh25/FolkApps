@@ -134,7 +134,8 @@ export class InsightsService {
   async map(actor:ActorContext) {
     const centres=await this.database.query(
       `${ACCESSIBLE}, centre_rows AS (
-        SELECT c.id,c.name,c.code,c.city,COALESCE(NULLIF(c.state_name,''),s.name) AS "stateName",c.latitude,c.longitude,c.coordinates_status AS "coordinatesStatus"
+        SELECT c.id,c.name,c.code,c.city,COALESCE(NULLIF(c.state_name,''),s.name) AS "stateName",
+          c.physical_address AS "physicalAddress",c.physical_address_status AS "physicalAddressStatus",c.latitude,c.longitude,c.coordinates_status AS "coordinatesStatus"
         FROM locations c LEFT JOIN locations s ON s.organization_id=c.organization_id AND s.id=c.parent_id
         WHERE c.organization_id=$1::uuid AND c.kind='centre' AND c.active=true AND c.id IN (SELECT id FROM visible_locations)
        ), descendants(centre_id,location_id) AS (
@@ -146,7 +147,7 @@ export class InsightsService {
           count(DISTINCT a.id) FILTER (WHERE a.status='unused') AS "unusedCount"
         FROM descendants d LEFT JOIN assets a ON a.organization_id=$1::uuid AND a.location_id=d.location_id GROUP BY d.centre_id
        ), result AS (
-        SELECT c.id,c.name,c.code,c.city,c."stateName",c.latitude,c.longitude,c."coordinatesStatus",
+        SELECT c.id,c.name,c.code,c.city,c."stateName",c."physicalAddress",c."physicalAddressStatus",c.latitude,c.longitude,c."coordinatesStatus",
           COALESCE(s."assetCount",0) AS "assetCount",COALESCE(s."missingCount",0) AS "missingCount",
           COALESCE(s."attentionCount",0) AS "attentionCount",COALESCE(s."unusedCount",0) AS "unusedCount"
         FROM centre_rows c LEFT JOIN stats s ON s.centre_id=c.id

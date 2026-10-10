@@ -93,7 +93,7 @@ export const api = {
   insightOverview: (token:string,organizationId:string)=>request<InsightOverview>('/insights/overview',token,organizationId),
   alerts: (token:string,organizationId:string)=>request<OperationalAlert[]>('/insights/alerts',token,organizationId),
   mapData: (token:string,organizationId:string)=>request<IndiaMapData>('/insights/map',token,organizationId),
-  confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
+  confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number;physicalAddress?:string|null})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
   assetByQr: (token: string, organizationId: string, qrPublicId: string) =>
     request<Asset>(`/assets/qr/${encodeURIComponent(qrPublicId)}`, token, organizationId),
   signedAssetQr: (token: string, organizationId: string, assetId: string) =>

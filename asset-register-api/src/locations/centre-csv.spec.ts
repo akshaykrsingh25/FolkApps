@@ -5,7 +5,14 @@ import { parseCentreCsv } from './centre-csv';
 describe('centre directory CSV', () => {
   it('parses quoted commas, CRLF, BOM, and user-facing header labels', () => {
     const rows = parseCentreCsv('\uFEFFCenter Code,Center Name,City,State\r\nAHKC,"Ahmedabad, Krish Cubicle",Ahmedabad,Gujarat\r\n');
-    expect(rows).toEqual([{ rowNumber: 2, code: 'AHKC', name: 'Ahmedabad, Krish Cubicle', city: 'Ahmedabad', stateName: 'Gujarat', kind: 'centre', parentCentreCode: '', errors: [] }]);
+    expect(rows).toEqual([{ rowNumber: 2, code: 'AHKC', name: 'Ahmedabad, Krish Cubicle', city: 'Ahmedabad', stateName: 'Gujarat', physicalAddress: '', kind: 'centre', parentCentreCode: '', errors: [] }]);
+  });
+
+  it('accepts an optional physical address and rejects oversized address values', () => {
+    const rows = parseCentreCsv('Center Code,Center Name,City,State,Physical Address\nA,First,Delhi,Delhi,"Tower 4, Connaught Place"\n');
+    expect(rows[0].physicalAddress).toBe('Tower 4, Connaught Place');
+    const oversized = parseCentreCsv(`Center Code,Center Name,City,State,Address\nA,First,Delhi,Delhi,${'x'.repeat(301)}\n`);
+    expect(oversized[0].errors).toContain('Physical address must be 300 characters or fewer');
   });
 
   it('flags duplicate codes and missing explicit state instead of inferring it from city', () => {

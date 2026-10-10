@@ -13,6 +13,8 @@ export interface LocationRow {
   name: string;
   city: string | null;
   stateName: string | null;
+  physicalAddress: string | null;
+  physicalAddressStatus: string;
   latitude: number | null;
   longitude: number | null;
   coordinatesStatus: string;
@@ -33,12 +35,13 @@ const LIST_LOCATIONS = `WITH RECURSIVE scope_locations(id) AS (
   )
 )
 SELECT l.id, l.parent_id AS "parentId", l.kind, l.code, l.name, l.city,
-       l.state_name AS "stateName", l.latitude, l.longitude, l.coordinates_status AS "coordinatesStatus"
+       l.state_name AS "stateName",l.physical_address AS "physicalAddress",
+       l.physical_address_status AS "physicalAddressStatus",l.latitude,l.longitude,l.coordinates_status AS "coordinatesStatus"
   FROM locations l
  WHERE l.organization_id = $1::uuid
    AND ($3::uuid IS NULL OR l.parent_id = $3::uuid)
    AND ($4::text IS NULL OR l.kind::text = $4)
-   AND ($5::text IS NULL OR concat_ws(' ', l.name, l.code, l.city, l.state_name) ILIKE '%' || $5 || '%')
+   AND ($5::text IS NULL OR concat_ws(' ',l.name,l.code,l.city,l.state_name,l.physical_address) ILIKE '%' || $5 || '%')
    AND l.id IN (SELECT id FROM visible_locations)
  ORDER BY l.state_name NULLS FIRST, l.city NULLS FIRST, l.kind, l.name
  LIMIT 500`;
@@ -108,27 +111,29 @@ export class LocationsService {
             );
           }
           const created = await query<LocationRow>(
-            `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name)
-             VALUES ($1::uuid,$2::uuid,'centre',$3,$4,$5,$6)
-             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
-            [actor.organizationId, state.id, row.code || null, row.name, row.city, state.name],
+            `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name,physical_address)
+             VALUES ($1::uuid,$2::uuid,'centre',$3,$4,$5,$6,NULLIF($7,''))
+             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",physical_address AS "physicalAddress",
+               physical_address_status AS "physicalAddressStatus",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+            [actor.organizationId,state.id,row.code||null,row.name,row.city,state.name,row.physicalAddress],
           );
           imported.push(created[0]);
           if (row.code) centreByCode.set(row.code.toLocaleUpperCase('en-IN'), created[0]);
           await query(
             `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
              VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
-            [actor.organizationId, actor.userId, created[0].id, JSON.stringify({ kind: 'centre', code: row.code || null, name: row.name, city: row.city, state: state.name, source: 'centre_csv_import' })],
+            [actor.organizationId,actor.userId,created[0].id,JSON.stringify({kind:'centre',code:row.code||null,name:row.name,city:row.city,state:state.name,physicalAddress:row.physicalAddress||null,source:'centre_csv_import'})],
           );
         }
         for (const row of floorRows) {
           const parent = centreByCode.get(row.parentCentreCode.toLocaleUpperCase('en-IN'));
           if (!parent) throw new ConflictException('Every floor parent must be imported in the same file');
           const floor = await query<LocationRow>(
-            `INSERT INTO locations (organization_id,parent_id,kind,name,city,state_name)
-             VALUES ($1::uuid,$2::uuid,'floor',$3,$4,$5)
-             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
-            [actor.organizationId, parent.id, row.name, parent.city, parent.stateName],
+            `INSERT INTO locations (organization_id,parent_id,kind,name,city,state_name,physical_address)
+             VALUES ($1::uuid,$2::uuid,'floor',$3,$4,$5,NULLIF($6,''))
+             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",physical_address AS "physicalAddress",
+               physical_address_status AS "physicalAddressStatus",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+            [actor.organizationId,parent.id,row.name,parent.city,parent.stateName,row.physicalAddress],
           );
           importedFloors.push(floor[0]);
           await query(
@@ -182,18 +187,19 @@ export class LocationsService {
     try {
       return await this.database.transaction(async (query) => {
         const rows = await query<LocationRow>(
-          `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name,latitude,longitude,coordinates_status)
-           VALUES ($1::uuid,$2::uuid,$3::location_kind,$4,$5,$6,$7,$8,$9,
-             CASE WHEN $8::double precision IS NULL OR $9::double precision IS NULL THEN 'unverified' ELSE 'city_level' END)
-           RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
-          [actor.organizationId, dto.parentId ?? null, dto.kind, dto.code ?? null, dto.name.trim(), dto.city ?? null,
-            dto.stateName ?? null, dto.latitude ?? null, dto.longitude ?? null],
+          `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name,physical_address,latitude,longitude,coordinates_status)
+           VALUES ($1::uuid,$2::uuid,$3::location_kind,$4,$5,$6,$7,NULLIF($8,''),$9,$10,
+             CASE WHEN $9::double precision IS NULL OR $10::double precision IS NULL THEN 'unverified' ELSE 'city_level' END)
+           RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",physical_address AS "physicalAddress",
+             physical_address_status AS "physicalAddressStatus",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+          [actor.organizationId,dto.parentId??null,dto.kind,dto.code??null,dto.name.trim(),dto.city??null,
+            dto.stateName??null,dto.physicalAddress?.trim()??'',dto.latitude??null,dto.longitude??null],
         );
         const location = rows[0];
         await query(
           `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
            VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
-          [actor.organizationId, actor.userId, location.id, JSON.stringify({ kind: location.kind, name: location.name })],
+          [actor.organizationId,actor.userId,location.id,JSON.stringify({kind:location.kind,name:location.name,physicalAddress:location.physicalAddress})],
         );
         return location;
       });
@@ -203,18 +209,30 @@ export class LocationsService {
     }
   }
 
-  async confirmCoordinates(actor:ActorContext,id:string,coordinates:{latitude:number;longitude:number}):Promise<LocationRow> {
+  async confirmCoordinates(actor:ActorContext,id:string,coordinates:{latitude:number;longitude:number;physicalAddress?:string|null}):Promise<LocationRow> {
     const rows=await this.database.query<{kind:string}>('SELECT kind FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid',[actor.organizationId,id]);
     if(!rows[0]) throw new NotFoundException('Location was not found');
     if(rows[0].kind!=='centre') throw new ConflictException('Map pins can only be confirmed for centre locations');
     await this.authorization.assertLocationAccess(actor,id,['head_office','state_head','centre_head']);
     const coordinatesStatus=actor.memberships.some((membership)=>membership.role==='head_office'||membership.role==='state_head')?'verified':'centre_head_confirmed';
+    const addressProvided=coordinates.physicalAddress!==undefined;
+    const nextAddress=coordinates.physicalAddress?.trim()||null;
+    const nextAddressStatus=nextAddress?coordinatesStatus:'unverified';
     return this.database.transaction(async(query)=>{
-      const updated=await query<LocationRow>(`UPDATE locations SET latitude=$3,longitude=$4,coordinates_status=$5
-        WHERE organization_id=$1::uuid AND id=$2::uuid RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
-        [actor.organizationId,id,coordinates.latitude,coordinates.longitude,coordinatesStatus]);
+      const current=await query<{physicalAddress:string|null}>('SELECT physical_address AS "physicalAddress" FROM locations WHERE organization_id=$1::uuid AND id=$2::uuid FOR UPDATE',[actor.organizationId,id]);
+      if(!current[0]) throw new NotFoundException('Location was not found');
+      const updated=await query<LocationRow>(`UPDATE locations SET latitude=$3,longitude=$4,coordinates_status=$5,
+          physical_address=CASE WHEN $6::boolean THEN $7::text ELSE physical_address END,
+          physical_address_status=CASE WHEN $6::boolean THEN $8::text ELSE physical_address_status END
+        WHERE organization_id=$1::uuid AND id=$2::uuid
+        RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",physical_address AS "physicalAddress",
+          physical_address_status AS "physicalAddressStatus",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+        [actor.organizationId,id,coordinates.latitude,coordinates.longitude,coordinatesStatus,addressProvided,nextAddress,nextAddressStatus]);
       await query(`INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
-        VALUES ($1::uuid,$2::uuid,'location.coordinates_confirmed','location',$3::uuid,$4::jsonb)`,[actor.organizationId,actor.userId,id,JSON.stringify({...coordinates,coordinatesStatus})]);
+        VALUES ($1::uuid,$2::uuid,'location.coordinates_confirmed','location',$3::uuid,$4::jsonb)`,
+        [actor.organizationId,actor.userId,id,JSON.stringify({latitude:coordinates.latitude,longitude:coordinates.longitude,coordinatesStatus,
+          physicalAddressBefore:current[0].physicalAddress,physicalAddressAfter:addressProvided?nextAddress:current[0].physicalAddress,
+          physicalAddressStatus:addressProvided?nextAddressStatus:'unchanged'})]);
       return updated[0];
     });
   }

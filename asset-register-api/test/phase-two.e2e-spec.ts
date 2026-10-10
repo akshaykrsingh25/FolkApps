@@ -60,6 +60,7 @@ describe('phase two API integration', () => {
     await db.exec(dualIdentifierMigration);
     await db.exec(await readFile(new URL('../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -149,12 +150,15 @@ describe('phase two API integration', () => {
     expect(floorResponse.status).toBe(201);
     const floor=await floorResponse.json() as {id:string};
 
-    const coordinatesResponse=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.9716,longitude:77.5946},organizationId,'PATCH');
+    const coordinatesResponse=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.9716,longitude:77.5946,physicalAddress:'Tower 4, MG Road, Bengaluru 560001'},organizationId,'PATCH');
     expect(coordinatesResponse.status).toBe(200);
-    expect(((await coordinatesResponse.json()) as {coordinatesStatus:string}).coordinatesStatus).toBe('centre_head_confirmed');
+    expect(await coordinatesResponse.json()).toMatchObject({coordinatesStatus:'centre_head_confirmed',physicalAddress:'Tower 4, MG Road, Bengaluru 560001',physicalAddressStatus:'centre_head_confirmed'});
     const correctedCoordinates=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.972,longitude:77.595},organizationId,'PATCH');
     expect(correctedCoordinates.status).toBe(200);
-    expect(await correctedCoordinates.json()).toMatchObject({latitude:12.972,longitude:77.595,coordinatesStatus:'centre_head_confirmed'});
+    expect(await correctedCoordinates.json()).toMatchObject({latitude:12.972,longitude:77.595,coordinatesStatus:'centre_head_confirmed',physicalAddress:'Tower 4, MG Road, Bengaluru 560001'});
+    const verifiedAddress=await call(`/locations/${centre.id}/coordinates`,hoToken,{latitude:12.972,longitude:77.595,physicalAddress:'Tower 4, MG Road, Bengaluru 560001, Karnataka'},organizationId,'PATCH');
+    expect(await verifiedAddress.json()).toMatchObject({physicalAddress:'Tower 4, MG Road, Bengaluru 560001, Karnataka',physicalAddressStatus:'verified',coordinatesStatus:'verified'});
+    expect((await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.972,longitude:77.595,physicalAddress:'x'.repeat(301)},organizationId,'PATCH')).status).toBe(400);
     expect((await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:40.7128,longitude:-74.006},organizationId,'PATCH')).status).toBe(400);
 
     const assetResponse = await call('/assets', centreToken, { locationId: floor.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234', ownershipType:'CLIENT_DEDICATED', rfidEpc:'E2801160600000000000034A' });
@@ -297,9 +301,9 @@ describe('phase two API integration', () => {
 
     const mapResponse=await call('/insights/map',centreToken);
     expect(mapResponse.status).toBe(200);
-    const scopedMap=await mapResponse.json() as {states:{stateName:string;centreCount:number;assetCount:number}[];centres:{assetCount:number;coordinatesStatus:string;stateName:string}[]};
+    const scopedMap=await mapResponse.json() as {states:{stateName:string;centreCount:number;assetCount:number}[];centres:{assetCount:number;coordinatesStatus:string;stateName:string;physicalAddress:string|null;physicalAddressStatus:string}[]};
     expect(scopedMap.centres).toHaveLength(1);
-    expect(scopedMap.centres[0]).toMatchObject({assetCount:1,coordinatesStatus:'centre_head_confirmed',stateName:'Karnataka'});
+    expect(scopedMap.centres[0]).toMatchObject({assetCount:1,coordinatesStatus:'verified',stateName:'Karnataka',physicalAddress:'Tower 4, MG Road, Bengaluru 560001, Karnataka',physicalAddressStatus:'verified'});
     expect(scopedMap.states).toEqual([{stateName:'Karnataka',centreCount:1,assetCount:1,missingCount:0,attentionCount:1,unusedCount:0}]);
     const overviewResponse=await call('/insights/overview',centreToken);
     expect(((await overviewResponse.json()) as {assetCount:number;centreCount:number;attentionCount:number;activeCycleCount:number;scanCompletionPercent:number})).toMatchObject({assetCount:1,centreCount:1,attentionCount:1,activeCycleCount:1,scanCompletionPercent:100});

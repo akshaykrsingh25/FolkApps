@@ -24,6 +24,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(exportMigration);
     const rfidBindingMigration = await readFile(new URL('../../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8');
     await db.exec(rfidBindingMigration);
+    const physicalAddressMigration = await readFile(new URL('../../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8');
+    await db.exec(physicalAddressMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -37,6 +39,14 @@ describe('initial PostgreSQL schema', () => {
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
       'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
     ]));
+  });
+
+  it('adds optional physical addresses with an unverified default and a bounded value', async () => {
+    const organization=await db.query<{id:string}>(`INSERT INTO organizations(name,slug) VALUES ('Address Schema Org','address-schema-org') RETURNING id`);
+    const location=await db.query<{physical_address:string|null;physical_address_status:string}>(
+      `INSERT INTO locations(organization_id,kind,name) VALUES ($1,'centre','Address Schema Centre') RETURNING physical_address,physical_address_status`,[organization.rows[0].id]);
+    expect(location.rows[0]).toMatchObject({physical_address:null,physical_address_status:'unverified'});
+    await expect(db.query(`UPDATE locations SET physical_address=$2 WHERE organization_id=$1`,[organization.rows[0].id,'x'.repeat(301)])).rejects.toMatchObject({code:'23514'});
   });
 
   it('seeds least-privilege permissions for all five application roles', async () => {

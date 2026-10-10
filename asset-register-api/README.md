@@ -72,7 +72,7 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 
 - `database/seeds/incuspaze-centre-directory.csv` is the import-ready version of the centre list supplied on 10 October 2026. Review its source notes in `database/seeds/README.md` before importing.
 - Head Office can preview the CSV with `POST /api/v1/locations/import/preview` and import it with `POST /api/v1/locations/import`, passing the CSV text in `{ "csv": "..." }`. The import creates state, centre, and direct floor records in one transaction. Duplicate codes, missing states, and invalid parent references stop the import.
-- Floors can be direct children of a centre or of a building. A city does not produce a map pin; exact centre coordinates remain unconfirmed until an authorized person verifies them.
+- Floors can be direct children of a centre or of a building. A city does not produce a map pin; exact centre coordinates remain unconfirmed until an authorized person verifies them. The centre import accepts an optional `Physical Address` column, but imported addresses stay unverified. A centre head can confirm an address and coordinates for their centre; State Head and Head Office confirmations are marked verified. Address and coordinate changes are written to the audit log. Run `npm run db:migrate:physical-addresses` on an existing database, or `npm run db:migrate` for a fresh setup.
 
 ## Production boundary
 

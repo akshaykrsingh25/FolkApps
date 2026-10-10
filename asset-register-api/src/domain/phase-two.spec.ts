@@ -42,6 +42,7 @@ describe('phase two: location and asset workflows', () => {
     );
     legacyRfidAssetId = legacyAsset.rows[0].id;
     await db.exec(await readFile(new URL('../../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8'));
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(
@@ -80,7 +81,7 @@ describe('phase two: location and asset workflows', () => {
 
   it('creates the location hierarchy, audits it, and rejects invalid parent levels', async () => {
     const state = await locations.create(headOffice, { kind: 'state', name: 'Gujarat' });
-    const centre = await locations.create(headOffice, { kind: 'centre', name: 'Ahmedabad Krish Cubicle', code: 'AHKC', parentId: state.id, city: 'Ahmedabad', stateName: 'Gujarat' });
+    const centre = await locations.create(headOffice, { kind: 'centre', name: 'Ahmedabad Krish Cubicle', code: 'AHKC', parentId: state.id, city: 'Ahmedabad', stateName: 'Gujarat', physicalAddress: 'Tower 4, SG Highway, Ahmedabad' });
     const building = await locations.create(headOffice, { kind: 'building', name: 'Main building', parentId: centre.id });
     const floor = await locations.create(headOffice, { kind: 'floor', name: 'Floor 4', parentId: building.id });
     const directFloor = await locations.create(headOffice, { kind: 'floor', name: 'Floor 2', parentId: centre.id });
@@ -90,6 +91,29 @@ describe('phase two: location and asset workflows', () => {
     expect(Number(audit.rows[0].count)).toBe(5);
     expect(floor.coordinatesStatus).toBe('unverified');
     expect(directFloor.parentId).toBe(centre.id);
+    expect(centre).toMatchObject({physicalAddress:'Tower 4, SG Highway, Ahmedabad',physicalAddressStatus:'unverified'});
+  });
+
+  it('audits centre address and coordinate confirmation by role, and supports clearing an address', async () => {
+    const state=await locations.create(headOffice,{kind:'state',name:'Address State'});
+    const centre=await locations.create(headOffice,{kind:'centre',name:'Address Centre',parentId:state.id,city:'Ahmedabad',stateName:'Gujarat',physicalAddress:'Old address'});
+    const manager=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'address-centre-head','Address Centre Head','address-centre@example.test') RETURNING id`,[organizationId]);
+    await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'centre_head',$3)`,[organizationId,manager.rows[0].id,centre.id]);
+    const centreActor:ActorContext={userId:manager.rows[0].id,organizationId,subject:'address-centre-head',memberships:[{role:'centre_head',scopeLocationId:centre.id}]};
+
+    const confirmed=await locations.confirmCoordinates(centreActor,centre.id,{latitude:23.0225,longitude:72.5714,physicalAddress:'Building A, SG Highway, Ahmedabad'});
+    expect(confirmed).toMatchObject({coordinatesStatus:'centre_head_confirmed',physicalAddress:'Building A, SG Highway, Ahmedabad',physicalAddressStatus:'centre_head_confirmed'});
+    const headquartersConfirmed=await locations.confirmCoordinates(headOffice,centre.id,{latitude:23.0226,longitude:72.5715});
+    expect(headquartersConfirmed).toMatchObject({coordinatesStatus:'verified',physicalAddress:'Building A, SG Highway, Ahmedabad',physicalAddressStatus:'centre_head_confirmed'});
+    const verifiedAddress=await locations.confirmCoordinates(headOffice,centre.id,{latitude:23.0226,longitude:72.5715,physicalAddress:'Building A, SG Highway, Ahmedabad 380015'});
+    expect(verifiedAddress).toMatchObject({physicalAddress:'Building A, SG Highway, Ahmedabad 380015',physicalAddressStatus:'verified'});
+    const cleared=await locations.confirmCoordinates(headOffice,centre.id,{latitude:23.0226,longitude:72.5715,physicalAddress:null});
+    expect(cleared).toMatchObject({physicalAddress:null,physicalAddressStatus:'unverified'});
+    const audit=await db.query<{details:{physicalAddressBefore:string|null;physicalAddressAfter:string|null;physicalAddressStatus:string}}>(
+      `SELECT details FROM audit_events WHERE organization_id=$1 AND entity_id=$2 AND event_type='location.coordinates_confirmed'`,[organizationId,centre.id]);
+    expect(audit.rows).toHaveLength(4);
+    expect(audit.rows.map((row)=>row.details.physicalAddressStatus)).toEqual(expect.arrayContaining(['centre_head_confirmed','unchanged','verified','unverified']));
+    expect(audit.rows.map((row)=>row.details)).toEqual(expect.arrayContaining([expect.objectContaining({physicalAddressBefore:'Building A, SG Highway, Ahmedabad 380015',physicalAddressAfter:null})]));
   });
 
   it('creates searchable assets, returns an opaque QR identity, and records audit atomically', async () => {
@@ -203,12 +227,12 @@ describe('phase two: location and asset workflows', () => {
   });
 
   it('previews and imports a centre CSV atomically, with explicit state and duplicate review', async () => {
-    const csv = 'Center Code,Center Name,City,State,Location Kind,Parent Center Code\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat,centre,\nCSV-02,Surat Workspace,Surat,Gujarat,centre,\n,Floor 2,Ahmedabad,Gujarat,floor,CSV-01\n';
+    const csv = 'Center Code,Center Name,City,State,Location Kind,Parent Center Code,Physical Address\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat,centre,,Tower 4\nCSV-02,Surat Workspace,Surat,Gujarat,centre,,\n,Floor 2,Ahmedabad,Gujarat,floor,CSV-01,\n';
     const preview = await locations.previewCentreImport(headOffice, csv);
     expect(preview).toMatchObject({ totalRows: 3, validRows: 3, invalidRows: 0, canImport: true });
     const imported = await locations.importCentres(headOffice, csv);
     expect(imported).toMatchObject({ importedCount: 2, importedLocationCount: 3 });
-    expect(imported.centres[0]).toMatchObject({ code: 'CSV-01', name: 'New, Ahmedabad Centre', stateName: 'Gujarat' });
+    expect(imported.centres[0]).toMatchObject({ code: 'CSV-01', name: 'New, Ahmedabad Centre', stateName: 'Gujarat', physicalAddress:'Tower 4', physicalAddressStatus:'unverified', coordinatesStatus:'unverified' });
     expect(imported.floors[0]).toMatchObject({ name: 'Floor 2', parentId: imported.centres[0].id });
     const duplicatePreview = await locations.previewCentreImport(headOffice, csv);
     expect(duplicatePreview).toMatchObject({ canImport: false, invalidRows: 2 });
