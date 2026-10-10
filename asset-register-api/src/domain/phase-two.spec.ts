@@ -51,11 +51,13 @@ describe('phase two: location and asset workflows', () => {
     const centre = await locations.create(headOffice, { kind: 'centre', name: 'Ahmedabad Krish Cubicle', code: 'AHKC', parentId: state.id, city: 'Ahmedabad', stateName: 'Gujarat' });
     const building = await locations.create(headOffice, { kind: 'building', name: 'Main building', parentId: centre.id });
     const floor = await locations.create(headOffice, { kind: 'floor', name: 'Floor 4', parentId: building.id });
-    await expect(locations.create(headOffice, { kind: 'floor', name: 'Invalid floor', parentId: centre.id })).rejects.toMatchObject({ status: 409 });
+    const directFloor = await locations.create(headOffice, { kind: 'floor', name: 'Floor 2', parentId: centre.id });
+    await expect(locations.create(headOffice, { kind: 'area', name: 'Invalid area', parentId: centre.id })).rejects.toMatchObject({ status: 409 });
     expect((await locations.list(headOffice, { parentId: state.id })).map((item) => item.code)).toContain('AHKC');
     const audit = await db.query<{ count: number | string }>(`SELECT count(*) FROM audit_events WHERE organization_id=$1 AND entity_type='location'`, [organizationId]);
-    expect(Number(audit.rows[0].count)).toBe(4);
+    expect(Number(audit.rows[0].count)).toBe(5);
     expect(floor.coordinatesStatus).toBe('unverified');
+    expect(directFloor.parentId).toBe(centre.id);
   });
 
   it('creates searchable assets, returns an opaque QR identity, and records audit atomically', async () => {
@@ -104,12 +106,13 @@ describe('phase two: location and asset workflows', () => {
   });
 
   it('previews and imports a centre CSV atomically, with explicit state and duplicate review', async () => {
-    const csv = 'Center Code,Center Name,City,State\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat\nCSV-02,Surat Workspace,Surat,Gujarat\n';
+    const csv = 'Center Code,Center Name,City,State,Location Kind,Parent Center Code\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat,centre,\nCSV-02,Surat Workspace,Surat,Gujarat,centre,\n,Floor 2,Ahmedabad,Gujarat,floor,CSV-01\n';
     const preview = await locations.previewCentreImport(headOffice, csv);
-    expect(preview).toMatchObject({ totalRows: 2, validRows: 2, invalidRows: 0, canImport: true });
+    expect(preview).toMatchObject({ totalRows: 3, validRows: 3, invalidRows: 0, canImport: true });
     const imported = await locations.importCentres(headOffice, csv);
-    expect(imported).toMatchObject({ importedCount: 2 });
+    expect(imported).toMatchObject({ importedCount: 2, importedLocationCount: 3 });
     expect(imported.centres[0]).toMatchObject({ code: 'CSV-01', name: 'New, Ahmedabad Centre', stateName: 'Gujarat' });
+    expect(imported.floors[0]).toMatchObject({ name: 'Floor 2', parentId: imported.centres[0].id });
     const duplicatePreview = await locations.previewCentreImport(headOffice, csv);
     expect(duplicatePreview).toMatchObject({ canImport: false, invalidRows: 2 });
     await expect(locations.importCentres(headOffice, csv)).rejects.toMatchObject({ status: 409 });
@@ -119,5 +122,32 @@ describe('phase two: location and asset workflows', () => {
     const viewer = await db.query<{ id: string }>(`SELECT id FROM users WHERE organization_id=$1 AND identity_subject='viewer-test'`, [organizationId]);
     const viewerActor: ActorContext = { userId: viewer.rows[0].id, organizationId, subject: 'viewer-test', memberships: [{ role: 'viewer', scopeLocationId: null }] };
     await expect(locations.previewCentreImport(viewerActor, csv)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('imports the supplied directory with shared-code floors and unknown codes left blank', async () => {
+    const directoryOrganization = await db.query<{ id: string }>(
+      `INSERT INTO organizations (name,slug) VALUES ('Directory import','directory-import') RETURNING id`,
+    );
+    const directoryUser = await db.query<{ id: string }>(
+      `INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'directory-test','Directory Head Office','directory@example.test') RETURNING id`,
+      [directoryOrganization.rows[0].id],
+    );
+    await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key) VALUES ($1,$2,'head_office')`, [directoryOrganization.rows[0].id,directoryUser.rows[0].id]);
+    const directoryActor: ActorContext = {
+      userId: directoryUser.rows[0].id,
+      organizationId: directoryOrganization.rows[0].id,
+      subject: 'directory-test',
+      memberships: [{ role: 'head_office', scopeLocationId: null }],
+    };
+    const csv = await readFile(new URL('../../database/seeds/incuspaze-centre-directory.csv', import.meta.url), 'utf8');
+    const preview = await locations.previewCentreImport(directoryActor, csv);
+    expect(preview).toMatchObject({ totalRows: 68, validRows: 68, invalidRows: 0, canImport: true });
+
+    const imported = await locations.importCentres(directoryActor, csv);
+    expect(imported).toMatchObject({ importedCount: 60, importedLocationCount: 68 });
+    expect(imported.centres.filter((centre) => !centre.code)).toHaveLength(2);
+    expect(imported.floors).toHaveLength(8);
+    expect(imported.floors.every((floor) => imported.centres.some((centre) => centre.id === floor.parentId))).toBe(true);
+    expect(imported.centres.find((centre) => centre.code === 'IKDS')?.name).toBe('iKeva Divyasree');
   });
 });

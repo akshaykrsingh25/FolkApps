@@ -14,7 +14,7 @@ type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'verify' | 'rep
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
-  state: [], centre: ['state'], warehouse: ['state'], building: ['centre', 'warehouse'], floor: ['building'], area: ['floor'],
+  state: [], centre: ['state'], warehouse: ['state'], building: ['centre', 'warehouse'], floor: ['centre', 'building'], area: ['floor'],
 };
 
 type MapFeature={type:'Feature';properties:{name:string};geometry:{type:'Polygon'|'MultiPolygon';coordinates:number[][][][]|number[][][]}};

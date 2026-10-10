@@ -17,10 +17,11 @@ const DEMO_LOCATIONS: Location[] = [
   { id: '10000000-0000-4000-8000-000000000006', parentId: '10000000-0000-4000-8000-000000000005', kind: 'floor', code: null, name: 'Floor 4', city: 'Bengaluru', stateName: 'Karnataka', latitude: null, longitude: null, coordinatesStatus: 'unverified' },
 ];
 
-// A demo copy of the centre list supplied for the prototype. It is deliberately
-// address-only: no location pins are inferred from a city or centre name.
+// A demo copy of the supplied active-centre list. Where a code appears on
+// multiple floor rows, the centre is represented once and those floors sit
+// directly below it. Pins remain unset until a centre confirms its address.
 const directoryLocations = (() => {
-  const rows = centreDirectory as { code: string | null; name: string; city: string; stateName: string }[];
+  const rows = centreDirectory as { code: string | null; name: string; city: string; stateName: string; floors?: string[] }[];
   const existing = new Map(DEMO_LOCATIONS.filter((item) => item.kind === 'centre').map((item) => [`${item.code}|${item.name}`, item.id]));
   const stateIds = new Map(DEMO_LOCATIONS.filter((item) => item.kind === 'state').map((item) => [item.name, item.id]));
   const result: Location[] = [...DEMO_LOCATIONS];
@@ -34,10 +35,16 @@ const directoryLocations = (() => {
       result.push({ id: stateId, parentId: null, kind: 'state', code: null, name: row.stateName, city: null, stateName: row.stateName, latitude: null, longitude: null, coordinatesStatus: 'unverified' });
     }
     const key = `${row.code || ''}|${row.name}`;
-    if (existing.has(key)) continue;
-    const centreId = id();
-    existing.set(key, centreId);
-    result.push({ id: centreId, parentId: stateId, kind: 'centre', code: row.code || null, name: row.name, city: row.city, stateName: row.stateName, latitude: null, longitude: null, coordinatesStatus: 'unverified' });
+    let centreId = existing.get(key);
+    if (!centreId) {
+      centreId = id();
+      existing.set(key, centreId);
+      result.push({ id: centreId, parentId: stateId, kind: 'centre', code: row.code || null, name: row.name, city: row.city, stateName: row.stateName, latitude: null, longitude: null, coordinatesStatus: 'unverified' });
+    }
+    for (const floorName of row.floors || []) {
+      if (result.some((item) => item.kind === 'floor' && item.parentId === centreId && item.name === floorName)) continue;
+      result.push({ id: id(), parentId: centreId, kind: 'floor', code: null, name: floorName, city: row.city, stateName: row.stateName, latitude: null, longitude: null, coordinatesStatus: 'unverified' });
+    }
   }
   return result;
 })();
@@ -47,7 +54,7 @@ const DEMO_ASSETS: Asset[] = [
   { id: '20000000-0000-4000-8000-000000000002', locationId: DEMO_LOCATIONS[1].id, locationName: 'Ahmedabad Krish Cubicle', assetTag: 'OF-00087', qrPublicId: '30000000-0000-4000-8000-000000000002', name: 'Office printer', category: 'Office equipment', serialNumber: 'PR-4432', manufacturer: 'HP', model: 'LaserJet Pro', status: 'in_repair', condition: 'fair', purchaseDate: '2023-02-18', purchaseAmount: '28900.00', currency: 'INR', sellerName: 'Office Tech', sellerPhone: null, createdAt: new Date().toISOString() },
 ];
 
-const STORAGE_KEY = 'incuasset-demo-v2';
+const STORAGE_KEY = 'incuasset-demo-v3';
 interface DemoState { locations: Location[]; assets: Asset[] }
 
 function read(): DemoState {

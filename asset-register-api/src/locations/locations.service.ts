@@ -57,13 +57,13 @@ export class LocationsService {
   async previewCentreImport(actor: ActorContext, csv: string) {
     this.assertHeadOffice(actor);
     const rows = parseCentreCsv(csv);
-    const codes = rows.map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
+    const codes = rows.filter((row) => row.kind === 'centre').map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
     const existing = await this.database.query<{ code: string }>(
       `SELECT code FROM locations WHERE organization_id=$1::uuid AND kind='centre' AND lower(code)=ANY($2::text[])`,
       [actor.organizationId, codes],
     );
     const existingCodes = new Set(existing.map((row) => row.code.toLocaleLowerCase('en-IN')));
-    const reviewedRows = rows.map((row) => ({ ...row, errors: [...row.errors, ...(existingCodes.has(row.code.toLocaleLowerCase('en-IN')) ? ['Centre code already exists in this organization'] : [])] }));
+    const reviewedRows = rows.map((row) => ({ ...row, errors: [...row.errors, ...(row.kind === 'centre' && row.code && existingCodes.has(row.code.toLocaleLowerCase('en-IN')) ? ['Centre code already exists in this organization'] : [])] }));
     const invalidCount = reviewedRows.filter((row) => row.errors.length > 0).length;
     return { totalRows: reviewedRows.length, validRows: reviewedRows.length - invalidCount, invalidRows: invalidCount, canImport: invalidCount === 0, rows: reviewedRows };
   }
@@ -73,13 +73,15 @@ export class LocationsService {
     try {
       return await this.database.transaction(async (query) => {
         const rows = parseCentreCsv(csv);
-        const codes = rows.map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
+        const centreRows = rows.filter((row) => row.kind === 'centre');
+        const floorRows = rows.filter((row) => row.kind === 'floor');
+        const codes = centreRows.map((row) => row.code.toLocaleLowerCase('en-IN')).filter(Boolean);
         const existing = await query<{ code: string }>(
           `SELECT code FROM locations WHERE organization_id=$1::uuid AND kind='centre' AND lower(code)=ANY($2::text[])`,
           [actor.organizationId, codes],
         );
         const existingCodes = new Set(existing.map((row) => row.code.toLocaleLowerCase('en-IN')));
-        const invalid = rows.filter((row) => row.errors.length > 0 || existingCodes.has(row.code.toLocaleLowerCase('en-IN')));
+        const invalid = rows.filter((row) => row.errors.length > 0 || (row.kind === 'centre' && row.code && existingCodes.has(row.code.toLocaleLowerCase('en-IN'))));
         if (invalid.length) throw new ConflictException('Resolve every CSV row issue in preview before importing');
 
         const stateRows = await query<{ id: string; name: string }>(
@@ -87,7 +89,9 @@ export class LocationsService {
         );
         const states = new Map(stateRows.map((state) => [state.name.toLocaleLowerCase('en-IN'), state]));
         const imported: LocationRow[] = [];
-        for (const row of rows) {
+        const importedFloors: LocationRow[] = [];
+        const centreByCode = new Map<string, LocationRow>();
+        for (const row of centreRows) {
           const stateKey = row.stateName.toLocaleLowerCase('en-IN');
           let state = states.get(stateKey);
           if (!state) {
@@ -107,16 +111,33 @@ export class LocationsService {
             `INSERT INTO locations (organization_id,parent_id,kind,code,name,city,state_name)
              VALUES ($1::uuid,$2::uuid,'centre',$3,$4,$5,$6)
              RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
-            [actor.organizationId, state.id, row.code, row.name, row.city, state.name],
+            [actor.organizationId, state.id, row.code || null, row.name, row.city, state.name],
           );
           imported.push(created[0]);
+          if (row.code) centreByCode.set(row.code.toLocaleUpperCase('en-IN'), created[0]);
           await query(
             `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
              VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
-            [actor.organizationId, actor.userId, created[0].id, JSON.stringify({ kind: 'centre', code: row.code, name: row.name, city: row.city, state: state.name, source: 'centre_csv_import' })],
+            [actor.organizationId, actor.userId, created[0].id, JSON.stringify({ kind: 'centre', code: row.code || null, name: row.name, city: row.city, state: state.name, source: 'centre_csv_import' })],
           );
         }
-        return { importedCount: imported.length, centres: imported };
+        for (const row of floorRows) {
+          const parent = centreByCode.get(row.parentCentreCode.toLocaleUpperCase('en-IN'));
+          if (!parent) throw new ConflictException('Every floor parent must be imported in the same file');
+          const floor = await query<LocationRow>(
+            `INSERT INTO locations (organization_id,parent_id,kind,name,city,state_name)
+             VALUES ($1::uuid,$2::uuid,'floor',$3,$4,$5)
+             RETURNING id,parent_id AS "parentId",kind,code,name,city,state_name AS "stateName",latitude,longitude,coordinates_status AS "coordinatesStatus"`,
+            [actor.organizationId, parent.id, row.name, parent.city, parent.stateName],
+          );
+          importedFloors.push(floor[0]);
+          await query(
+            `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+             VALUES ($1::uuid,$2::uuid,'location.created','location',$3::uuid,$4::jsonb)`,
+            [actor.organizationId, actor.userId, floor[0].id, JSON.stringify({ kind: 'floor', name: row.name, parentCentreCode: row.parentCentreCode, parentCentreId: parent.id, source: 'centre_csv_import' })],
+          );
+        }
+        return { importedCount: imported.length, importedLocationCount: imported.length + importedFloors.length, centres: imported, floors: importedFloors };
       });
     } catch (error) {
       if ((error as { code?: string }).code === '23505') throw new ConflictException('A centre code already exists; preview the file again');
@@ -137,7 +158,7 @@ export class LocationsService {
       centre: { parentKinds: ['state'], roles: ['head_office'] },
       warehouse: { parentKinds: ['state'], roles: ['head_office'] },
       building: { parentKinds: ['centre', 'warehouse'], roles: ['head_office', 'centre_head'] },
-      floor: { parentKinds: ['building'], roles: ['head_office', 'centre_head'] },
+      floor: { parentKinds: ['centre', 'building'], roles: ['head_office', 'centre_head'] },
       area: { parentKinds: ['floor'], roles: ['head_office', 'centre_head'] },
     };
     const rule = allowedChildren[dto.kind];

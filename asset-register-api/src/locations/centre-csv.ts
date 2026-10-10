@@ -4,6 +4,8 @@ export interface CentreCsvRow {
   name: string;
   city: string;
   stateName: string;
+  kind: 'centre' | 'floor';
+  parentCentreCode: string;
   errors: string[];
 }
 
@@ -15,6 +17,8 @@ export function parseCentreCsv(csv: string): CentreCsvRow[] {
   const indexes = Object.fromEntries(required.map((header) => [header, headers.indexOf(header)]));
   const missing = required.filter((header) => indexes[header] < 0);
   if (missing.length) throw new BadRequestException(`Required columns: ${missing.join(', ')}`);
+  const kindIndex = headers.indexOf('location_kind');
+  const parentCodeIndex = headers.indexOf('parent_center_code');
   const rows: CentreCsvRow[] = [];
   const seenCodes = new Set<string>();
 
@@ -24,20 +28,34 @@ export function parseCentreCsv(csv: string): CentreCsvRow[] {
     const name = record[indexes.center_name]?.trim() ?? '';
     const city = record[indexes.city]?.trim() ?? '';
     const stateName = record[indexes.state]?.trim() ?? '';
+    const kindValue = (kindIndex < 0 ? 'centre' : record[kindIndex]?.trim().toLocaleLowerCase('en-IN') || 'centre');
+    const kind = kindValue === 'floor' ? 'floor' : 'centre';
+    const parentCentreCode = parentCodeIndex < 0 ? '' : record[parentCodeIndex]?.trim() ?? '';
     const errors: string[] = [];
-    if (!code) errors.push('Centre code is required');
     if (!name) errors.push('Centre name is required');
-    if (!city) errors.push('City is required');
-    if (!stateName) errors.push('State is required; city names are not used to infer it');
+    if (kindValue !== 'centre' && kindValue !== 'floor') errors.push('Location kind must be centre or floor');
+    if (kind === 'centre' && !city) errors.push('City is required');
+    if (kind === 'centre' && !stateName) errors.push('State is required; city names are not used to infer it');
+    if (kind === 'centre' && parentCentreCode) errors.push('A centre cannot have a parent centre code');
+    if (kind === 'floor' && !parentCentreCode) errors.push('A floor must name its parent centre code');
+    if (kind === 'floor' && code) errors.push('A floor inherits its identity from its parent centre and must not have a centre code');
     if (code.length > 40) errors.push('Centre code must be 40 characters or fewer');
     if (name.length > 120) errors.push('Centre name must be 120 characters or fewer');
     if (city.length > 80) errors.push('City must be 80 characters or fewer');
     if (stateName.length > 80) errors.push('State must be 80 characters or fewer');
+    if (parentCentreCode.length > 40) errors.push('Parent centre code must be 40 characters or fewer');
     const normalizedCode = code.toLocaleUpperCase('en-IN');
-    if (normalizedCode && seenCodes.has(normalizedCode)) errors.push('Duplicate centre code in this CSV');
-    if (normalizedCode) seenCodes.add(normalizedCode);
-    rows.push({ rowNumber: index + 2, code, name, city, stateName, errors });
+    if (kind === 'centre' && normalizedCode && seenCodes.has(normalizedCode)) errors.push('Duplicate centre code in this CSV');
+    if (kind === 'centre' && normalizedCode) seenCodes.add(normalizedCode);
+    rows.push({ rowNumber: index + 2, code, name, city, stateName, kind, parentCentreCode, errors });
   });
+
+  const centreCodes = new Set(rows.filter((row) => row.kind === 'centre' && row.code).map((row) => row.code.toLocaleUpperCase('en-IN')));
+  for (const row of rows) {
+    if (row.kind === 'floor' && row.parentCentreCode && !centreCodes.has(row.parentCentreCode.toLocaleUpperCase('en-IN'))) {
+      row.errors.push('Parent centre code must belong to a centre row in this CSV');
+    }
+  }
 
   if (rows.length === 0) throw new BadRequestException('The CSV has no centre rows');
   if (rows.length > 5000) throw new BadRequestException('Import up to 5,000 centres per file');

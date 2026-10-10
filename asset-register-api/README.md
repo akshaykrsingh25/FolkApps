@@ -28,6 +28,12 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - `GET /api/v1/assets/:id/activity` combines asset edits, verification scans, related reports/transfers, custody, and warranty events. Results are limited to assets in the caller's authorized location scope.
 - The Watch queue is currently in-app. Automated push, email, or messaging delivery requires a production scheduler and a notification provider; the seven-day stalled-transfer threshold should be configured by Head Office before the pilot.
 
+## Centre directory
+
+- `database/seeds/incuspaze-centre-directory.csv` is the import-ready version of the centre list supplied on 10 October 2026. Review its source notes in `database/seeds/README.md` before importing.
+- Head Office can preview the CSV with `POST /api/v1/locations/import/preview` and import it with `POST /api/v1/locations/import`, passing the CSV text in `{ "csv": "..." }`. The import creates state, centre, and direct floor records in one transaction. Duplicate codes, missing states, and invalid parent references stop the import.
+- Floors can be direct children of a centre or of a building. A city does not produce a map pin; exact centre coordinates remain unconfirmed until an authorized person verifies them.
+
 ## Production boundary
 
 GitHub stores application source and reviewed migrations only. Asset data, employee data, invoices, camera images, QR secrets, and exports belong in the production database and private object storage. Uploads should use short-lived signed URLs; queued offline writes need stable client-generated IDs and server acknowledgement before being shown as centrally saved.

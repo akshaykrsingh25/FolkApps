@@ -19,7 +19,7 @@
   },
   {
     "code": "BGMA",
-    "name": "Bangalore Meta Apply",
+    "name": "Bangalore MetaApply",
     "city": "Bangalore",
     "stateName": "Karnataka"
   },
@@ -109,13 +109,11 @@
   },
   {
     "code": "IKDS",
-    "name": "iKeva Divyasree 2F Hyd",
-    "city": "Hyderabad",
-    "stateName": "Telangana"
-  },
-  {
-    "code": "IKDS",
-    "name": "iKeva Divyasree 3F Hyd",
+    "name": "iKeva Divyasree",
+    "floors": [
+      "2F",
+      "3F"
+    ],
     "city": "Hyderabad",
     "stateName": "Telangana"
   },
@@ -169,25 +167,21 @@
   },
   {
     "code": "IKOR",
-    "name": "iKeva Orbit 16F Hyd",
-    "city": "Hyderabad",
-    "stateName": "Telangana"
-  },
-  {
-    "code": "IKOR",
-    "name": "iKeva Orbit 3F Hyd",
-    "city": "Hyderabad",
-    "stateName": "Telangana"
-  },
-  {
-    "code": "IKVC",
-    "name": "iKeva Vaishnavi 3F Cynosure Hyd",
+    "name": "iKeva Orbit",
+    "floors": [
+      "16F",
+      "3F"
+    ],
     "city": "Hyderabad",
     "stateName": "Telangana"
   },
   {
     "code": "IKVC",
-    "name": "iKeva Vaishnavi 10F Cynosure Hyd",
+    "name": "iKeva Vaishnavi Cynosure",
+    "floors": [
+      "3F",
+      "10F"
+    ],
     "city": "Hyderabad",
     "stateName": "Telangana"
   },
@@ -199,13 +193,11 @@
   },
   {
     "code": "IKWA",
-    "name": "iKeva Western Aqua 6F Hyd",
-    "city": "Hyderabad",
-    "stateName": "Telangana"
-  },
-  {
-    "code": "IKWA",
-    "name": "iKeva Western Aqua-1F Hyd",
+    "name": "iKeva Western Aqua",
+    "floors": [
+      "6F",
+      "1F"
+    ],
     "city": "Hyderabad",
     "stateName": "Telangana"
   },
@@ -223,7 +215,7 @@
   },
   {
     "code": "LI8F",
-    "name": "Lucknow Indrium 2F",
+    "name": "Lucknow Iridium 2F",
     "city": "Lucknow",
     "stateName": "Uttar Pradesh"
   },
@@ -288,7 +280,7 @@
     "stateName": "Uttar Pradesh"
   },
   {
-    "code": "NFO4",
+    "code": "NFRO",
     "name": "Noida Fortune One",
     "city": "Noida",
     "stateName": "Uttar Pradesh"
