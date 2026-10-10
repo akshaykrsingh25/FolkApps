@@ -16,16 +16,25 @@ export class InsightsService {
 
   async overview(actor:ActorContext) {
     const rows=await this.database.query(
-      `${ACCESSIBLE}, active_cycles AS (
+      `${ACCESSIBLE}, visible_ancestors(id) AS (
+        SELECT id FROM visible_locations
+        UNION
+        SELECT parent.id FROM visible_ancestors child
+        JOIN locations current_location ON current_location.organization_id=$1::uuid AND current_location.id=child.id
+        JOIN locations parent ON parent.organization_id=$1::uuid AND parent.id=current_location.parent_id
+       ), active_cycles AS (
         SELECT c.id,c.scope_location_id FROM verification_cycles c
-        WHERE c.organization_id=$1::uuid AND c.status IN ('open','grace') AND c.scope_location_id IN (SELECT id FROM visible_locations)
+        WHERE c.organization_id=$1::uuid AND c.status IN ('open','grace')
+          AND c.scope_location_id IN (SELECT id FROM visible_ancestors)
        ), cycle_places(cycle_id,location_id) AS (
         SELECT id,scope_location_id FROM active_cycles
         UNION ALL SELECT p.cycle_id,child.id FROM cycle_places p JOIN locations child ON child.parent_id=p.location_id AND child.organization_id=$1::uuid
        ), cycle_totals AS (
         SELECT count(*) AS total FROM cycle_places p JOIN assets a ON a.organization_id=$1::uuid AND a.location_id=p.location_id
+        WHERE p.location_id IN (SELECT id FROM visible_locations)
        ), scanned_totals AS (
-        SELECT count(DISTINCT (s.cycle_id,s.asset_id)) AS total FROM scan_events s JOIN active_cycles c ON c.id=s.cycle_id WHERE s.organization_id=$1::uuid
+        SELECT count(DISTINCT (s.cycle_id,s.asset_id)) AS total FROM scan_events s JOIN active_cycles c ON c.id=s.cycle_id
+        WHERE s.organization_id=$1::uuid AND s.location_id IN (SELECT id FROM visible_locations)
        )
        SELECT (SELECT count(*) FROM assets a WHERE a.organization_id=$1::uuid AND a.location_id IN (SELECT id FROM visible_locations)) AS "assetCount",
         (SELECT count(*) FROM locations l WHERE l.organization_id=$1::uuid AND l.kind IN ('centre','warehouse') AND l.id IN (SELECT id FROM visible_locations)) AS "centreCount",
@@ -34,7 +43,7 @@ export class InsightsService {
         (SELECT count(*) FROM assets a WHERE a.organization_id=$1::uuid AND a.status='unused' AND a.location_id IN (SELECT id FROM visible_locations)) AS "unusedCount",
         (SELECT count(*) FROM condition_reports r JOIN assets a ON a.organization_id=r.organization_id AND a.id=r.asset_id WHERE r.organization_id=$1::uuid AND r.status NOT IN ('resolved','closed') AND a.location_id IN (SELECT id FROM visible_locations)) AS "openReportCount",
         (SELECT count(*) FROM warranties w JOIN assets a ON a.organization_id=w.organization_id AND a.id=w.asset_id WHERE w.organization_id=$1::uuid AND w.ends_on BETWEEN current_date AND current_date+90 AND a.location_id IN (SELECT id FROM visible_locations)) AS "warrantyExpiringCount",
-        (SELECT count(*) FROM verification_cycles c WHERE c.organization_id=$1::uuid AND c.status IN ('open','grace') AND c.scope_location_id IN (SELECT id FROM visible_locations)) AS "activeCycleCount",
+        (SELECT count(*) FROM active_cycles) AS "activeCycleCount",
         (SELECT count(*) FROM transfer_requests t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id WHERE t.organization_id=$1::uuid AND t.status IN ('requested','approved','in_transit') AND (a.location_id IN (SELECT id FROM visible_locations) OR t.from_location_id IN (SELECT id FROM visible_locations) OR t.to_location_id IN (SELECT id FROM visible_locations))) AS "openTransferCount",
         CASE WHEN (SELECT total FROM cycle_totals)=0 THEN 0 ELSE round(100.0*(SELECT total FROM scanned_totals)/(SELECT total FROM cycle_totals))::integer END AS "scanCompletionPercent"`,[actor.organizationId,actor.userId]);
     return rows[0];
