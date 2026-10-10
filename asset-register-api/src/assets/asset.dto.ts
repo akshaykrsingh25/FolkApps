@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Length, Matches, Max, Min } from 'class-validator';
 
 export const ASSET_STATUSES = ['active', 'unused', 'in_repair', 'out_of_service', 'missing', 'retired', 'disposed'] as const;
 export const ASSET_CONDITIONS = ['good', 'fair', 'damaged', 'not_working'] as const;
@@ -51,6 +51,9 @@ export class CreateAssetDto {
 
   @IsOptional() @IsString() @Length(1, 2000)
   notes?: string;
+
+  @IsOptional() @IsString() @Matches(/^(?:[A-Fa-f0-9]{2}){4,32}$/)
+  rfidEpc?: string;
 }
 
 export class UpdateAssetDto {
@@ -89,6 +92,9 @@ export class UpdateAssetDto {
   sellerPhone?: string;
   @IsOptional() @IsString() @Length(1, 2000)
   notes?: string;
+
+  @IsOptional() @IsString() @Matches(/^(?:[A-Fa-f0-9]{2}){4,32}$/)
+  rfidEpc?: string | null;
 }
 
 export class ListAssetsDto {

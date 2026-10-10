@@ -22,6 +22,10 @@ describe('phase two: location and asset workflows', () => {
     await db.exec(migration);
     const ownershipAndBatchesMigration = await readFile(new URL('../../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
     await db.exec(ownershipAndBatchesMigration);
+    const scopedRbacMigration = await readFile(new URL('../../database/migrations/004_scoped_rbac_and_user_profiles.sql', import.meta.url), 'utf8');
+    await db.exec(scopedRbacMigration);
+    const dualIdentifierMigration = await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
+    await db.exec(dualIdentifierMigration);
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(

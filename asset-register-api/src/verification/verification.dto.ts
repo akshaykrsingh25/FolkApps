@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, Min, ValidateNested } from 'class-validator';
 
 export class CreatePolicyDto {
   @IsUUID() scopeLocationId!: string;
@@ -17,6 +18,23 @@ export class RecordScanDto {
   @IsUUID() locationId!: string;
   @IsUUID() clientEventId!: string;
   @IsDateString() scannedAt!: string;
+  @IsOptional() @IsIn(['qr','barcode','rfid','manual']) identificationMethod?: 'qr'|'barcode'|'rfid'|'manual';
   @IsOptional() latitude?: number;
   @IsOptional() longitude?: number;
+}
+
+export class RfidScanReadingDto {
+  @IsString() @Matches(/^(?:[A-Fa-f0-9]{2}){4,32}$/)
+  epc!: string;
+
+  @IsUUID() clientEventId!: string;
+
+  @IsDateString() scannedAt!: string;
+}
+
+export class RecordRfidScansDto {
+  @IsUUID() locationId!: string;
+
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(5000) @ValidateNested({ each: true }) @Type(() => RfidScanReadingDto)
+  readings!: RfidScanReadingDto[];
 }

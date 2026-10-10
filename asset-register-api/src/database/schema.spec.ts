@@ -16,6 +16,10 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(custodyMigration);
     const ownershipAndBatchesMigration = await readFile(new URL('../../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
     await db.exec(ownershipAndBatchesMigration);
+    const scopedRbacMigration = await readFile(new URL('../../database/migrations/004_scoped_rbac_and_user_profiles.sql', import.meta.url), 'utf8');
+    await db.exec(scopedRbacMigration);
+    const dualIdentifierMigration = await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
+    await db.exec(dualIdentifierMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -29,6 +33,16 @@ describe('initial PostgreSQL schema', () => {
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
       'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies',
     ]));
+  });
+
+  it('seeds least-privilege permissions for all five application roles', async () => {
+    const grants = await db.query<{ role_key: string; permission_key: string }>(
+      'SELECT role_key,permission_key FROM role_permissions ORDER BY role_key,permission_key',
+    );
+    expect(grants.rows.filter((row) => row.role_key === 'viewer').map((row) => row.permission_key)).toEqual(['asset:read']);
+    expect(grants.rows.some((row) => row.role_key === 'asset_custodian' && row.permission_key === 'transfer:approve')).toBe(false);
+    expect(grants.rows.some((row) => row.role_key === 'centre_head' && row.permission_key === 'user:manage')).toBe(true);
+    await expect(db.query('SELECT phone_number FROM users LIMIT 0')).resolves.toBeDefined();
   });
 
   it('allows only one open custody handover per asset', async () => {

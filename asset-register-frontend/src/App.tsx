@@ -4,13 +4,14 @@ import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
-import type { Asset, AssetActivityEvent, AssetCustody, Evidence, EligibleCustodian, Location, LocationKind, OperationalAlert, Organization, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import { findTransferReceiptAsset, validateTransferReceiptScans } from './domain/transferReceipt';
 import { Icon } from './ui/Icon';
 import { CodeScanner } from './capture/CodeScanner';
 import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
-type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
@@ -38,6 +39,7 @@ function featurePath(feature:MapFeature,bounds:ReturnType<typeof mapBounds>) {
 }
 function stateKey(value:string) { const normalized=value.toLowerCase().replaceAll('&','and').replace(/[^a-z]/g,''); return ({orissa:'odisha',uttaranchal:'uttarakhand',pondicherry:'puducherry'} as Record<string,string>)[normalized]||normalized; }
 function isWithinLocation(locations:Location[],childId:string,ancestorId:string) { let current=locations.find((item)=>item.id===childId); while(current){if(current.id===ancestorId)return true;current=locations.find((item)=>item.id===current?.parentId);}return false; }
+function isRfidEpc(value:string) { return /^(?:[A-Fa-f0-9]{2}){4,32}$/.test(value.trim()); }
 
 function sessionUser(user: User): SessionUser {
   return {
@@ -129,6 +131,7 @@ export default function App() {
   const [verificationCycles, setVerificationCycles] = useState<VerificationCycle[]>([]);
   const [activeCycle, setActiveCycle] = useState<VerificationCycle | null>(null);
   const [cycleAssets, setCycleAssets] = useState<VerificationAsset[]>([]);
+  const [rfidCode,setRfidCode]=useState('');
   const [verificationScanCycleId, setVerificationScanCycleId] = useState<string | null>(null);
   const [scanLocationId,setScanLocationId]=useState('');
   const [pendingScans,setPendingScans]=useState<PendingVerificationScan[]>([]);
@@ -142,6 +145,8 @@ export default function App() {
   const [batchAssetCursor,setBatchAssetCursor]=useState<string|null>(null);
   const [batchAssetsBusy,setBatchAssetsBusy]=useState(false);
   const [selectedBatchAssetIds,setSelectedBatchAssetIds]=useState<string[]>([]);
+  const [batchReceiptScannerId,setBatchReceiptScannerId]=useState('');
+  const [scannedBatchReceiptIds,setScannedBatchReceiptIds]=useState<Record<string,string[]>>({});
   const [warranties,setWarranties]=useState<WarrantyRecord[]>([]);
   const [assetActivity,setAssetActivity]=useState<AssetActivityEvent[]>([]);
   const [custodyHistory,setCustodyHistory]=useState<AssetCustody[]>([]);
@@ -159,6 +164,10 @@ export default function App() {
   const [mapLocationAssets,setMapLocationAssets]=useState<Asset[]>([]);
   const [mapLocationAssetCursor,setMapLocationAssetCursor]=useState<string|null>(null);
   const [mapLocationAssetsBusy,setMapLocationAssetsBusy]=useState(false);
+  const [managedUsers,setManagedUsers]=useState<ManagedUser[]>([]);
+  const [managedUsersBusy,setManagedUsersBusy]=useState(false);
+  const [userRoleChoice,setUserRoleChoice]=useState<Role>('viewer');
+  const [savingManagedUser,setSavingManagedUser]=useState(false);
 
   useEffect(() => {
     let active = true;
@@ -236,6 +245,15 @@ export default function App() {
     }, 180);
     return () => { active = false; window.clearTimeout(timer); };
   }, [user, organization, search, assetStatusFilter, view]);
+
+  useEffect(()=>{
+    if(!user||!organization||view!=='users'||DEMO_MODE)return;
+    let active=true;setManagedUsersBusy(true);
+    void api.managedUsers(user.accessToken,organization.id).then((rows)=>{if(active)setManagedUsers(rows);})
+      .catch((reason)=>{if(active)setError(errorMessage(reason));})
+      .finally(()=>{if(active)setManagedUsersBusy(false);});
+    return()=>{active=false;};
+  },[user,organization,view]);
 
   useEffect(()=>{
     let active=true;
@@ -368,6 +386,14 @@ export default function App() {
   const selectedMapLocation = locations.find((location)=>location.id===selectedMapLocationId) || null;
   const selectedMapChildren = selectedMapLocation ? locations.filter((location)=>location.parentId===selectedMapLocation.id) : [];
   const canConfirmCoordinates = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const canManageUsers = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const userRoleChoices:Role[] = organization?.roles.some((item)=>item.role==='head_office')
+    ? ['state_head','centre_head','asset_custodian','viewer']
+    : organization?.roles.some((item)=>item.role==='state_head')
+      ? ['centre_head','asset_custodian','viewer']
+      : ['asset_custodian','viewer'];
+  const userScopeKinds:Record<Role,LocationKind[]>={head_office:[],state_head:['state'],centre_head:['centre'],asset_custodian:['floor','area'],viewer:['state','centre','warehouse','building','floor','area']};
+  const userScopeOptions=locations.filter((place)=>userScopeKinds[userRoleChoice].includes(place.kind));
   const activeCustody = custodyHistory.find((item)=>!item.returnedAt) || null;
   const needsStatusReason = Boolean(selectedAsset&&selectedAsset.status!==assetStatusChoice&&['missing','retired','disposed'].includes(assetStatusChoice));
 
@@ -390,6 +416,33 @@ export default function App() {
     if (!userManager) return;
     try { await userManager.signoutRedirect(); }
     catch { setError('Sign-out could not be completed.'); }
+  }
+
+  async function createManagedUser(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();if(!user||!organization||DEMO_MODE)return;
+    const form=event.currentTarget;const data=readForm(form);const role=String(data.role) as Role;
+    setSavingManagedUser(true);setError('');
+    try {
+      const created=await api.createManagedUser(user.accessToken,organization.id,{
+        identitySubject:String(data.identitySubject),email:String(data.email),displayName:String(data.displayName),
+        phoneNumber:data.phoneNumber?String(data.phoneNumber):undefined,role,
+        scopeLocationId:data.scopeLocationId?String(data.scopeLocationId):undefined,
+      });
+      const rows=await api.managedUsers(user.accessToken,organization.id);setManagedUsers(rows);
+      setNotice(created.created?'User access added. They can sign in with the connected work account.':'The existing work account has been linked to this role.');
+      form.reset();setUserRoleChoice(userRoleChoices[0]||'viewer');
+    } catch(reason) { setError(errorMessage(reason)); }
+    finally { setSavingManagedUser(false); }
+  }
+
+  async function toggleManagedUser(person:ManagedUser) {
+    if(!user||!organization||DEMO_MODE)return;
+    setError('');
+    try {
+      await api.setManagedUserActive(user.accessToken,organization.id,person.id,!person.isActive);
+      setManagedUsers((rows)=>rows.map((row)=>row.id===person.id?{...row,isActive:!person.isActive}:row));
+      setNotice(person.isActive?'User access paused.':'User access restored.');
+    } catch(reason) { setError(errorMessage(reason)); }
   }
 
   async function loadMoreAssets() {
@@ -441,18 +494,20 @@ export default function App() {
 
   async function recordCycleScan(code:string) {
     if (!user || !organization || !activeCycle) return;
+    const normalizedCode=code.trim();
+    const rfid=isRfidEpc(normalizedCode);
     try {
       if (!navigator.onLine) {
-        const local=assets.find((asset)=>asset.qrPublicId.toLowerCase()===code.toLowerCase()||asset.assetTag.toLowerCase()===code.toLowerCase()||asset.serialNumber?.toLowerCase()===code.toLowerCase());
+        const local=assets.find((asset)=>asset.qrPublicId.toLowerCase()===normalizedCode.toLowerCase()||asset.assetTag.toLowerCase()===normalizedCode.toLowerCase()||asset.serialNumber?.toLowerCase()===normalizedCode.toLowerCase()||asset.rfidEpc?.toLowerCase()===normalizedCode.toLowerCase());
         if (!local) throw new Error('This item is not in the device’s saved asset list. Connect to the network before verifying it.');
-        const queued=await enqueueVerificationScan({id:crypto.randomUUID(),organizationId:organization.id,cycleId:activeCycle.id,assetId:local.id,locationId:scanLocationId||local.locationId,scannedAt:new Date().toISOString()});
+        const queued=await enqueueVerificationScan({id:crypto.randomUUID(),organizationId:organization.id,cycleId:activeCycle.id,assetId:local.id,locationId:scanLocationId||local.locationId,scannedAt:new Date().toISOString(),identificationMethod:rfid?'rfid':'qr'});
         setPendingScans((items)=>[...items,queued]); setVerificationScanCycleId(null); setView('verify'); setNotice(`${local.assetTag} saved securely on this device. It will sync when you are online.`); return;
       }
-      const isQr=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(code);
-      const found=isQr ? await api.assetByQr(user.accessToken,organization.id,code).catch(()=>null) : null;
-      const matching=found || (await api.assets(user.accessToken,organization.id,code)).data.find((asset)=>asset.assetTag.toLowerCase()===code.toLowerCase()||asset.serialNumber?.toLowerCase()===code.toLowerCase());
+      const isQr=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode);
+      const found=rfid ? await api.assetByRfidEpc(user.accessToken,organization.id,normalizedCode).catch(()=>null) : isQr ? await api.assetByQr(user.accessToken,organization.id,normalizedCode).catch(()=>null) : null;
+      const matching=found || (await api.assets(user.accessToken,organization.id,normalizedCode)).data.find((asset)=>asset.assetTag.toLowerCase()===normalizedCode.toLowerCase()||asset.serialNumber?.toLowerCase()===normalizedCode.toLowerCase());
       if (!matching) throw new Error('No asset matched that code. Check the tag or scan again.');
-      await api.recordVerificationScan(user.accessToken,organization.id,activeCycle.id,{assetId:matching.id,locationId:scanLocationId || matching.locationId,clientEventId:crypto.randomUUID(),scannedAt:new Date().toISOString()});
+      await api.recordVerificationScan(user.accessToken,organization.id,activeCycle.id,{assetId:matching.id,locationId:scanLocationId || matching.locationId,clientEventId:crypto.randomUUID(),scannedAt:new Date().toISOString(),identificationMethod:rfid?'rfid':isQr?'qr':'barcode'});
       setSelectedAsset(matching); setVerificationScanCycleId(null); setCycleAssets(await api.verificationProgress(user.accessToken,organization.id,activeCycle.id));
       setNotice(`${matching.assetTag} recorded for this verification cycle.`); setView('verify');
     } catch (reason) { setError(errorMessage(reason)); setVerificationScanCycleId(null); setView('verify'); }
@@ -465,7 +520,7 @@ export default function App() {
       const queued=(await listVerificationScans()).filter((item)=>item.organizationId===organization.id);
       for (const scan of queued) {
         try {
-          await api.recordVerificationScan(user.accessToken,organization.id,scan.cycleId,{assetId:scan.assetId,locationId:scan.locationId,clientEventId:scan.id,scannedAt:scan.scannedAt});
+          await api.recordVerificationScan(user.accessToken,organization.id,scan.cycleId,{assetId:scan.assetId,locationId:scan.locationId,clientEventId:scan.id,scannedAt:scan.scannedAt,identificationMethod:scan.identificationMethod||'qr'});
           await removeVerificationScan(scan.id);
         } catch (reason) { await markVerificationScanError(scan.id,errorMessage(reason)); }
       }
@@ -557,6 +612,9 @@ export default function App() {
       const discrepancyNote=String(form.get(`note-${item.assetId}`)||'').trim();
       return {assetId:item.assetId,receiptStatus,...(discrepancyNote?{discrepancyNote}:{})};
     });
+    const scannedIds=scannedBatchReceiptIds[batch.id]||[];
+    const scanValidationError=validateTransferReceiptScans(items,scannedIds);
+    if(scanValidationError){setError(scanValidationError);return;}
     if(items.some((item)=>item.receiptStatus!=='accepted'&&(item.discrepancyNote?.length||0)<5)){setError('Add a short explanation for every damaged or unreceived item.');return;}
     setSaving(true);setError('');
     try {
@@ -566,6 +624,15 @@ export default function App() {
       setNotice('Receipt recorded item by item. Any damage or missing items are now flagged for review.');
     } catch(reason){setError(errorMessage(reason));}
     finally{setSaving(false);}
+  }
+
+  function recordBatchReceiptScan(batch:TransferBatch,code:string) {
+    const item=findTransferReceiptAsset(batch.items,code);
+    setBatchReceiptScannerId('');
+    if(!item){setError('That QR or barcode is not part of this manifest. No item was confirmed.');return;}
+    if((scannedBatchReceiptIds[batch.id]||[]).includes(item.assetId)){setNotice(`${item.assetTag} has already been scanned for this receipt.`);return;}
+    setScannedBatchReceiptIds((current)=>({...current,[batch.id]:[...(current[batch.id]||[]),item.assetId]}));
+    setNotice(`${item.assetTag} matched this manifest. Choose its condition before confirming receipt.`);
   }
 
   async function createWarrantyRecord(event:FormEvent<HTMLFormElement>) {
@@ -617,6 +684,8 @@ export default function App() {
   async function createAsset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!user || !organization) return;
     const data = readForm(event.currentTarget);
+    const epc=(event.currentTarget.elements.namedItem('rfidEpc') as HTMLInputElement | null)?.value.trim().toUpperCase() || '';
+    if(epc)data.rfidEpc=epc;else if(selectedAsset)data.rfidEpc=null;else delete data.rfidEpc;
     if (!selectedAsset) delete data.status;
     if (!selectedAsset) {
       assetRequestId.current ||= crypto.randomUUID();
@@ -710,20 +779,23 @@ export default function App() {
 
   async function findScannedCode(code: string) {
     if (!user || !organization) return;
+    const normalizedCode=code.trim();
     setError(''); setNotice('Looking up this code…');
     try {
       if (!navigator.onLine) {
-        const localMatch = assets.find((asset) => asset.qrPublicId.toLowerCase() === code.toLowerCase() || asset.assetTag.toLowerCase() === code.toLowerCase() || asset.serialNumber?.toLowerCase() === code.toLowerCase());
+        const localMatch = assets.find((asset) => asset.qrPublicId.toLowerCase() === normalizedCode.toLowerCase() || asset.assetTag.toLowerCase() === normalizedCode.toLowerCase() || asset.serialNumber?.toLowerCase() === normalizedCode.toLowerCase() || asset.rfidEpc?.toLowerCase() === normalizedCode.toLowerCase());
         if (localMatch) { setSelectedAsset(localMatch); setNotice('Asset found in this device’s available records.'); setView('asset-detail'); }
         else { setNotice(''); setError('This asset is not in the device’s saved records. Connect to the network to search all centres.'); }
         return;
       }
-      const byQr = /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(code)
-        ? DEMO_MODE ? await demoStore.assetByQr(code) : await api.assetByQr(user.accessToken, organization.id, code).catch(() => null)
-        : null;
-      if (byQr) { setSelectedAsset(byQr); setNotice('Asset found.'); setView('asset-detail'); return; }
-      const matches = DEMO_MODE ? await demoStore.assets(code) : (await api.assets(user.accessToken, organization.id, code)).data;
-      const match = matches.find((asset) => asset.assetTag.toLowerCase() === code.toLowerCase() || asset.serialNumber?.toLowerCase() === code.toLowerCase()) || matches[0];
+      const byIdentity = isRfidEpc(normalizedCode)
+        ? DEMO_MODE ? (await demoStore.assets()).find((asset)=>asset.rfidEpc?.toLowerCase()===normalizedCode.toLowerCase())||null : await api.assetByRfidEpc(user.accessToken, organization.id, normalizedCode).catch(() => null)
+        : /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode)
+          ? DEMO_MODE ? await demoStore.assetByQr(normalizedCode) : await api.assetByQr(user.accessToken, organization.id, normalizedCode).catch(() => null)
+          : null;
+      if (byIdentity) { setSelectedAsset(byIdentity); setNotice('Asset found.'); setView('asset-detail'); return; }
+      const matches = DEMO_MODE ? await demoStore.assets(normalizedCode) : (await api.assets(user.accessToken, organization.id, normalizedCode)).data;
+      const match = matches.find((asset) => asset.assetTag.toLowerCase() === normalizedCode.toLowerCase() || asset.serialNumber?.toLowerCase() === normalizedCode.toLowerCase()) || matches[0];
       if (!match) { setNotice(''); setError('No matching asset found. Check the code or add the item to the register.'); return; }
       setSelectedAsset(match); setNotice('Asset found.'); setView('asset-detail');
     } catch (reason) { setNotice(''); setError(errorMessage(reason)); }
@@ -829,6 +901,7 @@ export default function App() {
           <button className={view === 'verify' ? 'selected' : ''} onClick={() => setView('verify')}><Icon name="check" />Verify</button>
           <button className={view === 'reports' ? 'selected' : ''} onClick={() => setView('reports')}><Icon name="asset" />Reports</button>
           <button className={view === 'transfers' ? 'selected' : ''} onClick={() => setView('transfers')}><Icon name="arrow" />Transfers</button>
+          {!DEMO_MODE&&canManageUsers&&<button className={view==='users'?'selected':''} onClick={()=>setView('users')}><Icon name="people"/>People & access</button>}
         </nav>
         <section className="workspace-content" aria-live="polite">
           {error && <div className="inline-message error-message" role="alert"><span>{error}</span><button aria-label="Dismiss error" onClick={() => setError('')}>×</button></div>}
@@ -889,7 +962,7 @@ export default function App() {
               {verificationPolicies.length===0 && <section className="panel verify-empty"><Icon name="check"/><h2>No scan schedule yet.</h2><p>Head Office can set a six-month cadence and a two-month completion window for a state or centre.</p></section>}
               {verificationPolicies.length>0 && <section className="panel policy-panel"><div className="panel-heading"><div><p className="eyebrow">ACTIVE SCHEDULES</p><h2>Choose a cycle to work on</h2></div></div><div className="cycle-grid">{verificationPolicies.map((policy)=><article className="cycle-policy" key={policy.id}><span className="cycle-mark"><Icon name="check"/></span><div><strong>{policy.scopeLocationName}</strong><small>Every {policy.cadenceMonths} months · {policy.graceDays} day completion window</small></div><button className="quiet-button" disabled={saving} onClick={()=>void openVerificationCycle(policy.id)}>Open cycle</button></article>)}</div></section>}
               {verificationCycles.length>0 && <section className="cycle-tabs" aria-label="Verification cycles">{verificationCycles.map((cycle)=><button key={cycle.id} className={activeCycle?.id===cycle.id?'active':''} onClick={()=>setActiveCycle(cycle)}><strong>{cycle.scopeLocationName}</strong><small>{new Date(cycle.startsAt).toLocaleDateString('en-IN')} · {cycle.status}</small></button>)}</section>}
-              {activeCycle && <section className="panel cycle-progress-panel"><div className="cycle-progress-heading"><div><p className="eyebrow">{activeCycle.status.toUpperCase()} · {activeCycle.scopeLocationName}</p><h2>{cycleAssets.filter((item)=>item.scanned).length} <span>of {cycleAssets.length} verified</span></h2><p>Complete by {new Date(activeCycle.graceEndsAt).toLocaleDateString('en-IN')}</p></div><button className="primary-button" disabled={activeCycle.status==='closed'} onClick={()=>{setScanLocationId('');setVerificationScanCycleId(activeCycle.id);setView('scanner');}}>Scan an asset</button></div><div className="cycle-progress-track" role="progressbar" aria-label="Cycle completion" aria-valuemin={0} aria-valuemax={cycleAssets.length} aria-valuenow={cycleAssets.filter((item)=>item.scanned).length}><span style={{width:`${cycleAssets.length?cycleAssets.filter((item)=>item.scanned).length/cycleAssets.length*100:0}%`}}/></div><div className="cycle-asset-list">{cycleAssets.map((item)=><article key={item.assetId} className="cycle-asset-row"><span className={`cycle-state ${item.scanned?'seen':item.reviewState==='unseen_after_window'?'overdue':''}`}><Icon name={item.scanned?'check':'asset'}/></span><span><strong>{item.name}</strong><small>{item.assetTag} · {item.locationName}</small></span><span className={`cycle-review cycle-${item.reviewState}`}>{item.scanned?'Verified':item.reviewState==='unseen_after_window'?'Needs review':'Not scanned'}</span></article>)}</div>{cycleAssets.some((item)=>item.reviewState==='unseen_after_window')&&<p className="review-note">Some assets were not seen before the scan window ended. Review their last known location and contact the responsible centre; no loss status was applied.</p>}</section>}
+              {activeCycle && <section className="panel cycle-progress-panel"><div className="cycle-progress-heading"><div><p className="eyebrow">{activeCycle.status.toUpperCase()} · {activeCycle.scopeLocationName}</p><h2>{cycleAssets.filter((item)=>item.scanned).length} <span>of {cycleAssets.length} verified</span></h2><p>Complete by {new Date(activeCycle.graceEndsAt).toLocaleDateString('en-IN')}</p></div><button className="primary-button" disabled={activeCycle.status==='closed'} onClick={()=>{setScanLocationId('');setVerificationScanCycleId(activeCycle.id);setView('scanner');}}>Scan an asset</button></div><div className="cycle-progress-track" role="progressbar" aria-label="Cycle completion" aria-valuemin={0} aria-valuemax={cycleAssets.length} aria-valuenow={cycleAssets.filter((item)=>item.scanned).length}><span style={{width:`${cycleAssets.length?cycleAssets.filter((item)=>item.scanned).length/cycleAssets.length*100:0}%`}}/></div><form className="rfid-quick-entry" onSubmit={(event)=>{event.preventDefault();if(!isRfidEpc(rfidCode)){setError('Enter a valid hexadecimal EPC from the RFID tag.');return;}setError('');void recordCycleScan(rfidCode);setRfidCode('');}}><label>Read one RFID tag <small>Type or scan an EPC with a compatible keyboard reader</small><input aria-label="RFID EPC" autoCapitalize="characters" maxLength={64} onChange={(event)=>setRfidCode(event.target.value.toUpperCase())} pattern="(?:[A-Fa-f0-9]{2}){4,32}" placeholder="EPC · e.g. E2801160600000000000034A" value={rfidCode}/></label><button className="quiet-button" disabled={activeCycle.status==='closed'||!rfidCode.trim()}>Record EPC</button><small className="rfid-integration-note">Bulk UHF audits need an approved reader app or device adapter; this browser does not connect directly to RFID sleds.</small></form><div className="cycle-asset-list">{cycleAssets.map((item)=><article key={item.assetId} className="cycle-asset-row"><span className={`cycle-state ${item.scanned?'seen':item.reviewState==='unseen_after_window'?'overdue':''}`}><Icon name={item.scanned?'check':'asset'}/></span><span><strong>{item.name}</strong><small>{item.assetTag} · {item.locationName}</small></span><span className={`cycle-review cycle-${item.reviewState}`}>{item.scanned?'Verified':item.reviewState==='unseen_after_window'?'Needs review':'Not scanned'}</span></article>)}</div>{cycleAssets.some((item)=>item.reviewState==='unseen_after_window')&&<p className="review-note">Some assets were not seen before the scan window ended. Review their last known location and contact the responsible centre; no loss status was applied.</p>}</section>}
               {organization?.roles.some((item)=>item.role==='head_office')&&<form className="panel entry-form policy-create" onSubmit={createVerificationPolicy}><p className="eyebrow">HEAD OFFICE · CYCLE SETTINGS</p><h2>Set a verification schedule</h2><div className="form-grid"><label>State or centre<select name="scopeLocationId" required defaultValue=""><option value="" disabled>Choose a scope</option>{locations.filter((item)=>item.kind==='state'||item.kind==='centre').map((item)=><option key={item.id} value={item.id}>{item.kind} · {item.name}</option>)}</select></label><label>Repeat every<select name="cadenceMonths" defaultValue="6"><option value="6">6 months</option><option value="3">3 months</option><option value="12">12 months</option></select></label><label>Completion window<select name="graceDays" defaultValue="60"><option value="60">2 months · 60 days</option><option value="30">1 month · 30 days</option><option value="90">3 months · 90 days</option></select></label></div><button className="primary-button" disabled={saving}>{saving?'Saving…':'Save schedule'}</button></form>}
             </>}
           </section>}
@@ -906,8 +979,29 @@ export default function App() {
                   <form className="batch-destination-form" onSubmit={createTransferBatch}><label className="batch-field">Destination<select name="toLocationId" required defaultValue=""><option value="" disabled>Choose destination</option>{locations.filter((place)=>place.id!==batchSourceId&&['centre','warehouse','building','floor','area'].includes(place.kind)).map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label><label className="batch-field">Manifest notes<textarea name="handoverNotes" rows={4} maxLength={2000} placeholder="Carrier, packing reference, handover contact, or context for the receiving team." /></label><p className="batch-helper">A manager approves the manifest before dispatch. Items stay at their current location until the receiving team confirms them.</p><button className="primary-button" disabled={saving||!selectedBatchAssetIds.length}>{saving?'Creating…':`Create manifest · ${selectedBatchAssetIds.length}`}</button></form>
                 </div>
               </section>
-              <section className="panel batch-history"><div className="panel-heading"><div><p className="eyebrow">MANIFESTS</p><h2>{transferBatches.length} grouped handovers</h2></div></div>{!transferBatches.length?<div className="empty-state"><Icon name="arrow"/><strong>No grouped handovers in your scope.</strong><small>Manifests will show item-by-item receipt and any discrepancies here.</small></div>:transferBatches.map((batch)=><article className="batch-card" key={batch.id}><div className="batch-card-heading"><div><p className="eyebrow">{batch.batchReference} · {batch.itemCount} ITEMS</p><h3>{batch.fromLocationName} <span aria-label="to">→</span> {batch.toLocationName}</h3></div><span className={`status-chip ${batch.overdue?'status-in_repair':''}`}>{batch.overdue?'overdue':batch.status.replaceAll('_',' ')}</span></div><p className="batch-card-notes">{batch.handoverNotes||'No handover notes added.'}</p><div className="batch-card-items">{batch.items.map((item)=><div className="batch-receipt-row" key={item.assetId}><span><strong>{item.assetName}</strong><small>{item.assetTag}</small></span>{batch.status==='in_transit'?<label className="batch-receipt-control"><span>Arrival</span><select name={`receipt-${item.assetId}`} form={`receipt-form-${batch.id}`} defaultValue="" required><option value="" disabled>Choose item outcome</option><option value="accepted">Received in good order</option><option value="damaged">Received damaged</option><option value="not_received">Not received</option></select></label>:<span className={`status-chip ${item.receiptStatus==='damaged'?'status-in_repair':''}`}>{item.receiptStatus.replaceAll('_',' ')}</span>}{batch.status==='in_transit'&&<label className="batch-note-control">Discrepancy note <input name={`note-${item.assetId}`} form={`receipt-form-${batch.id}`} maxLength={2000} placeholder="Required if damaged or not received" /></label>}{item.discrepancyNote&&<small className="batch-discrepancy">{item.discrepancyNote}</small>}</div>)}</div><div className="batch-card-footer"><small>{batch.status==='in_transit'&&batch.autoFlagAfter?`Arrival review due ${new Date(batch.autoFlagAfter).toLocaleDateString('en-IN')}`:`Requested ${new Date(batch.requestedAt).toLocaleDateString('en-IN')}`}</small><div className="lifecycle-row-actions">{batch.status==='requested'&&<><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'approve')}>Approve</button><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'reject')}>Decline</button></>}{batch.status==='approved'&&<><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'dispatch')}>Mark dispatched</button><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'cancel')}>Cancel</button></>}{batch.status==='in_transit'&&<form id={`receipt-form-${batch.id}`} onSubmit={(event)=>void receiveTransferBatch(event,batch)}><button className="primary-button batch-receive-button" disabled={saving}>Confirm every item</button></form>}</div></div></article>)}</section>
+              <section className="panel batch-history"><div className="panel-heading"><div><p className="eyebrow">MANIFESTS</p><h2>{transferBatches.length} grouped handovers</h2></div></div>{!transferBatches.length?<div className="empty-state"><Icon name="arrow"/><strong>No grouped handovers in your scope.</strong><small>Manifests will show item-by-item receipt and any discrepancies here.</small></div>:transferBatches.map((batch)=><article className="batch-card" key={batch.id}><div className="batch-card-heading"><div><p className="eyebrow">{batch.batchReference} · {batch.itemCount} ITEMS</p><h3>{batch.fromLocationName} <span aria-label="to">→</span> {batch.toLocationName}</h3></div><span className={`status-chip ${batch.overdue?'status-in_repair':''}`}>{batch.overdue?'overdue':batch.status.replaceAll('_',' ')}</span></div><p className="batch-card-notes">{batch.handoverNotes||'No handover notes added.'}</p>{batch.status==='in_transit'&&<div className="batch-scan-entry"><button type="button" className="quiet-button" onClick={()=>setBatchReceiptScannerId(batch.id)}>Scan arrival labels <span>{(scannedBatchReceiptIds[batch.id]||[]).length} / {batch.itemCount}</span></button><small>Each received item must match a QR label in this manifest.</small>{batchReceiptScannerId===batch.id&&<div className="batch-scanner"><CodeScanner onCode={(code)=>recordBatchReceiptScan(batch,code)} onClose={()=>setBatchReceiptScannerId('')}/></div>}</div>}<div className="batch-card-items">{batch.items.map((item)=><div className="batch-receipt-row" key={item.assetId}><span><strong>{item.assetName}</strong><small>{item.assetTag}</small>{(scannedBatchReceiptIds[batch.id]||[]).includes(item.assetId)&&<small className="batch-scan-confirmed">QR matched this manifest</small>}</span>{batch.status==='in_transit'?<label className="batch-receipt-control"><span>Arrival</span><select name={`receipt-${item.assetId}`} form={`receipt-form-${batch.id}`} defaultValue="" required><option value="" disabled>Choose item outcome</option><option value="accepted">Received in good order</option><option value="damaged">Received damaged</option><option value="not_received">Not received</option></select></label>:<span className={`status-chip ${item.receiptStatus==='damaged'?'status-in_repair':''}`}>{item.receiptStatus.replaceAll('_',' ')}</span>}{batch.status==='in_transit'&&<label className="batch-note-control">Discrepancy note <input name={`note-${item.assetId}`} form={`receipt-form-${batch.id}`} maxLength={2000} placeholder="Required if damaged or not received" /></label>}{item.discrepancyNote&&<small className="batch-discrepancy">{item.discrepancyNote}</small>}</div>)}</div><div className="batch-card-footer"><small>{batch.status==='in_transit'&&batch.autoFlagAfter?`Arrival review due ${new Date(batch.autoFlagAfter).toLocaleDateString('en-IN')}`:`Requested ${new Date(batch.requestedAt).toLocaleDateString('en-IN')}`}</small><div className="lifecycle-row-actions">{batch.status==='requested'&&<><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'approve')}>Approve</button><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'reject')}>Decline</button></>}{batch.status==='approved'&&<><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'dispatch')}>Mark dispatched</button><button className="text-button" onClick={()=>void actOnTransferBatch(batch,'cancel')}>Cancel</button></>}{batch.status==='in_transit'&&<form id={`receipt-form-${batch.id}`} onSubmit={(event)=>void receiveTransferBatch(event,batch)}><button className="primary-button batch-receive-button" disabled={saving}>Confirm every item</button></form>}</div></div></article>)}</section>
             </>}
+          </section>}
+
+          {view === 'users' && canManageUsers && <section className="view-panel users-view">
+            <p className="eyebrow">TEAM · SCOPED ACCESS</p>
+            <div className="view-title-row"><div><h1>Give each person the right reach.</h1><p className="view-lead">Access follows the state, centre, or floor they are responsible for.</p></div><span className="user-total">{managedUsers.length} people</span></div>
+            <div className="users-layout">
+              <form className="panel user-create-panel" onSubmit={(event)=>void createManagedUser(event)}>
+                <div className="panel-heading"><div><p className="eyebrow">ADD A TEAM MEMBER</p><h2>Set their access.</h2></div><Icon name="people"/></div>
+                <p className="user-create-note">The person must already have an account in your connected work sign-in. This links their account; it does not create a password or send an invitation.</p>
+                <label>Identity provider subject<input name="identitySubject" required maxLength={255} placeholder="Exact account subject (sub)" autoComplete="off" /></label>
+                <div className="user-form-grid"><label>Full name<input name="displayName" required maxLength={160} placeholder="Name shown in the register" /></label><label>Work email<input name="email" type="email" required maxLength={254} placeholder="name@company.com" /></label></div>
+                <label>Phone number <small>Optional</small><input name="phoneNumber" type="tel" maxLength={32} placeholder="+91 …" /></label>
+                <div className="user-form-grid"><label>Role<select name="role" value={userRoleChoice} onChange={(event)=>setUserRoleChoice(event.target.value as Role)}>{userRoleChoices.map((role)=><option key={role} value={role}>{role.replaceAll('_',' ')}</option>)}</select></label><label>Access scope<select key={userRoleChoice} name="scopeLocationId" required defaultValue=""><option value="" disabled>Choose a location</option>{userScopeOptions.map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}{place.city?` · ${place.city}`:''}</option>)}</select></label></div>
+                {userScopeOptions.length===0&&<p className="inline-message error-message" role="status">No locations in your scope match this role. Ask an administrator to set up the location first.</p>}
+                <button className="primary-button" disabled={savingManagedUser||userScopeOptions.length===0}>{savingManagedUser?'Saving access…':'Add scoped access'}<span aria-hidden="true">→</span></button>
+              </form>
+              <section className="panel user-directory-panel">
+                <div className="panel-heading"><div><p className="eyebrow">YOUR SCOPE</p><h2>People and roles</h2></div><span className="evidence-count">{managedUsers.filter((person)=>person.isActive).length} active</span></div>
+                {managedUsersBusy?<div className="map-loading"><span className="spinner"/>Loading access list…</div>:!managedUsers.length?<div className="empty-state"><Icon name="people"/><strong>No people are assigned in this scope yet.</strong><small>Add a work account to give it a role and location.</small></div>:<div className="managed-user-list">{managedUsers.map((person)=><article className={`managed-user-card ${person.isActive?'':'inactive'}`} key={person.id}><div className="managed-user-heading"><span className="managed-user-avatar">{person.displayName.slice(0,1).toUpperCase()}</span><span><strong>{person.displayName}</strong><small>{person.email}{person.phoneNumber?` · ${person.phoneNumber}`:''}</small></span><span className={`user-state ${person.isActive?'':'paused'}`}>{person.isActive?'Active':'Paused'}</span></div><div className="managed-user-roles">{person.roles.map((grant,index)=><span key={`${person.id}-${grant.role}-${grant.scopeLocationId||index}`}><b>{grant.role.replaceAll('_',' ')}</b><small>{grant.scopeLocationName||'Organization-wide'}</small></span>)}</div><button className="text-button" onClick={()=>void toggleManagedUser(person)}>{person.isActive?'Pause access':'Restore access'}</button></article>)}</div>}
+              </section>
+            </div>
           </section>}
 
           {view === 'assets' && <section className="view-panel">
@@ -929,6 +1023,7 @@ export default function App() {
               {captureBusy && <div className="capture-progress" role="status"><span style={{ width: `${captureProgress}%` }} /><small>Reading this image on your device · {captureProgress}%</small></div>}
               {captureSuggestions && <section className="capture-review" aria-live="polite"><div><p className="eyebrow">SUGGESTIONS TO REVIEW</p><strong>{matchingConfidence === 'exact' ? 'Possible duplicate · compare these records.' : matchingConfidence === 'similar' ? 'Similar items · compare before adding.' : 'Check these details against the item.'}</strong></div><dl>{[['Suggested name',captureSuggestions.name],['Category',captureSuggestions.category],['Brand',captureSuggestions.manufacturer],['Model',captureSuggestions.model],['Serial number',captureSuggestions.serialNumber],['Seller',captureSuggestions.sellerName],['Invoice date',captureSuggestions.purchaseDate],['Invoice amount',captureSuggestions.purchaseAmount && `₹${captureSuggestions.purchaseAmount}`],['Invoice number',captureSuggestions.invoiceReference]].filter(([,value]) => value).map(([label,value]) => <div key={String(label)}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{matchingAssets.map((asset) => <button type="button" className="possible-match" key={asset.id} onClick={() => { setSelectedAsset(asset); setView('asset-detail'); }}><Icon name="asset" /><span><strong>{asset.name}</strong><small>{asset.assetTag} · {asset.locationName}</small></span><Icon name="arrow" /></button>)}{!selectedAsset && <button type="button" className="text-button" onClick={applyCaptureSuggestions}>Use suggestions in the editable form →</button>}<details><summary>View text read from image</summary><pre>{captureSuggestions.sourceText}</pre></details></section>}
           <div className="form-grid"><label>Asset name<input name="name" required maxLength={160} defaultValue={selectedAsset?.name || formSeed?.name || ''} placeholder="e.g. Network switch" /></label><label>Category<input name="category" required maxLength={100} defaultValue={selectedAsset?.category || formSeed?.category || ''} placeholder="e.g. IT equipment" /></label><label>Asset tag <small>Optional · assigned if blank</small><input name="assetTag" maxLength={40} defaultValue={selectedAsset?.assetTag || ''} placeholder="e.g. IT-00482" /></label><label>Serial number<input name="serialNumber" maxLength={120} defaultValue={selectedAsset?.serialNumber || formSeed?.serialNumber || ''} placeholder="Manufacturer serial number" /></label><label>Manufacturer<input name="manufacturer" maxLength={120} defaultValue={selectedAsset?.manufacturer || formSeed?.manufacturer || ''} placeholder="Brand or manufacturer" /></label><label>Model<input name="model" maxLength={120} defaultValue={selectedAsset?.model || formSeed?.model || ''} placeholder="Model name or number" /></label><label>Ownership<select name="ownershipType" defaultValue={selectedAsset?.ownershipType || 'INCUSPAZE_OWNED'}><option value="INCUSPAZE_OWNED">Incuspaze owned</option><option value="CLIENT_DEDICATED">Client dedicated</option><option value="VENDOR_LEASED">Vendor leased</option><option value="TRIAL_DEMO">Trial or demo</option></select></label><label>Condition<select name="condition" defaultValue={selectedAsset?.condition || 'good'}><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Record status<select name="status" defaultValue={selectedAsset?.status || 'active'} onChange={(event)=>setAssetStatusChoice(event.target.value)}><option value="active">Active</option><option value="unused">Unused · available for transfer</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label></div>
+              <label>UHF RFID EPC <small>Optional · enter the value from a compatible tag or reader</small><input name="rfidEpc" maxLength={64} pattern="(?:[A-Fa-f0-9]{2}){4,32}" defaultValue={selectedAsset?.rfidEpc || ''} placeholder="e.g. E2801160600000000000034A" autoCapitalize="characters" /></label>
               {needsStatusReason&&<label className="status-change-reason">Why is this status changing?<small>A reason is required for a missing, retired, or disposed classification.</small><textarea name="statusChangeReason" minLength={5} maxLength={500} required rows={2} placeholder="Record what was checked and who confirmed the status." /></label>}
               <div className="form-section-title"><span>02</span><div><h2>Give it a location</h2><small>Choose the most precise confirmed place.</small></div></div>
               <label>Centre, warehouse, or floor<select name="locationId" required defaultValue={selectedAsset?.locationId || ''}><option value="" disabled>Select a location</option>{locations.map((location) => <option key={location.id} value={location.id}>{location.kind} · {location.name}{location.code ? ` (${location.code})` : ''}</option>)}</select></label>
@@ -942,7 +1037,7 @@ export default function App() {
 
           {view === 'scanner' && <>{verificationScanCycleId && <div className="scan-location-choice"><label>Where are you checking?<select value={scanLocationId} onChange={(event)=>setScanLocationId(event.target.value)}><option value="">Use asset’s current register location</option>{locations.map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label></div>}<CodeScanner onCode={(code) => void (verificationScanCycleId ? recordCycleScan(code) : findScannedCode(code))} onClose={() => {setVerificationScanCycleId(null);setView(verificationScanCycleId?'verify':'assets');}} /></>}
 
-          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setAssetStatusChoice(selectedAsset.status); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Ownership" value={selectedAsset.ownershipType.replaceAll('_',' ').toLowerCase()} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
+          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setAssetStatusChoice(selectedAsset.status); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Ownership" value={selectedAsset.ownershipType.replaceAll('_',' ').toLowerCase()} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="UHF RFID EPC" value={selectedAsset.rfidEpc || 'Not assigned'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
             <section className="panel custody-panel"><div className="panel-heading"><div><p className="eyebrow">WHO HAS IT NOW?</p><h2>Custody & handover</h2></div><span className="evidence-count">{activeCustody?'Issued':'Available'}</span></div><p className="custody-intro">Record who takes responsibility for this item, its condition at handover, and when it comes back.</p>{DEMO_MODE?<div className="empty-state custody-empty"><strong>Custody tracking is available in the live register.</strong><small>Sign in to issue an item and keep a handover history.</small></div>:activeCustody?<><div className="custody-active"><span className="custody-person-mark">{activeCustody.custodianName.slice(0,1).toUpperCase()}</span><span><strong>{activeCustody.custodianName}</strong><small>Issued {new Date(activeCustody.issuedAt).toLocaleString('en-IN')} · {activeCustody.issueCondition.replaceAll('_',' ')}</small>{activeCustody.issueNotes&&<small>{activeCustody.issueNotes}</small>}</span></div><form className="custody-form return-custody-form" onSubmit={(event)=>void returnAssetCustody(event,activeCustody)}><label>Condition on return<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Return notes<input name="notes" maxLength={2000} placeholder="Condition, accessories, or discrepancy"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving return…':'Record return'}</button></form></>:eligibleCustodians.length?<form className="custody-form" onSubmit={issueAssetCustody}><label>Issue to<select name="custodianUserId" defaultValue="" required><option value="" disabled>Choose an assigned custodian</option>{eligibleCustodians.map((person)=><option value={person.userId} key={person.userId}>{person.displayName}</option>)}</select></label><label>Condition at handover<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Handover note<input name="notes" maxLength={2000} placeholder="Accessories, location, or purpose"/></label><button className="primary-button" disabled={saving}>{saving?'Recording…':'Issue to custodian'}</button></form>:<div className="empty-state custody-empty"><strong>No eligible custodians are assigned here yet.</strong><small>An organization administrator needs to assign an asset custodian to this centre.</small></div>}{custodyHistory.filter((item)=>item.returnedAt).length>0&&<div className="custody-history"><h3>Previous handovers</h3>{custodyHistory.filter((item)=>item.returnedAt).slice(0,5).map((item)=><article key={item.custodyId}><span><strong>{item.custodianName}</strong><small>Issued {new Date(item.issuedAt).toLocaleDateString('en-IN')} · returned {item.returnedAt?new Date(item.returnedAt).toLocaleDateString('en-IN'):''}</small></span><small>{item.issueCondition.replaceAll('_',' ')} → {item.returnCondition?.replaceAll('_',' ')}</small></article>)}</div>}</section>
             <section className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNTABILITY TRAIL</p><h2>Asset activity</h2></div><span className="evidence-count">{assetActivity.length} events</span></div>{assetActivity.length?<ol className="activity-timeline">{assetActivity.map((event)=><li key={event.id}><span className="activity-node"><Icon name="history"/></span><div className="activity-copy"><strong>{activityTitle(event.eventType)}</strong><p>{activitySummary(event)}</p><small>{event.actorName} · {new Date(event.occurredAt).toLocaleString('en-IN')}</small></div></li>)}</ol>:<div className="empty-state activity-empty"><strong>No activity has been recorded yet.</strong><small>Scans, handovers, reports, transfers, and record changes will appear here.</small></div>}</section>
             <section className="panel warranty-panel"><div className="panel-heading"><div><p className="eyebrow">COVERAGE WATCH</p><h2>Warranty and service</h2></div><span className="evidence-count">{warranties.length} records</span></div>{warranties.map((warranty)=><article className="warranty-row" key={warranty.id}><span className="warranty-mark"><Icon name="check"/></span><span><strong>{warranty.coverageKind.toUpperCase()} · {warranty.provider||'Provider not listed'}</strong><small>{warranty.startsOn||'Start not recorded'} — {warranty.endsOn||'No end date'}{warranty.servicePhone?` · Service ${warranty.servicePhone}`:''}</small></span></article>)}{!warranties.length&&<p className="evidence-empty">No warranty or service coverage recorded yet.</p>}<form className="warranty-create" onSubmit={createWarrantyRecord}><label>Coverage<select name="coverageKind" defaultValue="warranty"><option value="warranty">Warranty</option><option value="guarantee">Guarantee</option><option value="amc">Annual maintenance</option><option value="other">Other</option></select></label><label>Seller or service provider<input name="provider" maxLength={160} defaultValue={selectedAsset.sellerName||''} placeholder="Provider name"/></label><label>Service centre phone<input name="servicePhone" type="tel" maxLength={40} placeholder="Support number"/></label><label>Coverage ends<input name="endsOn" type="date"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving…':'Add coverage'}</button></form></section>

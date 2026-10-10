@@ -1,6 +1,6 @@
 import type { ReactNode, SVGProps } from 'react';
 
-type Name = 'home' | 'pin' | 'asset' | 'arrow' | 'search' | 'state' | 'centre' | 'warehouse' | 'building' | 'floor' | 'area' | 'plus' | 'check' | 'watch' | 'history';
+type Name = 'home' | 'pin' | 'asset' | 'arrow' | 'search' | 'state' | 'centre' | 'warehouse' | 'building' | 'floor' | 'area' | 'plus' | 'check' | 'watch' | 'history' | 'people';
 
 const paths: Record<Name, ReactNode> = {
   home: <><path d="m3.5 10 8.5-7 8.5 7"/><path d="M5.5 9v11h13V9M9.5 20v-6h5v6"/></>,
@@ -18,6 +18,7 @@ const paths: Record<Name, ReactNode> = {
   check: <><path d="m5 12 4.4 4.4L19 7"/></>,
   watch: <><path d="M12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M3 12h2M19 12h2M5.6 18.4 7 17M17 7l1.4-1.4"/><circle cx="12" cy="12" r="7"/><path d="M12 8v4l2.7 1.7"/></>,
   history: <><path d="M3.5 11a8.5 8.5 0 1 1 2.2 6.4"/><path d="M3.5 5v6h6M12 7v5l3.2 2"/></>,
+  people: <><circle cx="9" cy="8" r="3.2"/><path d="M3 20v-1.4a5.9 5.9 0 0 1 11.8 0V20M16 5.2a3.1 3.1 0 0 1 0 5.8M17 14.2a5.3 5.3 0 0 1 4 5.1V20"/></>,
 };
 
 export function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: Name }) {

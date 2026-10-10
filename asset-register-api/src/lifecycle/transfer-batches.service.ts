@@ -31,7 +31,7 @@ export class TransferBatchesService {
          (b.status='in_transit' AND b.auto_flag_after<now()) AS overdue,
          (SELECT count(*)::int FROM transfer_batch_items i WHERE i.organization_id=b.organization_id AND i.batch_id=b.id) AS "itemCount",
          (SELECT count(*)::int FROM transfer_batch_items i WHERE i.organization_id=b.organization_id AND i.batch_id=b.id AND i.receipt_status='pending') AS "pendingCount",
-         (SELECT COALESCE(jsonb_agg(jsonb_build_object('assetId',a.id,'assetTag',a.asset_tag,'assetName',a.name,
+         (SELECT COALESCE(jsonb_agg(jsonb_build_object('assetId',a.id,'assetTag',a.asset_tag,'assetName',a.name,'qrPublicId',a.qr_public_id::text,
            'receiptStatus',i.receipt_status,'discrepancyNote',i.receipt_discrepancy_note) ORDER BY a.asset_tag),'[]'::jsonb)
            FROM transfer_batch_items i JOIN assets a ON a.organization_id=i.organization_id AND a.id=i.asset_id
           WHERE i.organization_id=b.organization_id AND i.batch_id=b.id) AS items

@@ -10,9 +10,10 @@ import { HealthController } from './health.controller';
 import { VerificationModule } from './verification/verification.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { InsightsModule } from './insights/insights.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule, UsersModule],
   controllers: [HealthController],
 })
 export class AppModule {}

@@ -8,6 +8,15 @@ export interface Organization {
   roles: { role: Role; scopeLocationId: string | null }[];
 }
 
+export interface ManagedUser {
+  id: string;
+  email: string;
+  displayName: string;
+  phoneNumber: string | null;
+  isActive: boolean;
+  roles: { role: Role; scopeLocationId: string | null; scopeLocationName: string | null }[];
+}
+
 export interface Location {
   id: string;
   parentId: string | null;
@@ -27,6 +36,7 @@ export interface Asset {
   locationName: string;
   assetTag: string;
   qrPublicId: string;
+  rfidEpc?: string | null;
   name: string;
   category: string;
   serialNumber: string | null;
@@ -68,7 +78,7 @@ export interface VerificationAsset {
 
 export interface LifecycleReport { id:string; assetId:string; assetTag:string; assetName:string; locationId:string; locationName:string; kind:string; status:string; urgency:string; description:string; resolutionNotes?:string|null; reportedAt:string; resolvedAt?:string|null; }
 export interface AssetTransfer { id:string; assetId:string; assetTag:string; assetName:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; receivedAt?:string|null; handoverNotes?:string|null; }
-export interface TransferBatchItem { assetId:string; assetTag:string; assetName:string; receiptStatus:'pending'|'accepted'|'damaged'|'not_received'|'cancelled'; discrepancyNote:string|null; }
+export interface TransferBatchItem { assetId:string; assetTag:string; assetName:string; qrPublicId:string; receiptStatus:'pending'|'accepted'|'damaged'|'not_received'|'cancelled'; discrepancyNote:string|null; }
 export interface TransferBatch { id:string; batchReference:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; dispatchedAt:string|null; autoFlagAfter:string|null; completedAt:string|null; handoverNotes:string|null; overdue:boolean; itemCount:number; pendingCount:number; items:TransferBatchItem[]; }
 export interface WarrantyRecord { id:string; coverageKind:string; provider:string|null; servicePhone:string|null; startsOn:string|null; endsOn:string|null; terms:string|null; }
 export interface AssetActivityEvent { id:string; eventType:string; occurredAt:string; actorName:string; details:Record<string,unknown>; }

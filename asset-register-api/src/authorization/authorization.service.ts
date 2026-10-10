@@ -1,13 +1,15 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
+import type { SqlQuery } from '../database.service';
 import type { ActorContext } from '../auth/authenticated-request';
 
 @Injectable()
 export class AuthorizationService {
   constructor(private readonly database: DatabaseService) {}
 
-  async assertLocationAccess(actor: ActorContext, locationId: string, allowedRoles?: readonly string[]): Promise<void> {
-    const rows = await this.database.query<{ allowed: boolean }>(
+  async assertLocationAccess(actor: ActorContext, locationId: string, allowedRoles?: readonly string[], query?: SqlQuery): Promise<void> {
+    const run = query ?? this.database.query.bind(this.database);
+    const rows = await run<{ allowed: boolean }>(
       `WITH RECURSIVE requested_path AS (
          SELECT id, parent_id FROM locations
           WHERE organization_id = $1::uuid AND id = $2::uuid

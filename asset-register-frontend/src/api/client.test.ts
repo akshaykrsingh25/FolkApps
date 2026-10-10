@@ -42,4 +42,33 @@ describe('asset register API client', () => {
       body:JSON.stringify(receipt),
     }));
   });
+
+  it('links provisioned work identities to scoped roles without sending local credentials', async () => {
+    const fetchMock=vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({id:'user-1',email:'custodian@example.test',displayName:'Floor Custodian',phoneNumber:null,isActive:true,role:'asset_custodian',scopeLocationId:'floor-1',created:true}),{status:201}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({id:'user-1',isActive:false}),{status:200}));
+    vi.stubGlobal('fetch',fetchMock);
+    const account={identitySubject:'oidc-subject',email:'custodian@example.test',displayName:'Floor Custodian',role:'asset_custodian' as const,scopeLocationId:'floor-1'};
+    await expect(api.createManagedUser('signed-token','org-123',account)).resolves.toMatchObject({created:true,role:'asset_custodian'});
+    await api.setManagedUserActive('signed-token','org-123','user-1',false);
+    expect(fetchMock).toHaveBeenNthCalledWith(1,'http://localhost:4000/api/v1/users',expect.objectContaining({
+      method:'POST',headers:expect.objectContaining({'x-organization-id':'org-123'}),body:JSON.stringify(account),
+    }));
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain('password');
+    expect(fetchMock).toHaveBeenNthCalledWith(2,'http://localhost:4000/api/v1/users/user-1/active',expect.objectContaining({method:'PATCH'}));
+  });
+
+  it('sends tenant-scoped RFID batches and normalizes EPC lookups', async () => {
+    const fetchMock=vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({cycleId:'cycle-1',receivedCount:1,recordedCount:1,duplicateCount:0,wrongLocationCount:0,notRegisteredCount:0}),{status:201}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({id:'asset-1',rfidEpc:'E2801160600000000000034A'}),{status:200}));
+    vi.stubGlobal('fetch',fetchMock);
+    const payload={locationId:'floor-4',readings:[{epc:'E2801160600000000000034A',clientEventId:'event-1',scannedAt:'2026-10-10T12:00:00.000Z'}]};
+    await expect(api.recordRfidScans('signed-token','org-123','cycle-1',payload)).resolves.toMatchObject({recordedCount:1});
+    await expect(api.assetByRfidEpc('signed-token','org-123','e2801160600000000000034a')).resolves.toMatchObject({rfidEpc:'E2801160600000000000034A'});
+    expect(fetchMock).toHaveBeenNthCalledWith(1,'http://localhost:4000/api/v1/verification/cycles/cycle-1/rfid-scans',expect.objectContaining({
+      method:'POST',headers:expect.objectContaining({authorization:'Bearer signed-token','x-organization-id':'org-123'}),body:JSON.stringify(payload),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2,'http://localhost:4000/api/v1/assets/rfid/E2801160600000000000034A',expect.anything());
+  });
 });

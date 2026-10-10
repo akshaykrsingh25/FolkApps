@@ -160,7 +160,8 @@ export async function clearOfflineAssetsForTest() {
 }
 
 export interface PendingVerificationScan {
-  id: string; organizationId: string; cycleId: string; assetId: string; locationId: string; scannedAt: string; lastError: string | null;
+  id: string; organizationId: string; cycleId: string; assetId: string; locationId: string; scannedAt: string;
+  identificationMethod?: 'qr' | 'barcode' | 'rfid' | 'manual'; lastError: string | null;
 }
 interface StoredVerificationScan { id: string; organizationId: string; cycleId: string; iv: ArrayBuffer; ciphertext: ArrayBuffer; lastError: string | null; }
 

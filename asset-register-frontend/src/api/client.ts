@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, OperationalAlert, Organization, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, ManagedUser, OperationalAlert, Organization, Role, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -26,6 +26,11 @@ async function request<T>(path: string, token: string, organizationId?: string, 
 
 export const api = {
   organizations: (token: string) => request<Organization[]>('/me/organizations', token),
+  managedUsers: (token: string, organizationId: string) => request<ManagedUser[]>('/users', token, organizationId),
+  createManagedUser: (token: string, organizationId: string, data: { identitySubject: string; email: string; displayName: string; phoneNumber?: string; role: Role; scopeLocationId?: string }) =>
+    request<{ id: string; email: string; displayName: string; phoneNumber: string | null; isActive: boolean; role: Role; scopeLocationId: string | null; created: boolean }>('/users', token, organizationId, data),
+  setManagedUserActive: (token: string, organizationId: string, id: string, isActive: boolean) =>
+    request<{ id: string; isActive: boolean }>(`/users/${encodeURIComponent(id)}/active`, token, organizationId, { isActive }, 'PATCH'),
   locations: (token: string, organizationId: string, filters: { q?: string; parentId?: string } = {}) => {
     const query = new URLSearchParams();
     if (filters.q) query.set('q', filters.q);
@@ -61,8 +66,10 @@ export const api = {
     request<{ id: string }>('/verification/cycles',token,organizationId,{policyId}),
   verificationProgress: (token: string, organizationId: string, cycleId: string) =>
     request<VerificationAsset[]>(`/verification/cycles/${encodeURIComponent(cycleId)}/progress`,token,organizationId),
-  recordVerificationScan: (token: string, organizationId: string, cycleId: string, data: { assetId: string; locationId: string; clientEventId: string; scannedAt: string }) =>
+  recordVerificationScan: (token: string, organizationId: string, cycleId: string, data: { assetId: string; locationId: string; clientEventId: string; scannedAt: string; identificationMethod?: 'qr'|'barcode'|'rfid'|'manual' }) =>
     request<{ id: string; duplicate: boolean }>(`/verification/cycles/${encodeURIComponent(cycleId)}/scans`,token,organizationId,data),
+  recordRfidScans: (token: string, organizationId: string, cycleId: string, data: { locationId: string; readings: { epc: string; clientEventId: string; scannedAt: string }[] }) =>
+    request<{ cycleId: string; receivedCount: number; recordedCount: number; duplicateCount: number; wrongLocationCount: number; notRegisteredCount: number }>(`/verification/cycles/${encodeURIComponent(cycleId)}/rfid-scans`,token,organizationId,data),
   reports: (token:string,organizationId:string)=>request<LifecycleReport[]>('/reports',token,organizationId),
   createReport: (token:string,organizationId:string,data:Record<string,unknown>)=>request<LifecycleReport>('/reports',token,organizationId,data),
   updateReport: (token:string,organizationId:string,id:string,data:Record<string,unknown>)=>request<LifecycleReport>(`/reports/${encodeURIComponent(id)}`,token,organizationId,data,'PATCH'),
@@ -85,6 +92,8 @@ export const api = {
   confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
   assetByQr: (token: string, organizationId: string, qrPublicId: string) =>
     request<Asset>(`/assets/qr/${encodeURIComponent(qrPublicId)}`, token, organizationId),
+  assetByRfidEpc: (token: string, organizationId: string, epc: string) =>
+    request<Asset>(`/assets/rfid/${encodeURIComponent(epc.trim().toUpperCase())}`,token,organizationId),
 };
 
 type LocationKindValue = 'state' | 'centre' | 'warehouse' | 'building' | 'floor' | 'area';

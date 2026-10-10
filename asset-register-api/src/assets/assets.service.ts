@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database.service';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -10,6 +10,7 @@ export interface AssetRow {
   locationName: string;
   assetTag: string;
   qrPublicId: string;
+  rfidEpc: string | null;
   name: string;
   category: string;
   serialNumber: string | null;
@@ -42,7 +43,7 @@ const ACCESSIBLE_LOCATION_CTE = `WITH RECURSIVE scope_locations(id) AS (
 )`;
 
 const ASSET_COLUMNS = `a.id, a.location_id AS "locationId", l.name AS "locationName", a.asset_tag AS "assetTag",
-  a.qr_public_id::text AS "qrPublicId", a.name, a.category, a.serial_number AS "serialNumber",
+  a.qr_public_id::text AS "qrPublicId", a.rfid_epc AS "rfidEpc", a.name, a.category, a.serial_number AS "serialNumber",
   a.manufacturer, a.model, a.status, a.condition, a.ownership_type AS "ownershipType", a.purchase_date AS "purchaseDate",
   a.purchase_amount::text AS "purchaseAmount", a.currency, a.seller_name AS "sellerName",
   a.seller_phone AS "sellerPhone", a.created_at AS "createdAt"`;
@@ -90,6 +91,17 @@ export class AssetsService {
     return this.assertVisible(actor, rows[0]);
   }
 
+  async getByRfidEpc(actor: ActorContext, epc: string): Promise<AssetRow> {
+    const normalized = epc.trim().toUpperCase();
+    if (!/^(?:[A-F0-9]{2}){4,32}$/.test(normalized)) throw new BadRequestException('RFID EPC must be an even-length hexadecimal value between 8 and 64 characters');
+    const rows = await this.database.query<AssetRow>(
+      `SELECT ${ASSET_COLUMNS} FROM assets a JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+        WHERE a.organization_id=$1::uuid AND upper(a.rfid_epc)=$2`,
+      [actor.organizationId, normalized],
+    );
+    return this.assertVisible(actor, rows[0]);
+  }
+
   async update(actor: ActorContext, id: string, dto: UpdateAssetDto): Promise<AssetRow> {
     const before = await this.getById(actor, id);
     await this.authorization.assertLocationAccess(actor, before.locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
@@ -128,7 +140,8 @@ export class AssetsService {
              status = COALESCE($11::asset_status,a.status), purchase_date = COALESCE($12::date,a.purchase_date),
              purchase_amount = COALESCE($13::numeric,a.purchase_amount), currency = COALESCE($14,a.currency),
              seller_name = COALESCE(NULLIF($15,''),a.seller_name), seller_phone = COALESCE(NULLIF($16,''),a.seller_phone),
-             notes = COALESCE(NULLIF($17,''),a.notes), ownership_type = COALESCE($18::asset_ownership_type,a.ownership_type), updated_at = now()
+             notes = COALESCE(NULLIF($17,''),a.notes), ownership_type = COALESCE($18::asset_ownership_type,a.ownership_type),
+             rfid_epc = CASE WHEN $19::boolean THEN $20::text ELSE a.rfid_epc END, updated_at = now()
            FROM locations l
            WHERE a.organization_id = $1::uuid AND a.id = $2::uuid
              AND l.organization_id = a.organization_id AND l.id = COALESCE($3::uuid,a.location_id)
@@ -136,7 +149,8 @@ export class AssetsService {
           [actor.organizationId,id,dto.locationId ?? null,dto.assetTag?.trim() ?? null,dto.name?.trim() ?? null,
             dto.category?.trim() ?? null,dto.serialNumber?.trim() ?? null,dto.manufacturer?.trim() ?? null,dto.model?.trim() ?? null,
             dto.condition ?? null,dto.status ?? null,dto.purchaseDate ?? null,dto.purchaseAmount ?? null,dto.currency?.toUpperCase() ?? null,
-            dto.sellerName?.trim() ?? null,dto.sellerPhone?.trim() ?? null,dto.notes?.trim() ?? null,dto.ownershipType ?? null],
+            dto.sellerName?.trim() ?? null,dto.sellerPhone?.trim() ?? null,dto.notes?.trim() ?? null,dto.ownershipType ?? null,
+            dto.rfidEpc !== undefined,dto.rfidEpc === null ? null : dto.rfidEpc?.trim().toUpperCase() ?? null],
         );
         const updated = rows[0];
         if (!updated) throw new NotFoundException('Asset was not found');
@@ -149,6 +163,7 @@ export class AssetsService {
           ['ownershipType', before.ownershipType, updated.ownershipType],
           ['purchaseAmount', before.purchaseAmount, updated.purchaseAmount], ['sellerName', before.sellerName, updated.sellerName],
           ['sellerPhone', before.sellerPhone, updated.sellerPhone],
+          ['rfidEpc', before.rfidEpc, updated.rfidEpc],
         ];
         const changes = Object.fromEntries(auditedFields.filter(([, oldValue, newValue]) => oldValue !== newValue)
           .map(([field, oldValue, newValue]) => [field, { before: oldValue, after: newValue }]));
@@ -160,7 +175,7 @@ export class AssetsService {
         return updated;
       });
     } catch (error) {
-      if ((error as { code?: string }).code === '23505') throw new ConflictException('That asset tag is already in use');
+      if ((error as { code?: string }).code === '23505') throw new ConflictException(dto.rfidEpc ? 'That asset tag or RFID EPC is already registered' : 'That asset tag is already in use');
       if ((error as { code?: string }).code === '23503') throw new ConflictException('Choose an existing location in your organization');
       throw error;
     }
@@ -179,30 +194,30 @@ export class AssetsService {
       return await this.database.transaction(async (query) => {
         const rows = await query<AssetRow>(
           `INSERT INTO assets (organization_id,location_id,asset_tag,name,category,serial_number,manufacturer,model,condition,
-             purchase_date,purchase_amount,currency,seller_name,seller_phone,notes,created_by,client_request_id,ownership_type)
+             purchase_date,purchase_amount,currency,seller_name,seller_phone,notes,created_by,client_request_id,ownership_type,rfid_epc)
            VALUES ($1::uuid,$2::uuid,COALESCE(NULLIF($3,''),'INC-' || upper(encode(gen_random_bytes(6),'hex'))),$4,$5,$6,$7,$8,
-             COALESCE($9::asset_condition,'good'),$10::date,$11::numeric,COALESCE($12,'INR'),$13,$14,$15,$16::uuid,$17::uuid,COALESCE($18::asset_ownership_type,'INCUSPAZE_OWNED'))
+             COALESCE($9::asset_condition,'good'),$10::date,$11::numeric,COALESCE($12,'INR'),$13,$14,$15,$16::uuid,$17::uuid,COALESCE($18::asset_ownership_type,'INCUSPAZE_OWNED'),$19)
            ON CONFLICT (organization_id,client_request_id) DO NOTHING
            RETURNING id,location_id AS "locationId",(SELECT name FROM locations WHERE id=location_id) AS "locationName",
-             asset_tag AS "assetTag",qr_public_id::text AS "qrPublicId",name,category,serial_number AS "serialNumber",
+             asset_tag AS "assetTag",qr_public_id::text AS "qrPublicId",rfid_epc AS "rfidEpc",name,category,serial_number AS "serialNumber",
              manufacturer,model,status,condition,purchase_date AS "purchaseDate",purchase_amount::text AS "purchaseAmount",
              currency,seller_name AS "sellerName",seller_phone AS "sellerPhone",ownership_type AS "ownershipType",created_at AS "createdAt"`,
           [actor.organizationId,dto.locationId,dto.assetTag?.trim() || null,dto.name.trim(),dto.category.trim(),
             dto.serialNumber?.trim() || null,dto.manufacturer?.trim() || null,dto.model?.trim() || null,dto.condition ?? null,
             dto.purchaseDate ?? null,dto.purchaseAmount ?? null,dto.currency?.toUpperCase() ?? null,
-            dto.sellerName?.trim() || null,dto.sellerPhone?.trim() || null,dto.notes?.trim() || null,actor.userId,dto.clientRequestId ?? null,dto.ownershipType ?? null],
+            dto.sellerName?.trim() || null,dto.sellerPhone?.trim() || null,dto.notes?.trim() || null,actor.userId,dto.clientRequestId ?? null,dto.ownershipType ?? null,dto.rfidEpc?.trim().toUpperCase() ?? null],
         );
         if (!rows[0]) throw new ConflictException('This offline capture is already syncing. Retry shortly.');
         const asset = rows[0];
         await query(
           `INSERT INTO audit_events (organization_id,actor_user_id,event_type,entity_type,entity_id,details)
            VALUES ($1::uuid,$2::uuid,'asset.created','asset',$3::uuid,$4::jsonb)`,
-          [actor.organizationId,actor.userId,asset.id,JSON.stringify({ assetTag: asset.assetTag, locationId: asset.locationId })],
+          [actor.organizationId,actor.userId,asset.id,JSON.stringify({ assetTag: asset.assetTag, locationId: asset.locationId, rfidEpc: asset.rfidEpc })],
         );
         return asset;
       });
     } catch (error) {
-      if ((error as { code?: string }).code === '23505') throw new ConflictException('That asset tag is already in use');
+      if ((error as { code?: string }).code === '23505') throw new ConflictException(dto.rfidEpc ? 'That asset tag or RFID EPC is already registered' : 'That asset tag is already in use');
       if ((error as { code?: string }).code === '23503') throw new ConflictException('Choose an existing custodian and location in your organization');
       throw error;
     }

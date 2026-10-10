@@ -53,6 +53,10 @@ describe('phase two API integration', () => {
     await db.exec(custodyMigration);
     const ownershipAndBatchesMigration = await readFile(new URL('../database/migrations/003_ownership_and_transfer_batches.sql', import.meta.url), 'utf8');
     await db.exec(ownershipAndBatchesMigration);
+    const scopedRbacMigration = await readFile(new URL('../database/migrations/004_scoped_rbac_and_user_profiles.sql', import.meta.url), 'utf8');
+    await db.exec(scopedRbacMigration);
+    const dualIdentifierMigration = await readFile(new URL('../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
+    await db.exec(dualIdentifierMigration);
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -136,24 +140,34 @@ describe('phase two API integration', () => {
     centerHeadId = centerHead.rows[0].id;
     await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'centre_head',$3)`, [organizationId,centerHeadId,centre.id]);
     const centreToken = await token('e2e-centre');
+    const floorResponse=await call('/locations',centreToken,{kind:'floor',name:'Floor 4',parentId:centre.id});
+    expect(floorResponse.status).toBe(201);
+    const floor=await floorResponse.json() as {id:string};
 
     const coordinatesResponse=await call(`/locations/${centre.id}/coordinates`,centreToken,{latitude:12.9716,longitude:77.5946},organizationId,'PATCH');
     expect(coordinatesResponse.status).toBe(200);
     expect(((await coordinatesResponse.json()) as {coordinatesStatus:string}).coordinatesStatus).toBe('centre_head_confirmed');
 
-    const assetResponse = await call('/assets', centreToken, { locationId: centre.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234', ownershipType:'CLIENT_DEDICATED' });
+    const assetResponse = await call('/assets', centreToken, { locationId: floor.id, name: 'Network switch', category: 'IT equipment', serialNumber: 'SW-1234', ownershipType:'CLIENT_DEDICATED', rfidEpc:'E2801160600000000000034A' });
     expect(assetResponse.status).toBe(201);
-    const asset = await assetResponse.json() as { id: string; assetTag: string; qrPublicId: string; ownershipType:string };
+    const asset = await assetResponse.json() as { id: string; assetTag: string; qrPublicId: string; ownershipType:string; rfidEpc:string };
     expect(asset.assetTag).toMatch(/^INC-[0-9A-F]{12}$/);
     expect(asset.qrPublicId).toMatch(/^[0-9a-f-]{36}$/i);
     expect(asset.ownershipType).toBe('CLIENT_DEDICATED');
+    expect(asset.rfidEpc).toBe('E2801160600000000000034A');
+
+    const otherCentreAssetResponse=await call('/assets',centreBToken,{locationId:centerBId,name:'Remote access point',category:'IT equipment',serialNumber:'AP-9876',rfidEpc:'E2801160600000000000034B'});
+    expect(otherCentreAssetResponse.status).toBe(201);
+    const otherCentreAsset=await otherCentreAssetResponse.json() as {id:string;rfidEpc:string};
+    expect(otherCentreAsset.rfidEpc).toBe('E2801160600000000000034B');
+    expect((await call(`/assets/rfid/${otherCentreAsset.rfidEpc}`,centreToken)).status).toBe(403);
 
     const qrResponse = await call(`/assets/qr/${asset.qrPublicId}`, centreToken);
     expect(qrResponse.status).toBe(200);
     expect(((await qrResponse.json()) as { id: string }).id).toBe(asset.id);
     const update = await call(`/assets/${asset.id}`, centreToken, { name: 'Core network switch', status: 'in_repair' }, organizationId, 'PATCH');
     expect(update.status).toBe(200);
-    expect(await update.json()).toMatchObject({qrPublicId:asset.qrPublicId,name:'Core network switch',ownershipType:'CLIENT_DEDICATED'});
+    expect(await update.json()).toMatchObject({qrPublicId:asset.qrPublicId,name:'Core network switch',ownershipType:'CLIENT_DEDICATED',rfidEpc:asset.rfidEpc});
     expect((await call(`/assets/${asset.id}`,centreToken,{ownershipType:'VENDOR_LEASED'},organizationId,'PATCH')).status).toBe(403);
     expect(await (await call(`/assets/${asset.id}`,hoToken,{ownershipType:'VENDOR_LEASED'},organizationId,'PATCH')).json()).toMatchObject({ownershipType:'VENDOR_LEASED'});
 
@@ -196,8 +210,44 @@ describe('phase two API integration', () => {
     expect(verifiedProgress[0]).toMatchObject({scanned:true,reviewState:'verified'});
     expect(((await (await call('/verification/cycles',centreToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
 
-    const custodian=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'e2e-custodian','Centre Custodian','e2e-custodian@example.test') RETURNING id`,[organizationId]);
-    await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'asset_custodian',$3)`,[organizationId,custodian.rows[0].id,centre.id]);
+    const viewer=await db.query<{id:string}>(`INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'e2e-viewer','Read Only Viewer','e2e-viewer@example.test') RETURNING id`,[organizationId]);
+    await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'viewer',$3)`,[organizationId,viewer.rows[0].id,centre.id]);
+    const viewerToken=await token('e2e-viewer');
+    expect((await call('/assets',viewerToken)).status).toBe(200);
+    expect((await call('/assets',viewerToken,{locationId:centre.id,name:'Viewer write must fail',category:'IT'})).status).toBe(403);
+    expect((await call(`/verification/cycles/${cycle.id}/scans`,viewerToken,{...scanBody,clientEventId:'70000000-0000-4000-8000-000000000002'})).status).toBe(403);
+
+    const managedUserResponse=await call('/users',centreToken,{identitySubject:'e2e-custodian',email:'e2e-custodian@example.test',displayName:'Centre Custodian',role:'asset_custodian',scopeLocationId:floor.id});
+    expect(managedUserResponse.status).toBe(201);
+    const managedUser=await managedUserResponse.json() as {id:string;isActive:boolean;role:string;passwordHash?:string};
+    expect(managedUser).toMatchObject({isActive:true,role:'asset_custodian'});
+    expect(managedUser).not.toHaveProperty('passwordHash');
+    const custodianToken=await token('e2e-custodian');
+    expect(((await (await call('/users',centreToken)).json()) as {id:string}[]).map((row)=>row.id)).toContain(managedUser.id);
+    expect((await call('/users',custodianToken)).status).toBe(403);
+    expect((await call(`/users/${managedUser.id}/active`,centreBToken,{isActive:false},organizationId,'PATCH')).status).toBe(403);
+    expect((await call(`/users/${managedUser.id}/active`,centreToken,{isActive:false},organizationId,'PATCH')).status).toBe(200);
+    expect((await call(`/users/${managedUser.id}/active`,centreToken,{isActive:true},organizationId,'PATCH')).status).toBe(200);
+    const rfidEvent='70000000-0000-4000-8000-000000000010';
+    const rfidBatch={locationId:floor.id,readings:[
+      {epc:asset.rfidEpc,clientEventId:rfidEvent,scannedAt:new Date().toISOString()},
+      {epc:otherCentreAsset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000000011',scannedAt:new Date().toISOString()},
+      {epc:'E2801160600000000000034C',clientEventId:'70000000-0000-4000-8000-000000000012',scannedAt:new Date().toISOString()},
+      {epc:asset.rfidEpc,clientEventId:'70000000-0000-4000-8000-000000000013',scannedAt:new Date().toISOString()},
+    ]};
+    const rfidResponse=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,rfidBatch);
+    expect(rfidResponse.status).toBe(201);
+    expect(await rfidResponse.json()).toMatchObject({receivedCount:4,recordedCount:1,duplicateCount:1,wrongLocationCount:0,notRegisteredCount:2,
+      results:[{epc:asset.rfidEpc,status:'recorded',assetId:asset.id},{epc:otherCentreAsset.rfidEpc,status:'not_registered'},{epc:'E2801160600000000000034C',status:'not_registered'},{epc:asset.rfidEpc,status:'duplicate_read'}]});
+    expect((await db.query<{identification_method:string;asset_id:string}>(`SELECT identification_method,asset_id FROM scan_events WHERE organization_id=$1 AND client_event_id=$2`,[organizationId,rfidEvent])).rows[0]).toMatchObject({identification_method:'rfid',asset_id:asset.id});
+    const repeatedRfid=await call(`/verification/cycles/${cycle.id}/rfid-scans`,custodianToken,rfidBatch);
+    expect(await repeatedRfid.json()).toMatchObject({recordedCount:0,duplicateCount:2,notRegisteredCount:2,
+      results:[{epc:asset.rfidEpc,status:'duplicate'},{epc:otherCentreAsset.rfidEpc,status:'not_registered'},{epc:'E2801160600000000000034C',status:'not_registered'},{epc:asset.rfidEpc,status:'duplicate_read'}]});
+    expect((await call(`/verification/cycles/${cycle.id}/rfid-scans`,centreToken,{locationId:centre.id,readings:[{epc:asset.rfidEpc,clientEventId:rfidEvent,scannedAt:new Date().toISOString()}]})).status).toBe(409);
+    const privateProgress=await call(`/verification/cycles/${cycle.id}/progress`,custodianToken);
+    expect(await privateProgress.json()).toMatchObject([{assetId:asset.id,scanned:true,reviewState:'verified'}]);
+    expect(((await (await call('/verification/cycles',custodianToken)).json()) as {assetCount:number;scannedCount:number}[])[0]).toMatchObject({assetCount:1,scannedCount:1});
+    const custodian={rows:[{id:managedUser.id}]};
     const peopleResponse=await call(`/assets/${asset.id}/custodians`,centreToken);
     expect(peopleResponse.status).toBe(200);
     expect(await peopleResponse.json()).toEqual([{userId:custodian.rows[0].id,displayName:'Centre Custodian'}]);
