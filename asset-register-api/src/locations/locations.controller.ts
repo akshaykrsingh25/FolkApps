@@ -2,7 +2,7 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, U
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { OidcAuthGuard } from '../auth/oidc-auth.guard';
 import { TenantMembershipGuard } from '../auth/tenant-membership.guard';
-import { CreateLocationDto, ListLocationsDto, PatchCoordinatesDto } from './location.dto';
+import { CentreCsvDto, CreateLocationDto, ListLocationsDto, PatchCoordinatesDto } from './location.dto';
 import { LocationsService } from './locations.service';
 
 @Controller('locations')
@@ -18,6 +18,14 @@ export class LocationsController {
   @Post()
   create(@Req() request: AuthenticatedRequest, @Body() body: CreateLocationDto) {
     return this.locations.create(request.actor!, body);
+  }
+
+  @Post('import/preview') previewCentreImport(@Req() request: AuthenticatedRequest, @Body() body: CentreCsvDto) {
+    return this.locations.previewCentreImport(request.actor!, body.csv);
+  }
+
+  @Post('import') importCentres(@Req() request: AuthenticatedRequest, @Body() body: CentreCsvDto) {
+    return this.locations.importCentres(request.actor!, body.csv);
   }
 
   @Patch(':id/coordinates') confirmCoordinates(@Req() request:AuthenticatedRequest,@Param('id',ParseUUIDPipe) id:string,@Body() body:PatchCoordinatesDto) {
