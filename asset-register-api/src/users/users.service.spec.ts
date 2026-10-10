@@ -24,6 +24,7 @@ describe('scoped user management', () => {
       await db.exec(await readFile(new URL(`../../database/migrations/${name}`, import.meta.url), 'utf8'));
     }
     await db.exec(await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
     const query = async <Row extends import('pg').QueryResultRow>(sql: string, values: readonly unknown[] = []) =>
       (await db.query<Row>(sql, [...values])).rows;
     const database = {

@@ -57,6 +57,7 @@ describe('phase two API integration', () => {
     await db.exec(scopedRbacMigration);
     const dualIdentifierMigration = await readFile(new URL('../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
     await db.exec(dualIdentifierMigration);
+    await db.exec(await readFile(new URL('../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(

@@ -6,10 +6,11 @@ import { AssetsService } from './assets.service';
 import { EvidenceController } from '../evidence/evidence.controller';
 import { EvidenceService } from '../evidence/evidence.service';
 import { ObjectStorageService } from '../evidence/object-storage.service';
+import { SignedQrService } from './signed-qr.service';
 
 @Module({
   imports: [AuthModule, AuthorizationModule],
   controllers: [AssetsController, EvidenceController],
-  providers: [AssetsService, EvidenceService, ObjectStorageService],
+  providers: [AssetsService, EvidenceService, ObjectStorageService, SignedQrService],
 })
 export class AssetsModule {}

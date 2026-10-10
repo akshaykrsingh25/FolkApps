@@ -82,6 +82,21 @@ export interface TransferBatchItem { assetId:string; assetTag:string; assetName:
 export interface TransferBatch { id:string; batchReference:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; dispatchedAt:string|null; autoFlagAfter:string|null; completedAt:string|null; handoverNotes:string|null; overdue:boolean; itemCount:number; pendingCount:number; items:TransferBatchItem[]; }
 export interface WarrantyRecord { id:string; coverageKind:string; provider:string|null; servicePhone:string|null; startsOn:string|null; endsOn:string|null; terms:string|null; }
 export interface AssetActivityEvent { id:string; eventType:string; occurredAt:string; actorName:string; details:Record<string,unknown>; }
+export interface AssetExportJob {
+  id: string;
+  status: 'queued'|'running'|'completed'|'failed'|'cancelled'|'expired';
+  scopeLocationId: string|null;
+  scopeLocationName: string|null;
+  filters: { status: string|null; search: string|null };
+  processedRows: number;
+  resultBytes: number|null;
+  resultSha256: string|null;
+  failureCode: string|null;
+  createdAt: string;
+  startedAt: string|null;
+  completedAt: string|null;
+  expiresAt: string|null;
+}
 export interface AssetCustody { custodyId:string; custodianUserId:string; custodianName:string; issuedByName:string|null; issuedAt:string; issueCondition:string; issueNotes:string|null; returnedByName:string|null; returnedAt:string|null; returnCondition:string|null; returnNotes:string|null; }
 export interface EligibleCustodian { userId:string; displayName:string; }
 export interface OperationalAlert { id:string; kind:string; severity:'high'|'medium'|'low'; title:string; description:string; assetId:string; assetTag:string; assetName:string; locationName:string; occurredAt:string; relatedId:string|null; }

@@ -3,6 +3,7 @@ import { DatabaseService } from '../database.service';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { CreateAssetDto, ListAssetsDto, UpdateAssetDto } from './asset.dto';
+import { SignedQrService } from './signed-qr.service';
 
 export interface AssetRow {
   id: string;
@@ -50,7 +51,11 @@ const ASSET_COLUMNS = `a.id, a.location_id AS "locationId", l.name AS "locationN
 
 @Injectable()
 export class AssetsService {
-  constructor(private readonly database: DatabaseService, private readonly authorization: AuthorizationService) {}
+  constructor(
+    private readonly database: DatabaseService,
+    private readonly authorization: AuthorizationService,
+    private readonly signedQr: SignedQrService,
+  ) {}
 
   async list(actor: ActorContext, filters: ListAssetsDto) {
     if (filters.locationId) await this.authorization.assertLocationAccess(actor, filters.locationId);
@@ -83,12 +88,21 @@ export class AssetsService {
   }
 
   async getByQr(actor: ActorContext, qrPublicId: string): Promise<AssetRow> {
+    const identity = this.signedQr.resolve(qrPublicId, actor.organizationId) ?? qrPublicId;
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(identity)) {
+      throw new BadRequestException('QR identity is invalid');
+    }
     const rows = await this.database.query<AssetRow>(
       `SELECT ${ASSET_COLUMNS} FROM assets a JOIN locations l ON l.organization_id = a.organization_id AND l.id = a.location_id
         WHERE a.organization_id = $1::uuid AND a.qr_public_id = $2::uuid`,
-      [actor.organizationId, qrPublicId],
+      [actor.organizationId, identity],
     );
     return this.assertVisible(actor, rows[0]);
+  }
+
+  async signedQrForAsset(actor: ActorContext, id: string) {
+    const asset = await this.getById(actor, id);
+    return this.signedQr.issue(actor.organizationId, asset.qrPublicId);
   }
 
   async getByRfidEpc(actor: ActorContext, epc: string): Promise<AssetRow> {

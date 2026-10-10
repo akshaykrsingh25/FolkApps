@@ -20,6 +20,8 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(scopedRbacMigration);
     const dualIdentifierMigration = await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
     await db.exec(dualIdentifierMigration);
+    const exportMigration = await readFile(new URL('../../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8');
+    await db.exec(exportMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -31,7 +33,7 @@ describe('initial PostgreSQL schema', () => {
     expect(result.rows.map((row) => row.table_name)).toEqual(expect.arrayContaining([
       'organizations', 'users', 'role_assignments', 'locations', 'assets', 'warranties', 'evidence',
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
-      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies',
+      'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs',
     ]));
   });
 
@@ -42,6 +44,7 @@ describe('initial PostgreSQL schema', () => {
     expect(grants.rows.filter((row) => row.role_key === 'viewer').map((row) => row.permission_key)).toEqual(['asset:read']);
     expect(grants.rows.some((row) => row.role_key === 'asset_custodian' && row.permission_key === 'transfer:approve')).toBe(false);
     expect(grants.rows.some((row) => row.role_key === 'centre_head' && row.permission_key === 'user:manage')).toBe(true);
+    expect(grants.rows.filter((row) => row.permission_key === 'asset:export').map((row) => row.role_key).sort()).toEqual(['centre_head', 'head_office', 'state_head']);
     await expect(db.query('SELECT phone_number FROM users LIMIT 0')).resolves.toBeDefined();
   });
 

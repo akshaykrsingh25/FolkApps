@@ -3,6 +3,7 @@ import { SetMetadata } from '@nestjs/common';
 export const PERMISSION_KEYS = [
   'asset:read',
   'asset:write',
+  'asset:export',
   'transfer:create',
   'transfer:approve',
   'handover:execute',

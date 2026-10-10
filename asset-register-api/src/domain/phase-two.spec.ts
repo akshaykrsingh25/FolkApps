@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
+import { generateKeyPairSync } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AssetsService } from '../assets/assets.service';
+import { SignedQrService } from '../assets/signed-qr.service';
 import { LocationsService } from '../locations/locations.service';
 
 describe('phase two: location and asset workflows', () => {
@@ -26,6 +28,7 @@ describe('phase two: location and asset workflows', () => {
     await db.exec(scopedRbacMigration);
     const dualIdentifierMigration = await readFile(new URL('../../database/migrations/005_dual_asset_identifiers.sql', import.meta.url), 'utf8');
     await db.exec(dualIdentifierMigration);
+    await db.exec(await readFile(new URL('../../database/migrations/006_background_asset_exports.sql', import.meta.url), 'utf8'));
     const organization = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('Phase Two','phase-two') RETURNING id`);
     organizationId = organization.rows[0].id;
     const user = await db.query<{ id: string }>(
@@ -47,7 +50,7 @@ describe('phase two: location and asset workflows', () => {
     };
     const authorization = new AuthorizationService(database as never);
     locations = new LocationsService(database as never, authorization);
-    assets = new AssetsService(database as never, authorization);
+    assets = new AssetsService(database as never, authorization, new SignedQrService());
   });
 
   afterAll(async () => { await db.close(); });
@@ -111,6 +114,47 @@ describe('phase two: location and asset workflows', () => {
     await expect(assets.update(viewerActor, registered.id, { name: 'Unauthorized edit' })).rejects.toMatchObject({ status: 403 });
   });
 
+  it('issues signed labels only for assets in the caller scope and resolves them tenant-safely', async () => {
+    const key = generateKeyPairSync('ed25519');
+    const prior = {
+      kid: process.env.ASSET_QR_SIGNING_KEY_ID,
+      privateKey: process.env.ASSET_QR_SIGNING_PRIVATE_KEY,
+      publicKeys: process.env.ASSET_QR_VERIFY_PUBLIC_KEYS_JSON,
+    };
+    try {
+      process.env.ASSET_QR_SIGNING_KEY_ID = 'phase-two-test';
+      process.env.ASSET_QR_SIGNING_PRIVATE_KEY = key.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+      delete process.env.ASSET_QR_VERIFY_PUBLIC_KEYS_JSON;
+      const state = await db.query<{ id: string }>(`SELECT id FROM locations WHERE organization_id=$1 AND kind='state' ORDER BY created_at LIMIT 1`, [organizationId]);
+      const target = await locations.create(actor, { kind: 'centre', name: 'QR target centre', code: 'QR-TARGET', parentId: state.rows[0].id });
+      const other = await locations.create(actor, { kind: 'centre', name: 'QR other centre', code: 'QR-OTHER', parentId: state.rows[0].id });
+      const asset = await assets.create(actor, { locationId: target.id, name: 'Signed label test', category: 'IT' });
+      const signed = await assets.signedQrForAsset(actor, asset.id);
+      expect(signed.value).toMatch(/^INCU1\./);
+      await expect(assets.getByQr(actor, signed.value)).resolves.toMatchObject({ id: asset.id, qrPublicId: asset.qrPublicId });
+
+      const scopedUser = await db.query<{ id: string }>(
+        `INSERT INTO users (organization_id,identity_subject,display_name,email) VALUES ($1,'signed-qr-scope','Scoped User','signed-qr-scope@example.test') RETURNING id`,
+        [organizationId],
+      );
+      await db.query(`INSERT INTO role_assignments (organization_id,user_id,role_key,scope_location_id) VALUES ($1,$2,'centre_head',$3)`,
+        [organizationId, scopedUser.rows[0].id, other.id]);
+      const outOfScopeActor: ActorContext = {
+        userId: scopedUser.rows[0].id,
+        organizationId,
+        subject: 'signed-qr-scope',
+        memberships: [{ role: 'centre_head', scopeLocationId: other.id }],
+      };
+      await expect(assets.signedQrForAsset(outOfScopeActor, asset.id)).rejects.toMatchObject({ status: 403 });
+      await expect(assets.getByQr({ ...actor, organizationId: '30000000-0000-4000-8000-000000000001' }, signed.value))
+        .rejects.toMatchObject({ status: 400 });
+    } finally {
+      restoreEnv('ASSET_QR_SIGNING_KEY_ID', prior.kid);
+      restoreEnv('ASSET_QR_SIGNING_PRIVATE_KEY', prior.privateKey);
+      restoreEnv('ASSET_QR_VERIFY_PUBLIC_KEYS_JSON', prior.publicKeys);
+    }
+  });
+
   it('previews and imports a centre CSV atomically, with explicit state and duplicate review', async () => {
     const csv = 'Center Code,Center Name,City,State,Location Kind,Parent Center Code\nCSV-01,"New, Ahmedabad Centre",Ahmedabad,Gujarat,centre,\nCSV-02,Surat Workspace,Surat,Gujarat,centre,\n,Floor 2,Ahmedabad,Gujarat,floor,CSV-01\n';
     const preview = await locations.previewCentreImport(headOffice, csv);
@@ -157,3 +201,8 @@ describe('phase two: location and asset workflows', () => {
     expect(imported.centres.find((centre) => centre.code === 'IKDS')?.name).toBe('iKeva Divyasree');
   });
 });
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}

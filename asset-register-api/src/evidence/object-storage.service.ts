@@ -1,6 +1,7 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { createReadStream } from 'node:fs';
 
 @Injectable()
 export class ObjectStorageService {
@@ -48,5 +49,36 @@ export class ObjectStorageService {
   async createDownloadUrl(key: string) {
     if (!this.bucket) throw new ServiceUnavailableException('Private evidence storage is not configured');
     return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.bucket, Key: key }), { expiresIn: 300 });
+  }
+
+  async createExportDownloadUrl(key: string, exportId: string) {
+    if (!this.bucket) throw new ServiceUnavailableException('Private export storage is not configured');
+    return getSignedUrl(this.client, new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ResponseContentType: 'text/csv; charset=utf-8',
+      ResponseContentDisposition: `attachment; filename="asset-register-${exportId}.csv"`,
+      ResponseCacheControl: 'private, no-store',
+    }), { expiresIn: 300 });
+  }
+
+  async uploadPrivateFile(input: { key: string; filePath: string; byteSize: number; sha256: string; contentType: string }) {
+    if (!this.bucket) throw new ServiceUnavailableException('Private export storage is not configured');
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: input.key,
+      Body: createReadStream(input.filePath),
+      ContentLength: input.byteSize,
+      ContentType: input.contentType,
+      ChecksumSHA256: Buffer.from(input.sha256, 'hex').toString('base64'),
+      Metadata: { sha256: input.sha256 },
+      ...(this.enforceKms ? { ServerSideEncryption: 'aws:kms' as const } : {}),
+      ...(this.enforceKms && this.kmsKeyId ? { SSEKMSKeyId: this.kmsKeyId } : {}),
+    }));
+  }
+
+  async deletePrivateObject(key: string) {
+    if (!this.bucket) throw new ServiceUnavailableException('Private export storage is not configured');
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }

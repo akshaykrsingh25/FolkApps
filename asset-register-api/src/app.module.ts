@@ -11,9 +11,10 @@ import { VerificationModule } from './verification/verification.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { InsightsModule } from './insights/insights.module';
 import { UsersModule } from './users/users.module';
+import { ExportsModule } from './exports/exports.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule, UsersModule],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule, UsersModule, ExportsModule],
   controllers: [HealthController],
 })
 export class AppModule {}

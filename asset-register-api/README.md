@@ -11,13 +11,15 @@ NestJS + TypeScript service foundation for the nationwide asset register. This p
 - `database/migrations/003_ownership_and_transfer_batches.sql` — asset ownership classification and tenant-scoped, multi-asset transfer manifests with per-item receipt discrepancies.
 - `database/migrations/004_scoped_rbac_and_user_profiles.sql` — user contact fields, duplicate-grant protection, and a role-to-permission matrix.
 - `database/migrations/005_dual_asset_identifiers.sql` — optional tenant-unique RFID EPCs on assets and identification method on every scan event.
+- `database/migrations/006_background_asset_exports.sql` — background CSV export jobs, retry leases, short retention, and least-privilege `asset:export` grants.
+- Asset labels can use tenant-bound Ed25519 signatures. The private signing key remains server-side; the public verification key is distributed to the web client for offline checks.
 - `.env.example` — configuration names only; copy to a local ignored `.env` and never commit credentials.
 
 Production access uses the configured OIDC provider. The app does not issue local passwords, store password hashes, or create a second JWT/MFA system. After authentication, the API resolves the OIDC subject to an active organization user and checks that user's scoped roles and permission grants on each protected route.
 
 ## Local setup
 
-Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. For an existing database through migration 003, apply `npm run db:migrate:scoped-rbac`, then `npm run db:migrate:dual-identifiers`. Install dependencies, then run `npm run start:dev`.
+Requires Node.js 24 LTS and PostgreSQL 16 or 17. Copy `.env.example` to `.env` and set `DATABASE_URL`. For a fresh database, run `npm run db:migrate`. For an existing database through migration 005, run `npm run db:migrate:background-exports` after the earlier migrations. Install dependencies, then run `npm run start:dev`.
 
 Run `npm test` for authentication, tenant-membership, location-scope, and PostgreSQL schema checks. The schema tests use an embedded PostgreSQL runtime and do not need a running database service.
 
@@ -42,8 +44,19 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 - The Watch queue is currently in-app. Automated push, email, or messaging delivery requires a production scheduler and a notification provider; the seven-day stalled-transfer threshold should be configured by Head Office before the pilot.
 - The web scanner uses the device camera for QR/barcode lookup. Browser-side support for compatible BLE/UHF RFID readers and printers still needs a managed Android/native client, selected hardware, and vendor integration; browsers cannot silently pair arbitrary readers or provide raw Bluetooth printer sockets. See `docs/security-and-workflow-review.md` for the recommended pilot boundary.
 - An asset can also carry an optional tenant-unique hexadecimal RFID EPC. `GET /api/v1/assets/rfid/:epc` resolves one EPC within the caller's role scope. `POST /api/v1/verification/cycles/:id/rfid-scans` accepts up to 5,000 EPC readings, records authorized matches as idempotent `rfid` scan events, and reports duplicates, unknown tags, and tags found in another location. A floor custodian sees only EPCs and cycle progress inside assigned locations. The web app supports entering one EPC or receiving one from a compatible keyboard-wedge reader; the batch route is the adapter boundary for a future supported handheld. No UHF reader, printer, gate, chip lock, or RFID hardware is connected by these files.
-- EPCs are opaque values at this layer; choose and validate an allocation scheme with GS1 and the label supplier before mass encoding. No tag access passwords or factory chip identifiers are stored. QR labels continue to encode the asset's random, authenticated lookup ID; they are not signed or verifiable offline.
+- EPCs are opaque values at this layer; choose and validate an allocation scheme with GS1 and the label supplier before mass encoding. No tag access passwords or factory chip identifiers are stored.
+- `GET /api/v1/assets/:id/qr` returns a signed QR value after checking the caller's normal asset scope. `GET /api/v1/assets/qr/:qrPublicId` continues to resolve legacy UUID labels and also verifies signed `INCU1` labels on the server. Signed claims contain only version, key ID, organization ID, and the random QR identity; asset names, serials, centre details, and secrets are not encoded. Offline scanning verifies the Ed25519 signature with the configured public key before resolving the cached asset. Legacy UUID labels remain supported.
+- Configure `ASSET_QR_SIGNING_KEY_ID` and `ASSET_QR_SIGNING_PRIVATE_KEY` in the API secret manager, `ASSET_QR_VERIFY_PUBLIC_KEYS_JSON` in the API runtime, and the matching public-key map in `VITE_ASSET_QR_PUBLIC_KEYS_JSON` at web build time. Keep old public keys in both key maps while their printed labels remain in use. If signing is not configured, live label issuance fails closed; it does not silently produce a new unsigned label. Never place a private key in the frontend or repository.
+- A valid signature shows that a trusted key issued the code; it does not prevent photocopying, prove that the tag remains attached to the asset, or authenticate a person. RFID writing, hybrid label printing, reader pairing, and exit portals still require a selected hardware/native-device pilot.
 - The six optional post-core modules (BOQ/Fast-Bind, client handover, vendor SLAs, consumables, indoor floorplans, and e-waste/ESG) have been assessed but are not implemented. See `docs/post-core-capability-roadmap.md` for the corrected design, rollout order, and policy gates.
+
+## Background asset exports
+
+- `POST /api/v1/exports/assets` queues an assets CSV and returns a job ID. `GET /api/v1/exports` lists the requester's jobs; `GET /api/v1/exports/:id` returns status; `POST /api/v1/exports/:id/cancel` cancels a queued job; `GET /api/v1/exports/:id/download` creates a five-minute private download link after current permission and location checks.
+- The `asset:export` permission is granted to Head Office, State Head, and Centre Head roles. Head Office can request an organization-wide file; every other role must select an assigned location. The export rechecks the requester's active permission and scope before publishing, and only the requester can download it.
+- Jobs are claimed with PostgreSQL `FOR UPDATE SKIP LOCKED`, a lease token, and up to three attempts. CSV generation uses keyset pages inside a consistent read snapshot, formula-safe cell encoding, and hard limits of 250,000 rows and 100 MiB. Each output records a SHA-256 checksum; progress and request/completion/download events are auditable.
+- Run one or more workers from the same release with `npm run worker:exports`. Run this as a separate process with database access and the same private S3-compatible storage configuration as the API. Objects remain private, use KMS in production, and are deleted after seven days. Add a bucket lifecycle rule to remove objects under `*/exports/` after eight days as a backstop for files left by an interrupted worker. The worker never logs asset rows or file contents.
+- The queue limits each user to three active jobs and each organization to fifty. Operations must keep the worker process supervised and configure the private object bucket, KMS access, and backup/retention policy before production use.
 
 ## Centre directory
 

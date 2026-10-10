@@ -32,8 +32,14 @@ export class AssetsController {
 
   @Get('qr/:qrPublicId')
   @RequirePermission('asset:read')
-  getByQr(@Req() request: AuthenticatedRequest, @Param('qrPublicId', ParseUUIDPipe) qrPublicId: string) {
+  getByQr(@Req() request: AuthenticatedRequest, @Param('qrPublicId') qrPublicId: string) {
     return this.assets.getByQr(request.actor!, qrPublicId);
+  }
+
+  @Get(':id/qr')
+  @RequirePermission('asset:write')
+  signedQrForAsset(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.assets.signedQrForAsset(request.actor!, id);
   }
 
   @Get('rfid/:epc')

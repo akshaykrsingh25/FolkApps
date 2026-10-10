@@ -4,14 +4,15 @@ import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
-import type { Asset, AssetActivityEvent, AssetCustody, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, OperationalAlert, Organization, Role, SessionUser, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
 import { findTransferReceiptAsset, validateTransferReceiptScans } from './domain/transferReceipt';
+import { isSignedAssetQr, qrIdentityForOfflineLookup, verifySignedAssetQr } from './domain/signedQr';
 import { Icon } from './ui/Icon';
 import { CodeScanner } from './capture/CodeScanner';
 import { extractInvoiceSuggestions, readImageText, type CaptureSuggestions } from './capture/ocr';
 import { enqueueOfflineAsset, enqueueVerificationScan, listOfflineAssets, listVerificationScans, markOfflineAssetError, markVerificationScanError, removeOfflineAsset, removeOfflineAssetAttachment, removeVerificationScan, type OfflineAssetDraft, type PendingAttachment, type PendingCapture, type PendingVerificationScan } from './capture/offlineQueue';
 
-type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
+type View = 'home' | 'alerts' | 'map' | 'locations' | 'assets' | 'exports' | 'verify' | 'reports' | 'transfers' | 'users' | 'asset-form' | 'asset-detail' | 'qr-label' | 'scanner';
 const DEMO_MODE = import.meta.env.DEV && import.meta.env.VITE_DEMO_MODE === 'true';
 const KINDS: LocationKind[] = ['state', 'centre', 'warehouse', 'building', 'floor', 'area'];
 const PARENT_KINDS: Record<LocationKind, LocationKind[]> = {
@@ -40,6 +41,13 @@ function featurePath(feature:MapFeature,bounds:ReturnType<typeof mapBounds>) {
 function stateKey(value:string) { const normalized=value.toLowerCase().replaceAll('&','and').replace(/[^a-z]/g,''); return ({orissa:'odisha',uttaranchal:'uttarakhand',pondicherry:'puducherry'} as Record<string,string>)[normalized]||normalized; }
 function isWithinLocation(locations:Location[],childId:string,ancestorId:string) { let current=locations.find((item)=>item.id===childId); while(current){if(current.id===ancestorId)return true;current=locations.find((item)=>item.id===current?.parentId);}return false; }
 function isRfidEpc(value:string) { return /^(?:[A-Fa-f0-9]{2}){4,32}$/.test(value.trim()); }
+function formatBytes(value:number) { return value<1024?`${value} B`:value<1024*1024?`${(value/1024).toFixed(1)} KB`:`${(value/(1024*1024)).toFixed(1)} MB`; }
+function exportFailureMessage(code:string|null) {
+  if(code==='access_revoked')return 'Access changed while this export was being prepared. Ask an administrator to check your scope.';
+  if(code==='row_limit_exceeded'||code==='file_limit_exceeded')return 'This export is too large. Choose a smaller location or add a filter.';
+  if(code==='retry_limit')return 'The worker could not prepare this file after several attempts. Try again later.';
+  return 'The file could not be prepared. Try again later or contact support.';
+}
 
 function sessionUser(user: User): SessionUser {
   return {
@@ -102,6 +110,11 @@ export default function App() {
   const [assetStatusFilter,setAssetStatusFilter]=useState('');
   const [assetStatusChoice,setAssetStatusChoice]=useState('active');
   const [assetCursor,setAssetCursor]=useState<string|null>(null);
+  const [assetExports,setAssetExports]=useState<AssetExportJob[]>([]);
+  const [exportsBusy,setExportsBusy]=useState(false);
+  const [exportScopeChoice,setExportScopeChoice]=useState('');
+  const [exportStatusChoice,setExportStatusChoice]=useState('');
+  const [exportSearchChoice,setExportSearchChoice]=useState('');
   const [loadingMoreAssets,setLoadingMoreAssets]=useState(false);
   const [busy, setBusy] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -256,6 +269,25 @@ export default function App() {
   },[user,organization,view]);
 
   useEffect(()=>{
+    if(!user||!organization||view!=='exports'||DEMO_MODE)return;
+    let active=true;
+    let timer=0;
+    setExportsBusy(true);
+    const refresh=async()=>{
+      try {
+        const jobs=await api.assetExports(user.accessToken,organization.id);
+        if(!active)return;
+        setAssetExports(jobs);
+        if(jobs.some((job)=>job.status==='queued'||job.status==='running'))timer=window.setTimeout(()=>void refresh(),2500);
+      } catch(reason) {
+        if(active){setError(errorMessage(reason));timer=window.setTimeout(()=>void refresh(),5000);}
+      } finally { if(active)setExportsBusy(false); }
+    };
+    void refresh();
+    return()=>{active=false;window.clearTimeout(timer);};
+  },[user,organization,view]);
+
+  useEffect(()=>{
     let active=true;
     fetch('/data/india-states.geojson').then((response)=>{if(!response.ok)throw new Error('Map boundary data is unavailable.');return response.json() as Promise<IndiaGeoJson>;})
       .then((data)=>{if(active)setIndiaGeoJson(data);}).catch(()=>{if(active)setMapLoadError('India state boundaries could not be loaded. The location list is still available.');});
@@ -353,11 +385,23 @@ export default function App() {
   useEffect(() => {
     if (view !== 'qr-label' || !selectedAsset) return;
     let active = true;
-    void QRCode.toDataURL(selectedAsset.qrPublicId, { width: 260, margin: 1, errorCorrectionLevel: 'Q', color: { dark: '#182c43', light: '#ffffff' } })
-      .then((value) => { if (active) setQrImage(value); })
-      .catch(() => { if (active) setError('Could not prepare the QR label.'); });
+    setQrImage('');
+    void (async () => {
+      try {
+        const payload = DEMO_MODE
+          ? selectedAsset.qrPublicId
+          : user && organization
+            ? (await api.signedAssetQr(user.accessToken, organization.id, selectedAsset.id)).value
+            : '';
+        if (!payload) throw new Error('Sign in and select an organization to issue this QR label.');
+        const value = await QRCode.toDataURL(payload, { width: 260, margin: 1, errorCorrectionLevel: 'Q', color: { dark: '#182c43', light: '#ffffff' } });
+        if (active) setQrImage(value);
+      } catch (reason) {
+        if (active) setError(errorMessage(reason));
+      }
+    })();
     return () => { active = false; };
-  }, [view, selectedAsset]);
+  }, [view, selectedAsset, user, organization]);
 
   useEffect(() => () => { if (assetPhotoUrl) URL.revokeObjectURL(assetPhotoUrl); }, [assetPhotoUrl]);
 
@@ -387,6 +431,9 @@ export default function App() {
   const selectedMapChildren = selectedMapLocation ? locations.filter((location)=>location.parentId===selectedMapLocation.id) : [];
   const canConfirmCoordinates = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
   const canManageUsers = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const canWriteAssets = organization?.roles.some((item)=>item.role!=='viewer') || false;
+  const canExportAssets = organization?.roles.some((item)=>['head_office','state_head','centre_head'].includes(item.role)) || false;
+  const canExportOrganization = organization?.roles.some((item)=>item.role==='head_office'&&item.scopeLocationId===null) || false;
   const userRoleChoices:Role[] = organization?.roles.some((item)=>item.role==='head_office')
     ? ['state_head','centre_head','asset_custodian','viewer']
     : organization?.roles.some((item)=>item.role==='state_head')
@@ -498,12 +545,13 @@ export default function App() {
     const rfid=isRfidEpc(normalizedCode);
     try {
       if (!navigator.onLine) {
-        const local=assets.find((asset)=>asset.qrPublicId.toLowerCase()===normalizedCode.toLowerCase()||asset.assetTag.toLowerCase()===normalizedCode.toLowerCase()||asset.serialNumber?.toLowerCase()===normalizedCode.toLowerCase()||asset.rfidEpc?.toLowerCase()===normalizedCode.toLowerCase());
+        const localIdentity=await qrIdentityForOfflineLookup(normalizedCode,organization.id);
+        const local=assets.find((asset)=>asset.qrPublicId.toLowerCase()===localIdentity.toLowerCase()||asset.assetTag.toLowerCase()===normalizedCode.toLowerCase()||asset.serialNumber?.toLowerCase()===normalizedCode.toLowerCase()||asset.rfidEpc?.toLowerCase()===normalizedCode.toLowerCase());
         if (!local) throw new Error('This item is not in the device’s saved asset list. Connect to the network before verifying it.');
         const queued=await enqueueVerificationScan({id:crypto.randomUUID(),organizationId:organization.id,cycleId:activeCycle.id,assetId:local.id,locationId:scanLocationId||local.locationId,scannedAt:new Date().toISOString(),identificationMethod:rfid?'rfid':'qr'});
         setPendingScans((items)=>[...items,queued]); setVerificationScanCycleId(null); setView('verify'); setNotice(`${local.assetTag} saved securely on this device. It will sync when you are online.`); return;
       }
-      const isQr=/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode);
+      const isQr=isSignedAssetQr(normalizedCode)||/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode);
       const found=rfid ? await api.assetByRfidEpc(user.accessToken,organization.id,normalizedCode).catch(()=>null) : isQr ? await api.assetByQr(user.accessToken,organization.id,normalizedCode).catch(()=>null) : null;
       const matching=found || (await api.assets(user.accessToken,organization.id,normalizedCode)).data.find((asset)=>asset.assetTag.toLowerCase()===normalizedCode.toLowerCase()||asset.serialNumber?.toLowerCase()===normalizedCode.toLowerCase());
       if (!matching) throw new Error('No asset matched that code. Check the tag or scan again.');
@@ -626,13 +674,58 @@ export default function App() {
     finally{setSaving(false);}
   }
 
-  function recordBatchReceiptScan(batch:TransferBatch,code:string) {
-    const item=findTransferReceiptAsset(batch.items,code);
+  async function recordBatchReceiptScan(batch:TransferBatch,code:string) {
+    let identity=code.trim();
+    try {
+      if(isSignedAssetQr(identity)) {
+        if(!organization) throw new Error('Select an organization before scanning a signed label.');
+        identity=navigator.onLine&&user&&!DEMO_MODE
+          ? (await api.assetByQr(user.accessToken,organization.id,identity)).qrPublicId
+          : (await verifySignedAssetQr(identity,organization.id)).qrPublicId;
+      }
+    } catch(reason) { setBatchReceiptScannerId('');setError(errorMessage(reason));return; }
+    const item=findTransferReceiptAsset(batch.items,identity);
     setBatchReceiptScannerId('');
     if(!item){setError('That QR or barcode is not part of this manifest. No item was confirmed.');return;}
     if((scannedBatchReceiptIds[batch.id]||[]).includes(item.assetId)){setNotice(`${item.assetTag} has already been scanned for this receipt.`);return;}
     setScannedBatchReceiptIds((current)=>({...current,[batch.id]:[...(current[batch.id]||[]),item.assetId]}));
     setNotice(`${item.assetTag} matched this manifest. Choose its condition before confirming receipt.`);
+  }
+
+  async function createAssetExport(event:FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if(!user||!organization||DEMO_MODE)return;
+    const scopeLocationId=exportScopeChoice.trim();
+    if(!scopeLocationId&&!canExportOrganization){setError('Choose a state, centre, floor, or area for this export.');return;}
+    setSaving(true);setError('');
+    try {
+      const job=await api.createAssetExport(user.accessToken,organization.id,{
+        clientRequestId:crypto.randomUUID(),
+        ...(scopeLocationId?{scopeLocationId}:{}),
+        ...(exportStatusChoice?{status:exportStatusChoice}:{}),
+        ...(exportSearchChoice.trim()?{search:exportSearchChoice.trim()}:{}),
+      });
+      setAssetExports((items)=>[job,...items.filter((item)=>item.id!==job.id)]);
+      setNotice('Export queued. You can leave this page while the register is prepared.');
+    } catch(reason) { setError(errorMessage(reason)); }
+    finally { setSaving(false); }
+  }
+
+  async function cancelAssetExport(job:AssetExportJob) {
+    if(!user||!organization)return;
+    try {
+      const updated=await api.cancelAssetExport(user.accessToken,organization.id,job.id);
+      setAssetExports((items)=>items.map((item)=>item.id===updated.id?updated:item));
+      setNotice('Queued export cancelled.');
+    } catch(reason) { setError(errorMessage(reason)); }
+  }
+
+  async function downloadAssetExport(job:AssetExportJob) {
+    if(!user||!organization)return;
+    try {
+      const result=await api.assetExportDownload(user.accessToken,organization.id,job.id);
+      window.location.assign(result.downloadUrl);
+    } catch(reason) { setError(errorMessage(reason)); }
   }
 
   async function createWarrantyRecord(event:FormEvent<HTMLFormElement>) {
@@ -783,14 +876,15 @@ export default function App() {
     setError(''); setNotice('Looking up this code…');
     try {
       if (!navigator.onLine) {
-        const localMatch = assets.find((asset) => asset.qrPublicId.toLowerCase() === normalizedCode.toLowerCase() || asset.assetTag.toLowerCase() === normalizedCode.toLowerCase() || asset.serialNumber?.toLowerCase() === normalizedCode.toLowerCase() || asset.rfidEpc?.toLowerCase() === normalizedCode.toLowerCase());
+        const localIdentity=await qrIdentityForOfflineLookup(normalizedCode,organization.id);
+        const localMatch = assets.find((asset) => asset.qrPublicId.toLowerCase() === localIdentity.toLowerCase() || asset.assetTag.toLowerCase() === normalizedCode.toLowerCase() || asset.serialNumber?.toLowerCase() === normalizedCode.toLowerCase() || asset.rfidEpc?.toLowerCase() === normalizedCode.toLowerCase());
         if (localMatch) { setSelectedAsset(localMatch); setNotice('Asset found in this device’s available records.'); setView('asset-detail'); }
         else { setNotice(''); setError('This asset is not in the device’s saved records. Connect to the network to search all centres.'); }
         return;
       }
       const byIdentity = isRfidEpc(normalizedCode)
         ? DEMO_MODE ? (await demoStore.assets()).find((asset)=>asset.rfidEpc?.toLowerCase()===normalizedCode.toLowerCase())||null : await api.assetByRfidEpc(user.accessToken, organization.id, normalizedCode).catch(() => null)
-        : /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode)
+        : isSignedAssetQr(normalizedCode)||/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(normalizedCode)
           ? DEMO_MODE ? await demoStore.assetByQr(normalizedCode) : await api.assetByQr(user.accessToken, organization.id, normalizedCode).catch(() => null)
           : null;
       if (byIdentity) { setSelectedAsset(byIdentity); setNotice('Asset found.'); setView('asset-detail'); return; }
@@ -897,7 +991,7 @@ export default function App() {
           <button className={view === 'alerts' ? 'selected' : ''} onClick={() => setView('alerts')}><Icon name="watch" />Watch{operationalAlerts.length>0&&<span className="nav-count">{operationalAlerts.length>99?'99+':operationalAlerts.length}</span>}</button>
           <button className={view === 'map' ? 'selected' : ''} onClick={() => {setSelectedMapState('');setSelectedMapCentreId('');setSelectedMapLocationId('');setView('map');}}><Icon name="pin" />India map</button>
           <button className={view === 'locations' ? 'selected' : ''} onClick={() => setView('locations')}><Icon name="pin" />Locations</button>
-          <button className={view === 'assets' || view === 'asset-detail' || view === 'asset-form' || view === 'qr-label' || view === 'scanner' ? 'selected' : ''} onClick={() => setView('assets')}><Icon name="asset" />Assets</button>
+          <button className={view === 'assets' || view === 'exports' || view === 'asset-detail' || view === 'asset-form' || view === 'qr-label' || view === 'scanner' ? 'selected' : ''} onClick={() => setView('assets')}><Icon name="asset" />Assets</button>
           <button className={view === 'verify' ? 'selected' : ''} onClick={() => setView('verify')}><Icon name="check" />Verify</button>
           <button className={view === 'reports' ? 'selected' : ''} onClick={() => setView('reports')}><Icon name="asset" />Reports</button>
           <button className={view === 'transfers' ? 'selected' : ''} onClick={() => setView('transfers')}><Icon name="arrow" />Transfers</button>
@@ -1005,9 +1099,37 @@ export default function App() {
           </section>}
 
           {view === 'assets' && <section className="view-panel">
-            <p className="eyebrow">ASSET REGISTER</p><div className="view-title-row"><div><h1>Everything accounted for.</h1><p className="view-lead">Search by name, tag, serial number, category, or location.</p></div><div className="inventory-actions"><button className="quiet-button" onClick={() => setView('scanner')}>Scan code</button><button className="primary-button add-button" onClick={startNewAsset}><Icon name="plus" /> Add asset</button></div></div>
+            <p className="eyebrow">ASSET REGISTER</p><div className="view-title-row"><div><h1>Everything accounted for.</h1><p className="view-lead">Search by name, tag, serial number, category, or location.</p></div><div className="inventory-actions">{canExportAssets&&!DEMO_MODE&&<button className="quiet-button" onClick={()=>setView('exports')}>Export register</button>}<button className="quiet-button" onClick={() => setView('scanner')}>Scan code</button><button className="primary-button add-button" onClick={startNewAsset}><Icon name="plus" /> Add asset</button></div></div>
             <div className="inventory-toolbar"><label className="search-box"><Icon name="search" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, QR tag, serial or centre" /></label><label className="status-filter">Status<select value={assetStatusFilter} onChange={(event)=>setAssetStatusFilter(event.target.value)}><option value="">All assets</option><option value="unused">Unused · available</option><option value="active">Active</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option></select></label><span className="count-label">{assets.length} visible</span></div>
             <section className="panel inventory-panel"><AssetRows assets={assets} onSelect={(asset) => { setSelectedAsset(asset); setView('asset-detail'); }} empty="No assets match that search." />{assetCursor&&<button className="quiet-button load-more-button" onClick={()=>void loadMoreAssets()} disabled={loadingMoreAssets}>{loadingMoreAssets?'Loading records…':'Load more assets'}</button>}</section>
+          </section>}
+
+          {view === 'exports' && canExportAssets && !DEMO_MODE && <section className="view-panel exports-view">
+            <button className="back-action" onClick={()=>setView('assets')}>← Back to assets</button>
+            <p className="eyebrow">CONTROLLED DATA · EXPORTS</p>
+            <div className="view-title-row"><div><h1>Prepare a scoped register.</h1><p className="view-lead">Large CSV files are built in the background and stay private to your account.</p></div></div>
+            <div className="exports-layout">
+              <form className="panel entry-form export-request-form" onSubmit={(event)=>void createAssetExport(event)}>
+                <p className="eyebrow">NEW EXPORT</p><h2>Choose what to include.</h2>
+                <label>Location scope<select value={exportScopeChoice} onChange={(event)=>setExportScopeChoice(event.target.value)} required={!canExportOrganization}>
+                  {canExportOrganization?<option value="">Entire organization</option>:<option value="" disabled>Choose a location</option>}
+                  {locations.map((place)=><option key={place.id} value={place.id}>{place.kind.replaceAll('_',' ')} · {place.name}{place.city?` · ${place.city}`:''}</option>)}
+                </select><small>{canExportOrganization?'Organization-wide exports include every location.':'Select a location in your assigned scope; its descendants are included.'}</small></label>
+                <label>Asset status<select value={exportStatusChoice} onChange={(event)=>setExportStatusChoice(event.target.value)}><option value="">All statuses</option><option value="active">Active</option><option value="unused">Unused</option><option value="in_repair">In repair</option><option value="out_of_service">Out of service</option><option value="missing">Missing</option><option value="retired">Retired</option><option value="disposed">Disposed</option></select></label>
+                <label>Search within those assets<input value={exportSearchChoice} onChange={(event)=>setExportSearchChoice(event.target.value)} maxLength={120} placeholder="Tag, name, serial, model, or location" /></label>
+                <p className="export-privacy-note">Includes asset identity, location, status, purchase, and seller fields. The file link expires after 5 minutes; the export is removed after 7 days.</p>
+                <button className="primary-button" disabled={saving||(!canExportOrganization&&!exportScopeChoice)}>{saving?'Queueing export…':'Prepare private CSV'}<span aria-hidden="true">→</span></button>
+              </form>
+              <section className="panel export-jobs-panel">
+                <div className="panel-heading"><div><p className="eyebrow">YOUR REQUESTS</p><h2>Export history</h2></div>{exportsBusy&&<span className="spinner" aria-label="Refreshing export status"/>}</div>
+                {!assetExports.length?<div className="empty-state"><Icon name="history"/><strong>No exports requested yet.</strong><small>Ready files will appear here with their expiry time.</small></div>:<div className="export-job-list">{assetExports.map((job)=><article className="export-job-card" key={job.id}>
+                  <div className="export-job-heading"><span><strong>Asset register</strong><small>{job.scopeLocationName||'Entire organization'}{job.filters.status?` · ${job.filters.status.replaceAll('_',' ')}`:''}{job.filters.search?` · “${job.filters.search}”`:''}</small></span><span className={`status-chip export-status-${job.status}`}>{job.status.replaceAll('_',' ')}</span></div>
+                  <p>{job.status==='running'?`${job.processedRows.toLocaleString('en-IN')} assets processed · preparing file`:job.status==='queued'?'Waiting for the export worker':job.status==='completed'?`${job.processedRows.toLocaleString('en-IN')} assets · ${formatBytes(job.resultBytes||0)}`:job.status==='failed'?exportFailureMessage(job.failureCode):job.status==='expired'?'The private file has expired. Request a new export.':'This queued export was cancelled.'}</p>
+                  <small>Requested {new Date(job.createdAt).toLocaleString('en-IN')}{job.expiresAt?` · File expires ${new Date(job.expiresAt).toLocaleString('en-IN')}`:''}</small>
+                  <div className="export-job-actions">{job.status==='queued'&&<button className="text-button" onClick={()=>void cancelAssetExport(job)}>Cancel</button>}{job.status==='completed'&&<button className="primary-button" onClick={()=>void downloadAssetExport(job)}>Download CSV</button>}</div>
+                </article>)}</div>}
+              </section>
+            </div>
           </section>}
 
           {view === 'asset-form' && <section className="view-panel narrow-view">
@@ -1037,7 +1159,7 @@ export default function App() {
 
           {view === 'scanner' && <>{verificationScanCycleId && <div className="scan-location-choice"><label>Where are you checking?<select value={scanLocationId} onChange={(event)=>setScanLocationId(event.target.value)}><option value="">Use asset’s current register location</option>{locations.map((place)=><option key={place.id} value={place.id}>{place.kind} · {place.name}</option>)}</select></label></div>}<CodeScanner onCode={(code) => void (verificationScanCycleId ? recordCycleScan(code) : findScannedCode(code))} onClose={() => {setVerificationScanCycleId(null);setView(verificationScanCycleId?'verify':'assets');}} /></>}
 
-          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions"><button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setAssetStatusChoice(selectedAsset.status); setView('asset-form'); }}>Edit record</button><button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button></div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Ownership" value={selectedAsset.ownershipType.replaceAll('_',' ').toLowerCase()} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="UHF RFID EPC" value={selectedAsset.rfidEpc || 'Not assigned'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
+          {view === 'asset-detail' && selectedAsset && <section className="view-panel narrow-view"><button className="back-action" onClick={() => setView('assets')}>← Back to register</button><p className="eyebrow">{selectedAsset.category.toUpperCase()} · {selectedAsset.assetTag}</p><div className="detail-title-row"><div><h1>{selectedAsset.name}</h1><p className="view-lead">{selectedAsset.locationName} · {selectedAsset.serialNumber || 'No serial number recorded'}</p></div><div className="detail-actions">{canWriteAssets&&<button className="quiet-button" onClick={() => { setFormSeed(null); setCaptureSuggestions(null); setAssetStatusChoice(selectedAsset.status); setView('asset-form'); }}>Edit record</button>}{canWriteAssets&&<button className="primary-button add-button" onClick={() => setView('qr-label')}>View QR label</button>}</div></div><section className="panel detail-panel"><div className="detail-grid"><Detail label="Status" value={selectedAsset.status.replaceAll('_',' ')} /><Detail label="Condition" value={selectedAsset.condition.replaceAll('_',' ')} /><Detail label="Ownership" value={selectedAsset.ownershipType.replaceAll('_',' ').toLowerCase()} /><Detail label="Manufacturer" value={selectedAsset.manufacturer || 'Not recorded'} /><Detail label="Model" value={selectedAsset.model || 'Not recorded'} /><Detail label="UHF RFID EPC" value={selectedAsset.rfidEpc || 'Not assigned'} /><Detail label="Purchase date" value={selectedAsset.purchaseDate || 'Not recorded'} /><Detail label="Purchase amount" value={selectedAsset.purchaseAmount ? `₹${Number(selectedAsset.purchaseAmount).toLocaleString('en-IN')}` : 'Not recorded'} /><Detail label="Seller" value={selectedAsset.sellerName || 'Not recorded'} /><Detail label="Opaque QR identity" value={selectedAsset.qrPublicId} /></div></section>
             <section className="panel custody-panel"><div className="panel-heading"><div><p className="eyebrow">WHO HAS IT NOW?</p><h2>Custody & handover</h2></div><span className="evidence-count">{activeCustody?'Issued':'Available'}</span></div><p className="custody-intro">Record who takes responsibility for this item, its condition at handover, and when it comes back.</p>{DEMO_MODE?<div className="empty-state custody-empty"><strong>Custody tracking is available in the live register.</strong><small>Sign in to issue an item and keep a handover history.</small></div>:activeCustody?<><div className="custody-active"><span className="custody-person-mark">{activeCustody.custodianName.slice(0,1).toUpperCase()}</span><span><strong>{activeCustody.custodianName}</strong><small>Issued {new Date(activeCustody.issuedAt).toLocaleString('en-IN')} · {activeCustody.issueCondition.replaceAll('_',' ')}</small>{activeCustody.issueNotes&&<small>{activeCustody.issueNotes}</small>}</span></div><form className="custody-form return-custody-form" onSubmit={(event)=>void returnAssetCustody(event,activeCustody)}><label>Condition on return<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Return notes<input name="notes" maxLength={2000} placeholder="Condition, accessories, or discrepancy"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving return…':'Record return'}</button></form></>:eligibleCustodians.length?<form className="custody-form" onSubmit={issueAssetCustody}><label>Issue to<select name="custodianUserId" defaultValue="" required><option value="" disabled>Choose an assigned custodian</option>{eligibleCustodians.map((person)=><option value={person.userId} key={person.userId}>{person.displayName}</option>)}</select></label><label>Condition at handover<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Handover note<input name="notes" maxLength={2000} placeholder="Accessories, location, or purpose"/></label><button className="primary-button" disabled={saving}>{saving?'Recording…':'Issue to custodian'}</button></form>:<div className="empty-state custody-empty"><strong>No eligible custodians are assigned here yet.</strong><small>An organization administrator needs to assign an asset custodian to this centre.</small></div>}{custodyHistory.filter((item)=>item.returnedAt).length>0&&<div className="custody-history"><h3>Previous handovers</h3>{custodyHistory.filter((item)=>item.returnedAt).slice(0,5).map((item)=><article key={item.custodyId}><span><strong>{item.custodianName}</strong><small>Issued {new Date(item.issuedAt).toLocaleDateString('en-IN')} · returned {item.returnedAt?new Date(item.returnedAt).toLocaleDateString('en-IN'):''}</small></span><small>{item.issueCondition.replaceAll('_',' ')} → {item.returnCondition?.replaceAll('_',' ')}</small></article>)}</div>}</section>
             <section className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNTABILITY TRAIL</p><h2>Asset activity</h2></div><span className="evidence-count">{assetActivity.length} events</span></div>{assetActivity.length?<ol className="activity-timeline">{assetActivity.map((event)=><li key={event.id}><span className="activity-node"><Icon name="history"/></span><div className="activity-copy"><strong>{activityTitle(event.eventType)}</strong><p>{activitySummary(event)}</p><small>{event.actorName} · {new Date(event.occurredAt).toLocaleString('en-IN')}</small></div></li>)}</ol>:<div className="empty-state activity-empty"><strong>No activity has been recorded yet.</strong><small>Scans, handovers, reports, transfers, and record changes will appear here.</small></div>}</section>
             <section className="panel warranty-panel"><div className="panel-heading"><div><p className="eyebrow">COVERAGE WATCH</p><h2>Warranty and service</h2></div><span className="evidence-count">{warranties.length} records</span></div>{warranties.map((warranty)=><article className="warranty-row" key={warranty.id}><span className="warranty-mark"><Icon name="check"/></span><span><strong>{warranty.coverageKind.toUpperCase()} · {warranty.provider||'Provider not listed'}</strong><small>{warranty.startsOn||'Start not recorded'} — {warranty.endsOn||'No end date'}{warranty.servicePhone?` · Service ${warranty.servicePhone}`:''}</small></span></article>)}{!warranties.length&&<p className="evidence-empty">No warranty or service coverage recorded yet.</p>}<form className="warranty-create" onSubmit={createWarrantyRecord}><label>Coverage<select name="coverageKind" defaultValue="warranty"><option value="warranty">Warranty</option><option value="guarantee">Guarantee</option><option value="amc">Annual maintenance</option><option value="other">Other</option></select></label><label>Seller or service provider<input name="provider" maxLength={160} defaultValue={selectedAsset.sellerName||''} placeholder="Provider name"/></label><label>Service centre phone<input name="servicePhone" type="tel" maxLength={40} placeholder="Support number"/></label><label>Coverage ends<input name="endsOn" type="date"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving…':'Add coverage'}</button></form></section>

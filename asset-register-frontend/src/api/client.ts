@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, EligibleCustodian, Evidence, Location, ManagedUser, OperationalAlert, Organization, Role, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, EligibleCustodian, Evidence, Location, ManagedUser, OperationalAlert, Organization, Role, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -84,6 +84,10 @@ export const api = {
   assetActivity: (token:string,organizationId:string,assetId:string)=>request<AssetActivityEvent[]>(`/assets/${encodeURIComponent(assetId)}/activity`,token,organizationId),
   assetCustody: (token:string,organizationId:string,assetId:string)=>request<AssetCustody[]>(`/assets/${encodeURIComponent(assetId)}/custody`,token,organizationId),
   eligibleCustodians: (token:string,organizationId:string,assetId:string)=>request<EligibleCustodian[]>(`/assets/${encodeURIComponent(assetId)}/custodians`,token,organizationId),
+  createAssetExport: (token:string,organizationId:string,data:{clientRequestId:string;scopeLocationId?:string;status?:string;search?:string})=>request<AssetExportJob>('/exports/assets',token,organizationId,data),
+  assetExports: (token:string,organizationId:string)=>request<AssetExportJob[]>('/exports',token,organizationId),
+  cancelAssetExport: (token:string,organizationId:string,id:string)=>request<AssetExportJob>(`/exports/${encodeURIComponent(id)}/cancel`,token,organizationId,{},'POST'),
+  assetExportDownload: (token:string,organizationId:string,id:string)=>request<{downloadUrl:string;expiresInSeconds:number;sha256:string|null;byteSize:number|null}>(`/exports/${encodeURIComponent(id)}/download`,token,organizationId),
   issueCustody: (token:string,organizationId:string,assetId:string,data:Record<string,unknown>)=>request<{custodyId:string;issuedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody`,token,organizationId,data),
   returnCustody: (token:string,organizationId:string,assetId:string,custodyId:string,data:Record<string,unknown>)=>request<{custodyId:string;returnedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody/${encodeURIComponent(custodyId)}/return`,token,organizationId,data),
   insightOverview: (token:string,organizationId:string)=>request<InsightOverview>('/insights/overview',token,organizationId),
@@ -92,6 +96,8 @@ export const api = {
   confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),
   assetByQr: (token: string, organizationId: string, qrPublicId: string) =>
     request<Asset>(`/assets/qr/${encodeURIComponent(qrPublicId)}`, token, organizationId),
+  signedAssetQr: (token: string, organizationId: string, assetId: string) =>
+    request<{ value: string; keyId: string; version: number }>(`/assets/${encodeURIComponent(assetId)}/qr`, token, organizationId),
   assetByRfidEpc: (token: string, organizationId: string, epc: string) =>
     request<Asset>(`/assets/rfid/${encodeURIComponent(epc.trim().toUpperCase())}`,token,organizationId),
 };
