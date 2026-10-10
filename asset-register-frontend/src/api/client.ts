@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, OperationalAlert, Organization, Role, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
+import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, OperationalAlert, Organization, Role, RfidScanReconcileResult, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -69,7 +69,7 @@ export const api = {
   recordVerificationScan: (token: string, organizationId: string, cycleId: string, data: { assetId: string; locationId: string; clientEventId: string; scannedAt: string; identificationMethod?: 'qr'|'barcode'|'rfid'|'manual' }) =>
     request<{ id: string; duplicate: boolean }>(`/verification/cycles/${encodeURIComponent(cycleId)}/scans`,token,organizationId,data),
   recordRfidScans: (token: string, organizationId: string, cycleId: string, data: { locationId: string; readings: { epc: string; clientEventId: string; scannedAt: string }[] }) =>
-    request<{ cycleId: string; receivedCount: number; recordedCount: number; duplicateCount: number; wrongLocationCount: number; notRegisteredCount: number }>(`/verification/cycles/${encodeURIComponent(cycleId)}/rfid-scans`,token,organizationId,data),
+    request<RfidScanReconcileResult>(`/verification/cycles/${encodeURIComponent(cycleId)}/rfid-scans`,token,organizationId,data),
   reports: (token:string,organizationId:string)=>request<LifecycleReport[]>('/reports',token,organizationId),
   createReport: (token:string,organizationId:string,data:Record<string,unknown>)=>request<LifecycleReport>('/reports',token,organizationId,data),
   updateReport: (token:string,organizationId:string,id:string,data:Record<string,unknown>)=>request<LifecycleReport>(`/reports/${encodeURIComponent(id)}`,token,organizationId,data,'PATCH'),

@@ -28,6 +28,10 @@ describe('initial PostgreSQL schema', () => {
     await db.exec(physicalAddressMigration);
     const notificationInboxMigration = await readFile(new URL('../../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8');
     await db.exec(notificationInboxMigration);
+    const notificationOutboxWorkerMigration = await readFile(new URL('../../database/migrations/010_notification_outbox_worker.sql', import.meta.url), 'utf8');
+    await db.exec(notificationOutboxWorkerMigration);
+    const verificationWatchIndexesMigration = await readFile(new URL('../../database/migrations/011_verification_watch_indexes.sql', import.meta.url), 'utf8');
+    await db.exec(verificationWatchIndexesMigration);
   });
 
   afterAll(async () => { await db.close(); });
@@ -41,6 +45,14 @@ describe('initial PostgreSQL schema', () => {
       'verification_policies', 'verification_cycles', 'scan_events', 'condition_reports', 'report_evidence',
       'transfer_requests', 'transfer_batches', 'transfer_batch_items', 'audit_events', 'notification_outbox', 'asset_custodies', 'asset_export_jobs', 'asset_rfid_bindings',
     ]));
+    const outboxColumns = await db.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_name='notification_outbox'`,
+    );
+    expect(outboxColumns.rows.map((row) => row.column_name)).toEqual(expect.arrayContaining(['available_at', 'dead_lettered_at']));
+    const watchIndexes = await db.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE schemaname='public'`,
+    );
+    expect(watchIndexes.rows.map((row) => row.indexname)).toEqual(expect.arrayContaining(['scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx']));
   });
 
   it('adds optional physical addresses with an unverified default and a bounded value', async () => {

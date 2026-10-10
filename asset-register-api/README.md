@@ -76,10 +76,13 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 
 ## In-app notifications
 
-- `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns 50 items per cursor page with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Before nationwide high-volume production, move signal fan-out to a durable outbox worker.
+- `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns 50 items per cursor page with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Scheduled missed-cycle notices and report/transfer/missing events use the durable worker; other Watch signal types remain refresh-captured.
 - `PATCH /api/v1/notifications/:id/read` marks one of the caller's notifications read. Both reads and updates are tenant/user scoped and re-check the asset's current location access, so moving an asset or changing a user's role removes stale access to its prior alert history.
-- The inbox captures signals when the signed-in app loads or refreshes. It does not send push, email, or WhatsApp notifications while the app is closed; those require an approved scheduler/provider and delivery policy.
+- `npm run worker:notifications` consumes missing-asset, report, and transfer events from the durable outbox. Delivery into the in-app inbox is transactional and idempotent, recipients are resolved through their current active scoped permissions, and failures retry with backoff before dead-lettering after eight attempts.
+- The worker also sweeps expired verification cycles every five minutes and saves every still-unseen in-scope asset to the inbox, even when nobody opens Watch. Other live Watch signals can still be captured when the signed-in app loads or refreshes. The worker does not send push, email, or WhatsApp notifications while the app is closed; tiered timed escalation and external delivery need an approved policy/provider.
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.
+- Run `npm run db:migrate:notification-outbox-worker` to add retry and dead-letter scheduling fields to an existing notification outbox.
+- Run `npm run db:migrate:verification-watch-indexes` to add the scan/cycle indexes used by the scheduled overdue-cycle sweep.
 
 ## Production boundary
 

@@ -217,6 +217,11 @@ export class AssetsService {
            VALUES ($1::uuid,$2::uuid,'asset.updated','asset',$3::uuid,$4::jsonb)`,
           [actor.organizationId,actor.userId,id,JSON.stringify({ changes,...(dto.statusChangeReason?.trim()?{statusChangeReason:dto.statusChangeReason.trim()}: {}),...(rfidChanged&&rfidChangeReason?{rfidChangeReason}: {}) })],
         );
+        if(dto.status==='missing'&&locked[0].status!=='missing') await query(
+          `INSERT INTO notification_outbox (organization_id,event_type,payload)
+           VALUES ($1::uuid,'asset.marked_missing',$2::jsonb)`,
+          [actor.organizationId,JSON.stringify({assetId:id,locationId:updated.locationId})],
+        );
         return updated;
       });
     } catch (error) {

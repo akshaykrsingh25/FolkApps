@@ -62,6 +62,8 @@ describe('phase two API integration', () => {
     await db.exec(await readFile(new URL('../database/migrations/007_rfid_binding_history.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/008_location_physical_addresses.sql', import.meta.url), 'utf8'));
     await db.exec(await readFile(new URL('../database/migrations/009_notification_inbox.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/010_notification_outbox_worker.sql', import.meta.url), 'utf8'));
+    await db.exec(await readFile(new URL('../database/migrations/011_verification_watch_indexes.sql', import.meta.url), 'utf8'));
     const org = await db.query<{ id: string }>(`INSERT INTO organizations (name,slug) VALUES ('E2E Org','phase-two-e2e') RETURNING id`);
     organizationId = org.rows[0].id;
     const headOffice = await db.query<{ id: string }>(
@@ -387,6 +389,8 @@ describe('phase two API integration', () => {
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing'},organizationId,'PATCH')).status).toBe(409);
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'disposed',statusChangeReason:'Written off'},organizationId,'PATCH')).status).toBe(403);
     expect((await call(`/assets/${duplicateAsset.id}`,centreToken,{status:'missing',statusChangeReason:'Checked with centre head; item not located.'},organizationId,'PATCH')).status).toBe(200);
+    const missingOutbox=await db.query<{count:string}>(`SELECT count(*)::text AS count FROM notification_outbox WHERE organization_id=$1 AND event_type='asset.marked_missing'`,[organizationId]);
+    expect(missingOutbox.rows[0].count).toBe('1');
     await db.query(`INSERT INTO verification_cycles (organization_id,scope_location_id,starts_at,grace_ends_at,status,created_by) VALUES ($1,$2,now()-interval '70 days',now()-interval '10 days','open',$3)`,[organizationId,centre.id,headOfficeId]);
     const urgentNoticeReport=await call('/reports',centreToken,{assetId:duplicateAsset.id,kind:'other',urgency:'urgent',description:'The missing asset requires an urgent centre review.'});
     expect(urgentNoticeReport.status).toBe(201);

@@ -6,7 +6,8 @@ The Asset Register has the software foundation for two identifiers:
 
 - Every asset has a stable, opaque QR identity. Live signed labels use an Ed25519 signature issued by the API; the private key stays server-side and the client can verify with public keys.
 - An asset may also have an optional organization-unique hexadecimal EPC. A verification cycle can accept up to 5,000 reader readings per request. The API checks tenant, cycle, and location scope, normalizes EPC case, deduplicates reads within a batch, and writes idempotent scan events. These limits describe the API contract, not a measured reader speed.
-- The browser can scan QR/barcodes and record one EPC from manual input or a keyboard-wedge reader. It does not pair a UHF sled, write a tag, print a hybrid label, capture RSSI, or operate a gate.
+- The browser can scan QR/barcodes, record one EPC from a keyboard-wedge reader, and import a text/CSV reader export for cycle reconciliation (one EPC in the first column per row). Repeated EPCs are collapsed before submission; the API returns counts for matched, duplicate, misplaced, and unregistered tags. It does not pair a UHF sled, write a tag, stream RSSI, or operate a gate.
+- The printable label contains a signed QR and, when bound, the EPC in human-readable text. It does not encode an RFID inlay; physical writing and read-back still require an approved writer and device adapter.
 
 This is a software foundation and a corrected pilot design. A physical pilot still needs approved devices, a managed native adapter, and site validation; no RFID hardware is connected or assumed by the web app.
 
@@ -40,7 +41,7 @@ Do not enable an automatic gate alarm from EPC detection alone. A portal can rea
 - Select the identifier scheme with GS1 and the tag supplier before bulk encoding. GS1 identifies GIAI for an individual asset; SGTIN is for a serialized trade item. SGTIN-96 has a header, filter, partition, company prefix, item reference, and serial number. The 38-bit portion is a serial number, not a checksum, and the partition controls field widths. Do not encode a custom centre ID into SGTIN fields or use the proposal's `E2` sample as an SGTIN-96 example.
 - The API intentionally stores EPC as an opaque hex string until the scheme and issuer are selected. It does not parse a scheme, store factory TID values, or store tag access passwords. Do not expose a shared signing secret in the mobile app; the QR uses asymmetric signing.
 - Choose on-metal and non-metal inlays against the actual asset surfaces. Adhesive durability, antenna tuning, orientation, nearby metal/liquid, furniture, walls, and reader position affect performance. “Reads through drywall” and quoted range/read-rate figures are not reliable acceptance criteria.
-- For India, confirm the exact reader model, regional firmware, frequency, power, and type-approval path against the current DoT/WPC short-range-device rules and supplier documentation. Do not treat the proposal's 865–867 MHz range as a complete equipment specification.
+- For India, confirm the exact reader model, regional firmware, frequency, power, and equipment type-approval path against the current DoT/WPC short-range-device rules and supplier documentation. The current DoT rules describe 865–868 MHz for short-range devices; do not treat the proposal's 865–867 MHz range as a complete equipment specification.
 - Keep QR and RFID tag lifecycle separate from asset lifecycle. A damaged or replaced tag needs an auditable rebind/reissue trail and the old EPC must stop resolving to the asset. Do not treat tamper-evident label stock as proof that a tag has not been copied or moved.
 - The QR payload uses the API's asymmetric Ed25519 signature format; do not replace it with the proposal's shared HMAC secret in a mobile client. The signature proves trusted issuance, not that a photographed code is still attached to its original asset.
 - Treat any signal-strength/proximity view as an approximate local aid. It is not a surveyed indoor location, and the app should not persist a precise position from RSSI alone.
@@ -65,3 +66,4 @@ The app's 5,000-reading request bound is only a safety limit. Benchmark the full
 - [GS1 General Specifications](https://ref.gs1.org/standards/genspecs/)
 - [GS1 definition of GIAI](https://ref.gs1.org/glossary/giai)
 - [India Department of Telecommunications short-range-device rules, 2021](https://www.dot.gov.in/static/uploads/2025/07/84f33f09e137fa81930f44bcd5f2d238.pdf)
+- [India DoT Equipment Type Approval guidance](https://www.eservices.dot.gov.in/equipment-type-approval-eta)

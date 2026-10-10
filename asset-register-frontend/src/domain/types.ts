@@ -77,6 +77,24 @@ export interface VerificationAsset {
   assetId: string; assetTag: string; name: string; locationId: string; locationName: string; scanned: boolean;
   reviewState: 'verified' | 'not_yet_scanned' | 'unseen_after_window';
 }
+export interface RfidScanReconcileRow {
+  epc: string;
+  status: 'recorded'|'duplicate'|'duplicate_read'|'not_registered'|'wrong_location';
+  assetId?: string;
+  assetTag?: string;
+  assignedLocation?: string;
+  clientEventId: string;
+  scanEventId?: string;
+}
+export interface RfidScanReconcileResult {
+  cycleId: string;
+  receivedCount: number;
+  recordedCount: number;
+  duplicateCount: number;
+  wrongLocationCount: number;
+  notRegisteredCount: number;
+  results: RfidScanReconcileRow[];
+}
 
 export interface LifecycleReport { id:string; assetId:string; assetTag:string; assetName:string; locationId:string; locationName:string; kind:string; status:string; urgency:string; description:string; resolutionNotes?:string|null; reportedAt:string; resolvedAt?:string|null; }
 export interface AssetTransfer { id:string; assetId:string; assetTag:string; assetName:string; fromLocationId:string; fromLocationName:string; toLocationId:string; toLocationName:string; status:string; requestedAt:string; receivedAt?:string|null; handoverNotes?:string|null; }
