@@ -76,7 +76,7 @@ The migrations are intentionally SQL-first so database constraints and tenant-sa
 
 ## In-app notifications
 
-- `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns the latest 200 items with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Before nationwide high-volume production, move signal fan-out to a durable outbox worker and add inbox pagination.
+- `GET /api/v1/notifications` saves up to 200 current, role-scoped Watch signals per refresh into a private per-user inbox and returns 50 items per cursor page with an unread count. The upsert is idempotent, so refreshing does not create duplicate notices. Before nationwide high-volume production, move signal fan-out to a durable outbox worker.
 - `PATCH /api/v1/notifications/:id/read` marks one of the caller's notifications read. Both reads and updates are tenant/user scoped and re-check the asset's current location access, so moving an asset or changing a user's role removes stale access to its prior alert history.
 - The inbox captures signals when the signed-in app loads or refreshes. It does not send push, email, or WhatsApp notifications while the app is closed; those require an approved scheduler/provider and delivery policy.
 - Run `npm run db:migrate:notification-inbox` on an existing database, or `npm run db:migrate` for a fresh setup.

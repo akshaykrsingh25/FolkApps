@@ -92,7 +92,7 @@ export const api = {
   returnCustody: (token:string,organizationId:string,assetId:string,custodyId:string,data:Record<string,unknown>)=>request<{custodyId:string;returnedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody/${encodeURIComponent(custodyId)}/return`,token,organizationId,data),
   insightOverview: (token:string,organizationId:string)=>request<InsightOverview>('/insights/overview',token,organizationId),
   alerts: (token:string,organizationId:string)=>request<OperationalAlert[]>('/insights/alerts',token,organizationId),
-  notifications: (token:string,organizationId:string)=>request<NotificationInbox>('/notifications',token,organizationId),
+  notifications: (token:string,organizationId:string,cursor?:string)=>request<NotificationInbox>(`/notifications${cursor?`?cursor=${encodeURIComponent(cursor)}`:''}`,token,organizationId),
   markNotificationRead: (token:string,organizationId:string,id:string)=>request<{id:string;readAt:string}>(`/notifications/${encodeURIComponent(id)}/read`,token,organizationId,{},'PATCH'),
   mapData: (token:string,organizationId:string)=>request<IndiaMapData>('/insights/map',token,organizationId),
   confirmCentreCoordinates: (token:string,organizationId:string,id:string,data:{latitude:number;longitude:number;physicalAddress?:string|null})=>request<Location>(`/locations/${encodeURIComponent(id)}/coordinates`,token,organizationId,data,'PATCH'),

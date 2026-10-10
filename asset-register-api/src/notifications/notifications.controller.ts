@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Patch, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { OidcAuthGuard } from '../auth/oidc-auth.guard';
 import { TenantMembershipGuard } from '../auth/tenant-membership.guard';
@@ -13,8 +13,8 @@ export class NotificationsController {
 
   @Get()
   @RequirePermission('asset:read')
-  list(@Req() request: AuthenticatedRequest) {
-    return this.notifications.list(request.actor!);
+  list(@Req() request: AuthenticatedRequest, @Query('cursor') cursor?: string) {
+    return this.notifications.list(request.actor!, cursor);
   }
 
   @Patch(':id/read')

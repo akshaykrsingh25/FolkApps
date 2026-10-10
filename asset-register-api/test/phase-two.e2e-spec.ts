@@ -408,6 +408,21 @@ describe('phase two API integration', () => {
     const otherScopeInbox=await (await call('/notifications',centreBToken)).json() as {items:{id:string}[];unreadCount:number};
     expect(otherScopeInbox.items.some((item)=>item.id===urgentNotification!.id)).toBe(false);
     expect((await call(`/notifications/${urgentNotification?.id}/read`,centreBToken,{},organizationId,'PATCH')).status).toBe(404);
+    await db.query(
+      `INSERT INTO notification_inbox (organization_id,recipient_user_id,notification_key,kind,severity,title,description,asset_id,asset_tag,asset_name,location_name,occurred_at)
+       SELECT $1::uuid,$2::uuid,'pagination-test:'||n::text,'missing','low','Pagination test','Verify cursor order and reachability.',$3::uuid,'IT-PAGE','Pagination asset','Centre A',now()-n*interval '1 minute'
+       FROM generate_series(1,53) n`,
+      [organizationId,centerHeadId,duplicateAsset.id],
+    );
+    const firstNotificationPage=await (await call('/notifications',centreToken)).json() as {items:{id:string}[];nextCursor:string|null};
+    expect(firstNotificationPage.items).toHaveLength(50);
+    expect(firstNotificationPage.nextCursor).toEqual(expect.any(String));
+    const secondNotificationPage=await (await call(`/notifications?cursor=${encodeURIComponent(firstNotificationPage.nextCursor!)}`,centreToken)).json() as {items:{id:string}[];nextCursor:string|null};
+    expect(secondNotificationPage.items.length).toBeGreaterThan(0);
+    expect(secondNotificationPage.items.length).toBeLessThanOrEqual(50);
+    expect(secondNotificationPage.nextCursor).toBeNull();
+    expect(secondNotificationPage.items.some((item)=>firstNotificationPage.items.some((first)=>first.id===item.id))).toBe(false);
+    expect((await call('/notifications?cursor=malformed',centreToken)).status).toBe(400);
     const alertsResponse=await call('/insights/alerts',centreToken);
     expect(alertsResponse.status).toBe(200);
     const alerts=await alertsResponse.json() as {kind:string;description:string}[];

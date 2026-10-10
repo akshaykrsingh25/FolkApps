@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { ActorContext } from '../auth/authenticated-request';
 import { DatabaseService } from '../database.service';
 import { InsightsService } from '../insights/insights.service';
@@ -17,11 +17,29 @@ interface AlertSnapshot {
   relatedId: string | null;
 }
 
+export interface NotificationRow {
+  id: string;
+  sourceAlertId: string;
+  kind: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  assetId: string;
+  assetTag: string;
+  assetName: string;
+  locationName: string;
+  relatedId: string | null;
+  occurredAt: Date | string;
+  createdAt: Date | string;
+  readAt: Date | string | null;
+}
+
 @Injectable()
 export class NotificationsService {
   constructor(private readonly database: DatabaseService, private readonly insights: InsightsService) {}
 
-  async list(actor: ActorContext) {
+  async list(actor: ActorContext, cursor?: string) {
+    const decodedCursor = cursor ? this.decodeCursor(cursor) : null;
     const activeAlerts = await this.insights.alerts(actor) as AlertSnapshot[];
     if (activeAlerts.length) {
       await this.database.query(
@@ -41,7 +59,7 @@ export class NotificationsService {
     }
 
     const [items, counts] = await Promise.all([
-      this.database.query(
+      this.database.query<NotificationRow>(
         `${this.visibleLocationsCte()}
          SELECT n.id,n.notification_key AS "sourceAlertId",n.kind,n.severity,n.title,n.description,
                 n.asset_id AS "assetId",n.asset_tag AS "assetTag",n.asset_name AS "assetName",
@@ -52,8 +70,9 @@ export class NotificationsService {
            JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
           WHERE n.organization_id=$1::uuid AND n.recipient_user_id=$2::uuid
             AND a.location_id IN (SELECT id FROM visible_locations)
-          ORDER BY n.created_at DESC,n.id DESC LIMIT 200`,
-        [actor.organizationId, actor.userId],
+            AND ($3::timestamptz IS NULL OR (n.created_at,n.id)<($3::timestamptz,$4::uuid))
+          ORDER BY n.created_at DESC,n.id DESC LIMIT 51`,
+        [actor.organizationId, actor.userId, decodedCursor?.createdAt ?? null, decodedCursor?.id ?? null],
       ),
       this.database.query<{ unreadCount: number | string }>(
         `${this.visibleLocationsCte()}
@@ -65,7 +84,13 @@ export class NotificationsService {
         [actor.organizationId, actor.userId],
       ),
     ]);
-    return { items, unreadCount: Number(counts[0]?.unreadCount ?? 0) };
+    const hasMore = items.length > 50;
+    const page = hasMore ? items.slice(0, 50) : items;
+    return {
+      items: page,
+      unreadCount: Number(counts[0]?.unreadCount ?? 0),
+      nextCursor: hasMore ? this.encodeCursor(page[page.length - 1]) : null,
+    };
   }
 
   async markRead(actor: ActorContext, id: string) {
@@ -98,5 +123,26 @@ export class NotificationsService {
           AND role_key='head_office' AND scope_location_id IS NULL
       )
     )`;
+  }
+
+  private encodeCursor(item: { createdAt: string | Date; id: string }) {
+    return Buffer.from(JSON.stringify([new Date(item.createdAt).toISOString(), item.id]), 'utf8').toString('base64url');
+  }
+
+  private decodeCursor(cursor: string) {
+    try {
+      if (cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error('Invalid cursor format');
+      const value: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+      if (!Array.isArray(value) || value.length !== 2 || typeof value[0] !== 'string' || typeof value[1] !== 'string') {
+        throw new Error('Invalid cursor payload');
+      }
+      const date = new Date(value[0]);
+      if (!Number.isFinite(date.getTime()) || date.toISOString() !== value[0] || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value[1])) {
+        throw new Error('Invalid cursor values');
+      }
+      return { createdAt: date.toISOString(), id: value[1] };
+    } catch {
+      throw new BadRequestException('Notification cursor is invalid');
+    }
   }
 }

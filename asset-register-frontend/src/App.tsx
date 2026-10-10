@@ -169,6 +169,9 @@ export default function App() {
   const [operationalAlerts,setOperationalAlerts]=useState<OperationalAlert[]>([]);
   const [notifications,setNotifications]=useState<UserNotification[]>([]);
   const [unreadNotificationCount,setUnreadNotificationCount]=useState(0);
+  const [notificationNextCursor,setNotificationNextCursor]=useState<string|null>(null);
+  const [loadingOlderNotifications,setLoadingOlderNotifications]=useState(false);
+  const [notificationsLoading,setNotificationsLoading]=useState(false);
   const [overviewData,setOverviewData]=useState<InsightOverview|null>(null);
   const [mapData,setMapData]=useState<IndiaMapData|null>(null);
   const [indiaGeoJson,setIndiaGeoJson]=useState<IndiaGeoJson|null>(null);
@@ -186,7 +189,7 @@ export default function App() {
   const [userRoleChoice,setUserRoleChoice]=useState<Role>('viewer');
   const [savingManagedUser,setSavingManagedUser]=useState(false);
 
-  useEffect(()=>{setOperationalAlerts([]);setNotifications([]);setUnreadNotificationCount(0);},[organization?.id,user?.subject]);
+  useEffect(()=>{setOperationalAlerts([]);setNotifications([]);setUnreadNotificationCount(0);setNotificationNextCursor(null);setNotificationsLoading(false);},[organization?.id,user?.subject]);
 
   useEffect(() => {
     let active = true;
@@ -330,11 +333,11 @@ export default function App() {
     if(!user||!organization||(view!=='alerts'&&view!=='home'&&view!=='notifications'))return;
     if(DEMO_MODE){
       const rows=assets.filter((asset)=>asset.status==='missing').map((asset)=>({id:`missing:${asset.id}`,kind:'missing',severity:'high' as const,title:'Asset marked missing',description:'Review the last known location and record the investigation outcome.',assetId:asset.id,assetTag:asset.assetTag,assetName:asset.name,locationName:asset.locationName,occurredAt:asset.createdAt,relatedId:null}));
-      setOperationalAlerts(rows);setNotifications(rows.map((row)=>({...row,sourceAlertId:row.id,createdAt:row.occurredAt,readAt:null})));setUnreadNotificationCount(rows.length);
+      setOperationalAlerts(rows);setNotifications(rows.map((row)=>({...row,sourceAlertId:row.id,createdAt:row.occurredAt,readAt:null})));setUnreadNotificationCount(rows.length);setNotificationNextCursor(null);setNotificationsLoading(false);
       return;
     }
-    let active=true;
-    void Promise.all([api.alerts(user.accessToken,organization.id),api.notifications(user.accessToken,organization.id)]).then(([rows,inbox])=>{if(active){setOperationalAlerts(rows);setNotifications(inbox.items);setUnreadNotificationCount(inbox.unreadCount);}}).catch((reason)=>{if(active)setError(errorMessage(reason));});
+    let active=true;setNotificationsLoading(true);
+    void Promise.all([api.alerts(user.accessToken,organization.id),api.notifications(user.accessToken,organization.id)]).then(([rows,inbox])=>{if(active){setOperationalAlerts(rows);setNotifications(inbox.items);setUnreadNotificationCount(inbox.unreadCount);setNotificationNextCursor(inbox.nextCursor);}}).catch((reason)=>{if(active)setError(errorMessage(reason));}).finally(()=>{if(active)setNotificationsLoading(false);});
     return()=>{active=false;};
   },[user,organization,view,assets]);
 
@@ -795,6 +798,18 @@ export default function App() {
     }catch(reason){setError(errorMessage(reason));}
   }
 
+  async function loadOlderNotifications() {
+    if(!user||!organization||!notificationNextCursor||loadingOlderNotifications||DEMO_MODE)return;
+    setLoadingOlderNotifications(true);
+    try{
+      const page=await api.notifications(user.accessToken,organization.id,notificationNextCursor);
+      setNotifications((items)=>{const known=new Set(items.map((item)=>item.id));return [...items,...page.items.filter((item)=>!known.has(item.id))];});
+      setNotificationNextCursor(page.nextCursor);
+      setUnreadNotificationCount(page.unreadCount);
+    }catch(reason){setError(errorMessage(reason));}
+    finally{setLoadingOlderNotifications(false);}
+  }
+
   async function createAsset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!user || !organization) return;
     const data = readForm(event.currentTarget);
@@ -1038,8 +1053,8 @@ export default function App() {
           {view === 'notifications' && <section className="view-panel lifecycle-view alert-view notification-view">
             <p className="eyebrow">YOUR INBOX · PRIVATE TO YOUR ACCOUNT</p>
             <div className="view-title-row"><div><h1>Notifications.</h1><p className="view-lead">Signals saved for your account. Items follow your current asset access and remain here after you read them.</p></div><button className="quiet-button" onClick={()=>setView('alerts')}>Open Watch →</button></div>
-            <div className="alert-queue-summary"><span><strong>{unreadNotificationCount}</strong> unread · {notifications.length} recent notifications</span><small>In-app only · signals sync when you open or refresh the app</small></div>
-            {notifications.length===0?<section className="panel verify-empty"><Icon name={DEMO_MODE?'bell':'check'}/><h2>{DEMO_MODE?'No sample alerts in this workspace.':'You’re all caught up.'}</h2><p>{DEMO_MODE?'The sample workspace has no active review signals. Sign in to see notifications scoped to your organization and centres.':'New missing-asset, overdue-scan, transfer, duplicate-record, and urgent-report signals will appear here.'}</p></section>:<div className="alert-list">{notifications.map((item)=><article className={`panel alert-row notification-row ${item.readAt?'is-read':''} severity-${item.severity}`} key={item.id}><span className="alert-mark"><Icon name={item.kind==='verification_overdue'?'history':item.kind==='duplicate_serial'?'asset':item.kind==='transfer_stalled'||item.kind==='transfer_discrepancy'?'arrow':'watch'}/></span><div className="alert-main"><div className="alert-title-line"><h2>{item.title}</h2><span className={`status-chip alert-severity-${item.severity}`}>{item.readAt?'Read':item.severity==='high'?'Review soon':'Check'}</span></div><strong>{item.assetName} · {item.assetTag}</strong><small>{item.locationName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small><p>{item.description}</p><div className="notification-actions"><button className="text-button" onClick={()=>void openAlertAsset(item)}>{item.kind==='verification_overdue'?'Review asset and scan cycle':item.kind==='transfer_stalled'?'Open asset movement':item.kind==='urgent_report'?'Open repair report':'Open asset record'} <span aria-hidden="true">→</span></button>{!item.readAt&&<button className="text-button notification-read-action" onClick={()=>void markNotificationRead(item)}>Mark as read</button>}</div></div></article>)}</div>}
+            <div className="alert-queue-summary"><span><strong>{unreadNotificationCount}</strong> unread · {notifications.length} loaded</span><small>In-app only · signals sync when you open or refresh the app</small></div>
+            {notifications.length===0?notificationsLoading?<section className="panel verify-empty"><span className="spinner" aria-hidden="true"/><h2>Checking your inbox.</h2><p>Loading review signals for the centres you can access.</p></section>:<section className="panel verify-empty"><Icon name={DEMO_MODE?'bell':'check'}/><h2>{DEMO_MODE?'No sample alerts in this workspace.':'You’re all caught up.'}</h2><p>{DEMO_MODE?'The sample workspace has no active review signals. Sign in to see notifications scoped to your organization and centres.':'New missing-asset, overdue-scan, transfer, duplicate-record, and urgent-report signals will appear here.'}</p></section>:<><div className="alert-list">{notifications.map((item)=><article className={`panel alert-row notification-row ${item.readAt?'is-read':''} severity-${item.severity}`} key={item.id}><span className="alert-mark"><Icon name={item.kind==='verification_overdue'?'history':item.kind==='duplicate_serial'?'asset':item.kind==='transfer_stalled'||item.kind==='transfer_discrepancy'?'arrow':'watch'}/></span><div className="alert-main"><div className="alert-title-line"><h2>{item.title}</h2><span className={`status-chip alert-severity-${item.severity}`}>{item.readAt?'Read':item.severity==='high'?'Review soon':'Check'}</span></div><strong>{item.assetName} · {item.assetTag}</strong><small>{item.locationName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small><p>{item.description}</p><div className="notification-actions"><button className="text-button" onClick={()=>void openAlertAsset(item)}>{item.kind==='verification_overdue'?'Review asset and scan cycle':item.kind==='transfer_stalled'?'Open asset movement':item.kind==='urgent_report'?'Open repair report':'Open asset record'} <span aria-hidden="true">→</span></button>{!item.readAt&&<button className="text-button notification-read-action" onClick={()=>void markNotificationRead(item)}>Mark as read</button>}</div></div></article>)}</div>{notificationNextCursor&&<button className="load-more-button quiet-button" onClick={()=>void loadOlderNotifications()} disabled={loadingOlderNotifications}>{loadingOlderNotifications?'Loading…':'Load older notifications'}</button>}</>}
           </section>}
 
           {view === 'alerts' && <section className="view-panel lifecycle-view alert-view">
