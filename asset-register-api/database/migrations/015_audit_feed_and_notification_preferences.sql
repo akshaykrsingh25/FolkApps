@@ -13,6 +13,17 @@ ON CONFLICT DO NOTHING;
 CREATE INDEX audit_events_org_time_id_idx
   ON audit_events (organization_id,occurred_at DESC,id DESC);
 
+CREATE INDEX locations_org_parent_idx
+  ON locations (organization_id,parent_id);
+
+CREATE INDEX assets_org_normalized_serial_location_idx
+  ON assets (organization_id,lower(btrim(serial_number)),location_id)
+  WHERE serial_number IS NOT NULL AND btrim(serial_number)<>'';
+
+CREATE INDEX condition_reports_open_urgent_idx
+  ON condition_reports (organization_id,reported_at DESC,id)
+  WHERE urgency='urgent' AND status NOT IN ('resolved','closed');
+
 CREATE TABLE notification_preferences (
   organization_id uuid NOT NULL,
   user_id uuid NOT NULL,

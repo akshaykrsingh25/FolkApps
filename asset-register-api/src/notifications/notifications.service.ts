@@ -41,7 +41,7 @@ export class NotificationsService {
 
   async list(actor: ActorContext, cursor?: string) {
     const decodedCursor = cursor ? this.decodeCursor(cursor) : null;
-    const activeAlerts = await this.insights.alerts(actor) as AlertSnapshot[];
+    const activeAlerts = (await this.insights.alerts(actor,{limit:200})).items as AlertSnapshot[];
     if (activeAlerts.length) {
       await this.database.query(
         `INSERT INTO notification_inbox (

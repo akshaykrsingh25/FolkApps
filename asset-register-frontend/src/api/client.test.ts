@@ -87,4 +87,11 @@ describe('asset register API client', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(2,'http://localhost:4000/api/v1/notifications/preferences',expect.objectContaining({method:'PATCH',body:JSON.stringify({category:'missing',inAppEnabled:false})}));
     expect(fetchMock).toHaveBeenNthCalledWith(3,'http://localhost:4000/api/v1/audit/events?locationId=loc+1&eventType=asset.created&limit=50',expect.anything());
   });
+
+  it('loads subsequent scoped Watch pages with an encoded cursor', async () => {
+    const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({items:[],nextCursor:null}),{status:200}));
+    vi.stubGlobal('fetch',fetchMock);
+    await expect(api.alerts('signed-token','org-123','cursor_01-02')).resolves.toMatchObject({items:[],nextCursor:null});
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:4000/api/v1/insights/alerts?cursor=cursor_01-02',expect.objectContaining({headers:expect.objectContaining({'x-organization-id':'org-123'})}));
+  });
 });

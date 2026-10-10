@@ -1,4 +1,4 @@
-import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, AuditEventPage, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, NotificationPreferences, OperationalAlert, Organization, Role, RfidScanReconcileResult, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, NotificationCategory } from '../domain/types';
+import type { AlertPage, Asset, AssetActivityEvent, AssetCustody, AssetExportJob, AuditEventPage, EligibleCustodian, Evidence, Location, ManagedUser, NotificationInbox, NotificationPreferences, Organization, Role, RfidScanReconcileResult, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, NotificationCategory } from '../domain/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || 'http://localhost:4000/api/v1';
 
@@ -95,7 +95,7 @@ export const api = {
   issueCustody: (token:string,organizationId:string,assetId:string,data:Record<string,unknown>)=>request<{custodyId:string;issuedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody`,token,organizationId,data),
   returnCustody: (token:string,organizationId:string,assetId:string,custodyId:string,data:Record<string,unknown>)=>request<{custodyId:string;returnedAt:string}>(`/assets/${encodeURIComponent(assetId)}/custody/${encodeURIComponent(custodyId)}/return`,token,organizationId,data),
   insightOverview: (token:string,organizationId:string)=>request<InsightOverview>('/insights/overview',token,organizationId),
-  alerts: (token:string,organizationId:string)=>request<OperationalAlert[]>('/insights/alerts',token,organizationId),
+  alerts: (token:string,organizationId:string,cursor?:string)=>request<AlertPage>(`/insights/alerts${cursor?`?cursor=${encodeURIComponent(cursor)}`:''}`,token,organizationId),
   notifications: (token:string,organizationId:string,cursor?:string)=>request<NotificationInbox>(`/notifications${cursor?`?cursor=${encodeURIComponent(cursor)}`:''}`,token,organizationId),
   markNotificationRead: (token:string,organizationId:string,id:string)=>request<{id:string;readAt:string}>(`/notifications/${encodeURIComponent(id)}/read`,token,organizationId,{},'PATCH'),
   notificationPreferences: (token:string,organizationId:string)=>request<NotificationPreferences>('/notifications/preferences',token,organizationId),

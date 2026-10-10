@@ -408,8 +408,8 @@ describe('phase two API integration', () => {
     expect((await call(`/assets/${batchA.id}`,hoToken,{status:'missing',statusChangeReason:'Cannot mark while in transit'},organizationId,'PATCH')).status).toBe(409);
     expect((await call(`/transfer-batches/${batch.id}`,centreToken,{action:'receive',items:[]},organizationId,'PATCH')).status).toBe(403);
     await db.query(`UPDATE transfer_batches SET auto_flag_after=now()-interval '1 second' WHERE organization_id=$1 AND id=$2`,[organizationId,batch.id]);
-    const batchWatch=await (await call('/insights/alerts',centreToken)).json() as {kind:string;relatedId:string|null}[];
-    expect(batchWatch.some(alert=>alert.kind==='transfer_stalled'&&alert.relatedId===batch.id)).toBe(true);
+    const batchWatch=await (await call('/insights/alerts',centreToken)).json() as {items:{kind:string;relatedId:string|null}[];nextCursor:string|null};
+    expect(batchWatch.items.some(alert=>alert.kind==='transfer_stalled'&&alert.relatedId===batch.id)).toBe(true);
     const batchReceive=await call(`/transfer-batches/${batch.id}`,centreBToken,{action:'receive',items:[
       {assetId:batchA.id,receiptStatus:'accepted'},
       {assetId:batchB.id,receiptStatus:'not_received',discrepancyNote:'Item was not present in the sealed shipment.'},
@@ -427,12 +427,12 @@ describe('phase two API integration', () => {
     expect(((await (await call('/assets',centreBToken)).json()) as {data:{id:string;condition:string}[]}).data.find(row=>row.id===batchC.id)?.condition).toBe('damaged');
     expect(((await (await call('/assets',centreToken)).json()) as {data:{id:string}[]}).data.map(row=>row.id)).toContain(batchB.id);
     expect(((await (await call('/reports',centreBToken)).json()) as {kind:string}[]).some(report=>report.kind==='damaged')).toBe(true);
-    const discrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {kind:string;assetId:string}[];
-    expect(discrepancyAlerts.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(true);
+    const discrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {items:{kind:string;assetId:string}[];nextCursor:string|null};
+    expect(discrepancyAlerts.items.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(true);
     expect((await call('/transfers',hoToken,{assetId:batchB.id,toLocationId:centerBId},organizationId,'POST')).status).toBe(409);
     await db.query(`INSERT INTO scan_events (organization_id,asset_id,location_id,client_event_id,scanned_at) VALUES ($1,$2,$3,'f0000000-0000-4000-8000-000000000001',now()+interval '1 second')`,[organizationId,batchB.id,centre.id]);
-    const clearedDiscrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {kind:string;assetId:string}[];
-    expect(clearedDiscrepancyAlerts.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(false);
+    const clearedDiscrepancyAlerts=await (await call('/insights/alerts',centreToken)).json() as {items:{kind:string;assetId:string}[];nextCursor:string|null};
+    expect(clearedDiscrepancyAlerts.items.some(alert=>alert.kind==='transfer_discrepancy'&&alert.assetId===batchB.id)).toBe(false);
     expect((await call('/transfers',hoToken,{assetId:batchB.id,toLocationId:centerBId},organizationId,'POST')).status).toBe(201);
 
     const listResponse = await call('/assets?q=SW-1234', centreToken);
@@ -493,12 +493,44 @@ describe('phase two API integration', () => {
     expect(secondNotificationPage.nextCursor).toBeNull();
     expect(secondNotificationPage.items.some((item)=>firstNotificationPage.items.some((first)=>first.id===item.id))).toBe(false);
     expect((await call('/notifications?cursor=malformed',centreToken)).status).toBe(400);
+    await db.query(
+      `INSERT INTO assets(organization_id,location_id,asset_tag,name,category,serial_number,status)
+       SELECT $1::uuid,$2::uuid,'WATCH-'||lpad(n::text,4,'0'),'Synthetic missing item','IT','WATCH-SN-'||n::text,'missing'::asset_status
+         FROM generate_series(1,105) n`,[organizationId,floor.id],
+    );
+    const firstWatchPage=await (await call('/insights/alerts?limit=20',centreToken)).json() as {items:{id:string;kind:string;severity:'high'|'medium'|'low';occurredAt:string;description:string}[];nextCursor:string|null};
+    expect(firstWatchPage.items).toHaveLength(20);
+    expect(firstWatchPage.nextCursor).toEqual(expect.any(String));
+    const watchIds=new Set(firstWatchPage.items.map((item)=>item.id));
+    const watchItems=[...firstWatchPage.items];
+    let watchCursor=firstWatchPage.nextCursor;
+    let pageCount=1;
+    while(watchCursor&&pageCount<20){
+      const page=await (await call(`/insights/alerts?limit=20&cursor=${encodeURIComponent(watchCursor)}`,centreToken)).json() as {items:{id:string;kind:string;severity:'high'|'medium'|'low';occurredAt:string;description:string}[];nextCursor:string|null};
+      expect(page.items.length).toBeGreaterThan(0);
+      for(const item of page.items){expect(watchIds.has(item.id)).toBe(false);watchIds.add(item.id);}
+      watchItems.push(...page.items);
+      watchCursor=page.nextCursor;pageCount++;
+    }
+    expect(watchCursor).toBeNull();
+    const severityOrder={high:0,medium:1,low:2} as const;
+    for(let index=1;index<watchItems.length;index++){
+      const previous=watchItems[index-1],current=watchItems[index];
+      expect(severityOrder[current.severity]).toBeGreaterThanOrEqual(severityOrder[previous.severity]);
+      if(current.severity===previous.severity){
+        const timeDelta=new Date(previous.occurredAt).getTime()-new Date(current.occurredAt).getTime();
+        expect(timeDelta>0||(timeDelta===0&&previous.id.localeCompare(current.id)<0)).toBe(true);
+      }
+    }
+    expect([...watchIds].filter((id)=>id.startsWith('missing:')).length).toBeGreaterThanOrEqual(105);
+    expect(watchItems.map((alert)=>alert.kind)).toEqual(expect.arrayContaining(['missing','duplicate_serial','verification_overdue']));
+    expect(watchItems.filter((alert)=>alert.kind==='verification_overdue').every((alert)=>alert.description.includes('not a confirmed loss'))).toBe(true);
+    expect((await call('/insights/alerts?cursor=malformed',centreToken)).status).toBe(400);
     const alertsResponse=await call('/insights/alerts',centreToken);
     expect(alertsResponse.status).toBe(200);
-    const alerts=await alertsResponse.json() as {kind:string;description:string}[];
-    expect(alerts.map((alert)=>alert.kind)).toEqual(expect.arrayContaining(['missing','duplicate_serial','verification_overdue']));
-    expect(alerts.filter((alert)=>alert.kind==='verification_overdue').every((alert)=>alert.description.includes('not a confirmed loss'))).toBe(true);
-    expect(await (await call('/insights/alerts',centreBToken)).json()).toHaveLength(0);
+    const alertsPage=await alertsResponse.json() as {items:{kind:string;description:string}[];nextCursor:string|null};
+    expect(alertsPage.items.length).toBeGreaterThan(0);
+    expect((await (await call('/insights/alerts',centreBToken)).json() as {items:unknown[]}).items).toHaveLength(0);
 
     const blocked = await call('/assets', centreToken, { locationId: centerBId, name: 'Out of scope switch', category: 'IT equipment' });
     expect(blocked.status).toBe(403);

@@ -121,6 +121,7 @@ export interface AssetExportJob {
 export interface AssetCustody { custodyId:string; custodianUserId:string; custodianName:string; issuedByName:string|null; issuedAt:string; issueCondition:string; issueNotes:string|null; returnedByName:string|null; returnedAt:string|null; returnCondition:string|null; returnNotes:string|null; }
 export interface EligibleCustodian { userId:string; displayName:string; }
 export interface OperationalAlert { id:string; kind:string; severity:'high'|'medium'|'low'; title:string; description:string; assetId:string; assetTag:string; assetName:string; locationName:string; occurredAt:string; relatedId:string|null; }
+export interface AlertPage { items:OperationalAlert[]; nextCursor:string|null; }
 export interface UserNotification extends Omit<OperationalAlert,'id'> { id:string; sourceAlertId:string; createdAt:string; readAt:string|null; }
 export interface NotificationInbox { items:UserNotification[]; unreadCount:number; nextCursor:string|null; }
 export type NotificationCategory='verification'|'transfers'|'repairs'|'data_quality'|'missing';

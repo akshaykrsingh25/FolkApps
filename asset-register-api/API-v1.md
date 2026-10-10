@@ -20,6 +20,7 @@ List endpoints use cursor pagination (`limit` capped at 100, opaque `nextCursor`
 | `GET /api/v1/audit/events?locationId=&eventType=&limit=&cursor=` | Review recent asset, scan, report, custody, and transfer events | `audit:read`; results are constrained to current assigned locations |
 | `GET /api/v1/notifications/preferences` | Read the signed-in user's inbox category settings | Signed-in organization member |
 | `PATCH /api/v1/notifications/preferences` | Enable or quiet one in-app notification category | Signed-in organization member; high-priority alerts always remain on |
+| `GET /api/v1/insights/alerts?limit=&cursor=` | Review prioritized Watch signals without a fixed result cap | Asset read permission; each page is constrained to current assigned locations |
 
 ## Verification cycles
 

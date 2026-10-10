@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ActorContext } from '../auth/authenticated-request';
 import { DatabaseService } from '../database.service';
+import type { AlertsQueryDto } from './alerts.dto';
 
 const ACCESSIBLE=`WITH RECURSIVE scope_locations(id) AS (
   SELECT scope_location_id FROM role_assignments WHERE organization_id=$1::uuid AND user_id=$2::uuid AND scope_location_id IS NOT NULL
@@ -14,8 +15,10 @@ const ACCESSIBLE=`WITH RECURSIVE scope_locations(id) AS (
 export class InsightsService {
   constructor(private readonly database:DatabaseService) {}
 
-  async alerts(actor:ActorContext) {
-    return this.database.query(
+  async alerts(actor:ActorContext,dto:AlertsQueryDto={}) {
+    const limit=dto.limit??50;
+    const cursor=dto.cursor?this.decodeAlertCursor(dto.cursor):null;
+    const rows=await this.database.query<{id:string;kind:string;severity:'high'|'medium'|'low';title:string;description:string;assetId:string;assetTag:string;assetName:string;locationName:string;occurredAt:Date|string;relatedId:string|null;severityRank:number}>(
       `${ACCESSIBLE}, visible_ancestors(id) AS (
          SELECT id FROM visible_locations
          UNION SELECT parent.id FROM visible_ancestors child
@@ -48,7 +51,7 @@ export class InsightsService {
          WHERE p.location_id IN (SELECT id FROM visible_locations)
            AND NOT EXISTS(SELECT 1 FROM scan_events s WHERE s.organization_id=$1::uuid AND s.cycle_id=c.id AND s.asset_id=a.id)
          UNION ALL
-         SELECT 'duplicate-serial:'||d.serial_key,'duplicate_serial','high','Serial number appears more than once',
+         SELECT 'duplicate-serial:'||a.id::text,'duplicate_serial','high','Serial number appears more than once',
            d.duplicate_count::text||' visible asset records share serial number “'||a.serial_number||'”. Compare the item and invoice before merging anything.',
            a.id,a.asset_tag,a.name,l.name,a.updated_at,NULL::uuid
          FROM duplicate_serials d JOIN assets a ON a.organization_id=$1::uuid AND a.id=d.asset_id
@@ -90,9 +93,39 @@ export class InsightsService {
          FROM condition_reports r JOIN assets a ON a.organization_id=r.organization_id AND a.id=r.asset_id
          JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
          WHERE r.organization_id=$1::uuid AND r.urgency='urgent' AND r.status NOT IN ('resolved','closed') AND a.location_id IN (SELECT id FROM visible_locations)
-       ) SELECT * FROM alert_rows
-       ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"occurredAt" DESC,id LIMIT 200`,
-      [actor.organizationId,actor.userId]);
+       ), prioritized_alerts AS (
+         SELECT alert_rows.*,CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END AS "severityRank"
+           FROM alert_rows
+       )
+       SELECT id,kind,severity,title,description,"assetId","assetTag","assetName","locationName","occurredAt","relatedId","severityRank"
+         FROM prioritized_alerts
+        WHERE ($3::integer IS NULL OR "severityRank">$3::integer OR
+              ("severityRank"=$3::integer AND ("occurredAt"<$4::timestamptz OR ("occurredAt"=$4::timestamptz AND id>$5::text))))
+        ORDER BY "severityRank","occurredAt" DESC,id ASC LIMIT $6`,
+      [actor.organizationId,actor.userId,cursor?.severityRank??null,cursor?.occurredAt??null,cursor?.id??null,limit+1]);
+    const hasMore=rows.length>limit;
+    const page=hasMore?rows.slice(0,limit):rows;
+    const items=page.map(({severityRank:_severityRank,...item})=>item);
+    const last=page[page.length-1];
+    return {items,nextCursor:hasMore&&last?this.encodeAlertCursor(last):null};
+  }
+
+  private encodeAlertCursor(item:{severity:'high'|'medium'|'low';occurredAt:Date|string;id:string}) {
+    const severityRank=item.severity==='high'?0:item.severity==='medium'?1:2;
+    return Buffer.from(JSON.stringify([severityRank,new Date(item.occurredAt).toISOString(),item.id]),'utf8').toString('base64url');
+  }
+
+  private decodeAlertCursor(cursor:string) {
+    try {
+      if(cursor.length>512||!/^[A-Za-z0-9_-]+$/.test(cursor))throw new Error('Invalid cursor encoding');
+      const value:unknown=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));
+      if(!Array.isArray(value)||value.length!==3||![0,1,2].includes(value[0])||typeof value[1]!=='string'||typeof value[2]!=='string')throw new Error('Invalid cursor payload');
+      const date=new Date(value[1]);
+      if(!Number.isFinite(date.getTime())||date.toISOString()!==value[1]||! /^[a-z][a-z0-9:-]{1,160}$/.test(value[2]))throw new Error('Invalid cursor values');
+      return {severityRank:value[0] as number,occurredAt:date.toISOString(),id:value[2]};
+    }catch {
+      throw new BadRequestException('Alert cursor is invalid');
+    }
   }
 
   async overview(actor:ActorContext) {

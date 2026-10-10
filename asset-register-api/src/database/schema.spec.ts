@@ -61,6 +61,7 @@ describe('initial PostgreSQL schema', () => {
     );
     expect(watchIndexes.rows.map((row) => row.indexname)).toEqual(expect.arrayContaining([
       'scan_events_org_cycle_asset_idx', 'verification_cycles_overdue_idx', 'verification_cycles_policy_start_uq',
+      'locations_org_parent_idx','assets_org_normalized_serial_location_idx','condition_reports_open_urgent_idx','audit_events_org_time_id_idx',
     ]));
   });
 
