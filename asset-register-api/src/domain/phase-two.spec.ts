@@ -5,6 +5,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuthorizationService } from '../authorization/authorization.service';
 import type { ActorContext } from '../auth/authenticated-request';
+import { EvidenceService } from '../evidence/evidence.service';
 import { AssetsService } from '../assets/assets.service';
 import { SignedQrService } from '../assets/signed-qr.service';
 import { LocationsService } from '../locations/locations.service';
@@ -17,6 +18,7 @@ describe('phase two: location and asset workflows', () => {
   let headOffice: ActorContext;
   let locations: LocationsService;
   let assets: AssetsService;
+  let evidence: EvidenceService;
   let legacyRfidOrganizationId: string;
   let legacyRfidAssetId: string;
 
@@ -73,6 +75,7 @@ describe('phase two: location and asset workflows', () => {
     const authorization = new AuthorizationService(database as never);
     locations = new LocationsService(database as never, authorization);
     assets = new AssetsService(database as never, authorization, new SignedQrService());
+    evidence = new EvidenceService(database as never, authorization, {} as never);
   });
 
   afterAll(async () => { await db.close(); });
@@ -279,6 +282,36 @@ describe('phase two: location and asset workflows', () => {
     expect(imported.floors.every((floor) => imported.centres.some((centre) => centre.id === floor.parentId))).toBe(true);
     expect(imported.centres.find((centre) => centre.code === 'IKDS')?.name).toBe('iKeva Divyasree');
   });
+  it('reuses one stored invoice with idempotency, scope checks, and a single audit event', async () => {
+    const state = await locations.create(headOffice,{kind:'state',name:'Invoice reuse state'});
+    const centre = await locations.create(headOffice,{kind:'centre',name:'Invoice reuse centre',parentId:state.id});
+    const first = await assets.create(headOffice,{name:'First chair',category:'Furniture',locationId:centre.id});
+    const second = await assets.create(headOffice,{name:'Second chair',category:'Furniture',locationId:centre.id});
+    const source = await db.query<{id:string}>(`INSERT INTO evidence(organization_id,asset_id,kind,object_key,content_type,byte_size,uploaded_by) VALUES($1,$2,'invoice','shared-invoice','application/pdf',100,$3) RETURNING id`,[organizationId,first.id,userId]);
+    const dto={sourceAssetId:first.id,evidenceId:source.rows[0].id,linkId:crypto.randomUUID()};
+    await evidence.linkInvoice(headOffice,second.id,dto);
+    await evidence.linkInvoice(headOffice,second.id,dto);
+    expect((await evidence.list(headOffice,second.id))).toHaveLength(1);
+    const audits=await db.query(`SELECT id FROM audit_events WHERE entity_id=$1 AND event_type='evidence.invoice_linked'`,[second.id]);
+    expect(audits.rows).toHaveLength(1);
+    await expect(evidence.linkInvoice(headOffice,first.id,dto)).rejects.toMatchObject({status:409});
+    const unassigned=await db.query<{id:string}>(`INSERT INTO users(organization_id,identity_subject,display_name,email) VALUES($1,'invoice-unassigned','Unassigned','unassigned@example.test') RETURNING id`,[organizationId]);
+    await expect(evidence.linkInvoice({...headOffice,userId:unassigned.rows[0].id,memberships:[]},second.id,{...dto,linkId:crypto.randomUUID()})).rejects.toMatchObject({status:403});
+    await expect(evidence.linkInvoice({...headOffice,organizationId:legacyRfidOrganizationId},second.id,dto)).rejects.toMatchObject({status:404});
+    const photo=await db.query<{id:string}>(`INSERT INTO evidence(organization_id,asset_id,kind,object_key,content_type,byte_size,uploaded_by) VALUES($1,$2,'asset_photo','photo','image/png',100,$3) RETURNING id`,[organizationId,first.id,userId]);
+    await expect(evidence.linkInvoice(headOffice,second.id,{...dto,evidenceId:photo.rows[0].id,linkId:crypto.randomUUID()})).rejects.toMatchObject({status:404});
+  });
+
+  it('filters incomplete records before pagination and removes completed records', async()=>{
+    const state=await locations.create(headOffice,{kind:'state',name:'Completion state'});
+    const centre=await locations.create(headOffice,{kind:'centre',name:'Completion centre',parentId:state.id});
+    const record=await assets.create(headOffice,{name:'Incomplete purchase',category:'Furniture',locationId:centre.id});
+    expect((await assets.list(headOffice,{locationId:centre.id,incomplete:'true'})).data.map(item=>item.id)).toContain(record.id);
+    await assets.update(headOffice,record.id,{purchaseDate:'2026-10-11',purchaseAmount:0,sellerName:'Supplier'});
+    expect((await assets.list(headOffice,{locationId:centre.id,incomplete:'true'})).data).toEqual([]);
+  });
+
+
 });
 
 function restoreEnv(name: string, value: string | undefined) {

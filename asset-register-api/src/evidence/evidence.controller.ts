@@ -4,13 +4,19 @@ import { OidcAuthGuard } from '../auth/oidc-auth.guard';
 import { TenantMembershipGuard } from '../auth/tenant-membership.guard';
 import { PermissionsGuard } from '../authorization/permissions.guard';
 import { RequirePermission } from '../authorization/permissions.decorator';
-import { CompleteEvidenceUploadDto, CreateEvidenceUploadDto } from './evidence.dto';
+import { CompleteEvidenceUploadDto, CreateEvidenceUploadDto, LinkInvoiceDto } from './evidence.dto';
 import { EvidenceService } from './evidence.service';
 
 @Controller('assets/:assetId/evidence')
 @UseGuards(OidcAuthGuard, TenantMembershipGuard, PermissionsGuard)
 export class EvidenceController {
   constructor(private readonly evidence: EvidenceService) {}
+
+  @Post('link-invoice')
+  @RequirePermission('asset:write')
+  linkInvoice(@Req() request: AuthenticatedRequest, @Param('assetId', ParseUUIDPipe) assetId: string, @Body() body: LinkInvoiceDto) {
+    return this.evidence.linkInvoice(request.actor!, assetId, body);
+  }
 
   @Post('upload-url')
   @RequirePermission('asset:write')

@@ -99,3 +99,25 @@ Each phase delivers a usable vertical slice. The phase gate is the evidence requ
 - Make writes auditable and retry-safe. Keep human review for recognition, OCR, duplicate suggestions, missing classification, and transfer approval.
 - Release one useful end-to-end workflow per phase; do not defer all working software until a final phase.
 - Keep operational decisions configurable and versioned instead of hard-coding cycle dates, escalation rules, or role scope.
+
+## Registration speed improvements — October 2026
+
+Quick Add requires name, category, and a scoped location. A location chosen in this browser session is reused only while it remains in the current organization's accessible directory. Full location paths disambiguate identical floor names. Condition and ownership remain visible. Other identification, purchase, and notes fields are expandable; leased items ask for the leasing vendor.
+
+Scan suggestions fill empty fields and preserve typed information. Purchase amount is labelled per item: staff must not reuse the total of a multi-item invoice as each item's price. Save & add similar reuses common details and links the existing invoice, while resetting asset tags, serial numbers, RFID, photos, condition, and request identity.
+
+The furniture template supports 1–25 identical items with individual asset records and QR labels. It uses separate idempotent requests, records completed items, and resumes remaining requests after an interruption in the current form. This is not an atomic bulk transaction. Items with individual serials, manual tags, or RFID are registered individually. Offline quantity creation is blocked with a prompt to capture one item at a time; ordinary encrypted single-item offline capture continues. The first captured photo belongs to the first item; the invoice is linked to every item. Pending invoice links can be retried after the source upload finishes. On the live API, invoice links reuse the private storage object and check both source and destination access; repeated link requests do not duplicate rows or audit events.
+
+The Needs purchase details filter is applied before server pagination and uses existing location scope. Records leave it automatically once purchase date, unit price, and seller are recorded; zero is a valid recorded price. This is a scoped team follow-up queue. Individual task assignees, due dates, and task notifications are not yet implemented.
+
+## Proposed next capabilities — not implemented
+
+| Capability | Intended behavior | Dependencies and acceptance gate |
+| --- | --- | --- |
+| Unused asset discovery (“Phantom Asset Harvesting”) | Compare purchase requests against confirmed unused stock, matching category, model, condition, and availability; route a proposed transfer for approval. | Reliable unused-stock statuses and purchase-request intake. Count savings only after a completed reuse replaces a documented purchase. No automatic declaration that an unseen item is available. |
+| Proximity search (“Geiger Mode”) | A supported reader reports target-tag signal strength and recent sightings; the app presents a relative warmer/colder cue. | Selected RFID/BLE hardware, SDK access, tag coverage, and a floor pilot. QR alone supplies no proximity signal. Signal strength is not a reliable distance measurement. The suggested 70% time reduction is an unverified target. |
+| Vendor SLA recovery | Track ticket acknowledgement/resolution against approved business clocks, exclusions, and contract terms; prepare a reviewable penalty calculation. | Vendor contracts, ticket timestamps, holiday/calendar rules, Finance approval and dispute workflow. Do not deduct vendor payments automatically. |
+| Interactive floor plans | Associate rooms and assets with a versioned SVG floor plan and overlay audit progress. | Approved floor drawings, room mapping, restricted access, and sanitized file conversion. Start with a two-dimensional floor map before live digital-twin claims. |
+| ERP depreciation synchronization | Export approved asset/accounting events, reconcile ERP acknowledgements, and surface differences for Finance. | ERP vendor/API, chart of accounts, asset class mapping, approved useful lives/residual values/methods, period locks, and a staging reconciliation. ERP remains the accounting authority. No accounting policy is inferred by the app. |
+
+Implement unused-stock matching first, then contract-based SLA tracking. Run proximity hardware selection alongside those. Plan floor maps and ERP integration once their source data and owners are confirmed. These proposals do not change the production rollout prerequisites.

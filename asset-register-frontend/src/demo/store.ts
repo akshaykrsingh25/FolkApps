@@ -112,7 +112,7 @@ export const demoStore = {
       model: String(data.model || '') || null, status: 'active', condition: String(data.condition || 'good'),
       ownershipType: String(data.ownershipType || 'INCUSPAZE_OWNED') as Asset['ownershipType'],
       purchaseDate: String(data.purchaseDate || '') || null, purchaseAmount: String(data.purchaseAmount || '') || null,
-      currency: String(data.currency || 'INR'), sellerName: String(data.sellerName || '') || null,
+      notes: String(data.notes || '') || null, currency: String(data.currency || 'INR'), sellerName: String(data.sellerName || '') || null,
       sellerPhone: String(data.sellerPhone || '') || null, createdAt: new Date().toISOString(),
     };
     state.assets.unshift(asset); write(state); return asset;

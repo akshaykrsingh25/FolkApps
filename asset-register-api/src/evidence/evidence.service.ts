@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { ActorContext } from '../auth/authenticated-request';
 import { AuthorizationService } from '../authorization/authorization.service';
 import { DatabaseService } from '../database.service';
-import type { CreateEvidenceUploadDto } from './evidence.dto';
+import type { CreateEvidenceUploadDto, LinkInvoiceDto } from './evidence.dto';
 import { ObjectStorageService } from './object-storage.service';
 
 interface UploadIntent {
@@ -24,6 +24,33 @@ export class EvidenceService {
     );
     if (!rows[0]) throw new NotFoundException('Asset was not found');
     await this.authorization.assertLocationAccess(actor, rows[0].locationId, ['head_office', 'state_head', 'centre_head', 'asset_custodian']);
+  }
+
+  async linkInvoice(actor: ActorContext, assetId: string, dto: LinkInvoiceDto) {
+    await this.assertWritableAsset(actor, assetId);
+    await this.assertWritableAsset(actor, dto.sourceAssetId);
+    return this.database.transaction(async query => {
+      const source = await query<{ objectKey:string }>(
+        `SELECT object_key AS "objectKey" FROM evidence
+         WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND id=$3::uuid AND kind='invoice'`,
+        [actor.organizationId,dto.sourceAssetId,dto.evidenceId]);
+      if(!source[0]) throw new NotFoundException('The source invoice was not found');
+      const saved = await query<{id:string}>(
+        `INSERT INTO evidence(id,organization_id,asset_id,kind,object_key,original_name,content_type,byte_size,sha256,uploaded_by)
+         SELECT $4::uuid,organization_id,$5::uuid,kind,object_key,original_name,content_type,byte_size,sha256,$6::uuid
+           FROM evidence WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND id=$3::uuid AND kind='invoice'
+         ON CONFLICT(id) DO NOTHING RETURNING id`,
+        [actor.organizationId,dto.sourceAssetId,dto.evidenceId,dto.linkId,assetId,actor.userId]);
+      if(!saved[0]) {
+        const replay=await query<{id:string}>(`SELECT id FROM evidence WHERE organization_id=$1::uuid AND asset_id=$2::uuid AND id=$3::uuid AND object_key=$4 AND kind='invoice'`,[actor.organizationId,assetId,dto.linkId,source[0].objectKey]);
+        if(!replay[0]) throw new ConflictException('This invoice-link request was already used for a different record');
+        return replay[0];
+      }
+      await query(`INSERT INTO audit_events(organization_id,actor_user_id,event_type,entity_type,entity_id,details)
+        VALUES($1::uuid,$2::uuid,'evidence.invoice_linked','asset',$3::uuid,$4::jsonb)`,
+        [actor.organizationId,actor.userId,assetId,JSON.stringify({sourceAssetId:dto.sourceAssetId,sourceEvidenceId:dto.evidenceId,evidenceId:dto.linkId})]);
+      return saved[0];
+    });
   }
 
   async createUpload(actor: ActorContext, assetId: string, dto: CreateEvidenceUploadDto) {

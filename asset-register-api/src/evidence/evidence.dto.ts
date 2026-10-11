@@ -30,3 +30,9 @@ export class CompleteEvidenceUploadDto {
   @IsUUID()
   evidenceId!: string;
 }
+
+export class LinkInvoiceDto {
+  @IsUUID() sourceAssetId!: string;
+  @IsUUID() evidenceId!: string;
+  @IsUUID() linkId!: string;
+}

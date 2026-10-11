@@ -48,7 +48,7 @@ const ASSET_COLUMNS = `a.id, a.location_id AS "locationId", l.name AS "locationN
   a.qr_public_id::text AS "qrPublicId", a.rfid_epc AS "rfidEpc", a.name, a.category, a.serial_number AS "serialNumber",
   a.manufacturer, a.model, a.status, a.condition, a.ownership_type AS "ownershipType", a.purchase_date AS "purchaseDate",
   a.purchase_amount::text AS "purchaseAmount", a.currency, a.seller_name AS "sellerName",
-  a.seller_phone AS "sellerPhone", a.created_at AS "createdAt"`;
+  a.seller_phone AS "sellerPhone", a.notes, a.created_at AS "createdAt"`;
 
 @Injectable()
 export class AssetsService {
@@ -69,10 +69,11 @@ export class AssetsService {
           AND ($3::uuid IS NULL OR a.location_id = $3::uuid)
           AND ($4::text IS NULL OR a.status::text = $4)
           AND ($5::text IS NULL OR concat_ws(' ',a.asset_tag,a.name,a.category,a.serial_number,a.manufacturer,a.model,l.name) ILIKE '%' || $5 || '%')
+          AND ($8::boolean=false OR a.purchase_date IS NULL OR a.purchase_amount IS NULL OR NULLIF(trim(a.seller_name),'') IS NULL)
           AND ($6::uuid IS NULL OR a.id > $6::uuid)
         ORDER BY a.id LIMIT $7`,
       [actor.organizationId, actor.userId, filters.locationId ?? null, filters.status ?? null, search,
-        filters.cursor ?? null, limit + 1],
+        filters.cursor ?? null, limit + 1, filters.incomplete === 'true'],
     );
     const hasMore = rows.length > limit;
     const data = hasMore ? rows.slice(0, limit) : rows;

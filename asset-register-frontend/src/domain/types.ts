@@ -33,6 +33,7 @@ export interface Location {
 }
 
 export interface Asset {
+  notes?: string | null;
   id: string;
   locationId: string;
   locationName: string;

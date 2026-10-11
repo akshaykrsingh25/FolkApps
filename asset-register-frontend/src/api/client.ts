@@ -40,8 +40,8 @@ export const api = {
   },
   createLocation: (token: string, organizationId: string, data: Partial<Location> & { kind: LocationKindValue; name: string }) =>
     request<Location>('/locations', token, organizationId, data),
-  assets: (token: string, organizationId: string, q = '', status = '', cursor = '', locationId = '') => {
-    const params=new URLSearchParams(); if(q)params.set('q',q); if(status)params.set('status',status); if(cursor)params.set('cursor',cursor); if(locationId)params.set('locationId',locationId);
+  assets: (token: string, organizationId: string, q = '', status = '', cursor = '', locationId = '', incomplete = false) => {
+    const params=new URLSearchParams(); if(incomplete)params.set('incomplete','true'); if(q)params.set('q',q); if(status)params.set('status',status); if(cursor)params.set('cursor',cursor); if(locationId)params.set('locationId',locationId);
     const query = params.size ? `?${params}` : '';
     return request<{ data: Asset[]; nextCursor: string | null }>(`/assets${query}`, token, organizationId);
   },
@@ -54,6 +54,8 @@ export const api = {
     request<Asset>('/assets', token, organizationId, data),
   updateAsset: (token: string, organizationId: string, id: string, data: Record<string, unknown>) =>
     request<Asset>(`/assets/${encodeURIComponent(id)}`, token, organizationId, data),
+  linkInvoice: (token:string,organizationId:string,assetId:string,data:{sourceAssetId:string;evidenceId:string;linkId:string}) =>
+    request(`/assets/${encodeURIComponent(assetId)}/evidence/link-invoice`,token,organizationId,{sourceAssetId:data.sourceAssetId,evidenceId:data.evidenceId,linkId:data.linkId}),
   evidence: (token: string, organizationId: string, assetId: string) =>
     request<Evidence[]>(`/assets/${encodeURIComponent(assetId)}/evidence`, token, organizationId),
   createEvidenceUpload: (token: string, organizationId: string, assetId: string, data: { clientEvidenceId: string; kind: string; originalName: string; contentType: string; byteSize: number; sha256: string; visualHash?: string }) =>

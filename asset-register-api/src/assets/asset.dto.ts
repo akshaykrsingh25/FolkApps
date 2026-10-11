@@ -102,6 +102,9 @@ export class UpdateAssetDto {
 }
 
 export class ListAssetsDto {
+  @IsOptional() @IsIn(['true'])
+  incomplete?: string;
+
   @IsOptional() @IsString() @Length(1, 120)
   q?: string;
 
