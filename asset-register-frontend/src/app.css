@@ -300,3 +300,19 @@ h1,h2,p { margin-top: 0; }
   .qr-epc { margin-top:1mm;padding:1mm; }
   .qr-epc strong { font-size:6pt;overflow-wrap:anywhere; }
 }
+
+/* Compact QR label matching the approved five-element layout. */
+.label-view .qr-label { min-height:0;padding:14px;gap:0; }
+.label-view .qr-image { width:min(100%,300px);height:auto;aspect-ratio:1;margin:0 auto 12px; }
+.label-view .qr-item-name { font-size:21px;line-height:1.2; }
+.label-view .qr-tag { font-size:17px;line-height:1.3; }
+.label-view .qr-location { font-size:12px;line-height:1.3; }
+.label-view .qr-id { font-size:10px;line-height:1.3;overflow-wrap:anywhere; }
+@media print {
+  .label-view .qr-label { padding:0!important; }
+  .label-view .qr-image { width:66mm!important;height:66mm!important;margin:0 auto 3mm!important; }
+  .label-view .qr-item-name { font-size:12pt;line-height:1.15; }
+  .label-view .qr-tag { font-size:10pt;line-height:1.2; }
+  .label-view .qr-location { font-size:8pt;line-height:1.2; }
+  .label-view .qr-id { font-size:6pt;line-height:1.2; }
+}
