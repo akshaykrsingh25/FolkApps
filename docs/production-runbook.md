@@ -71,3 +71,18 @@ For an access incident, suspend the affected role assignment or identity-provide
 ## Pilot release gate
 
 Do not open a live pilot until the organization has approved the active-centre directory and state mapping, verified centre addresses/coordinates, configured identity and MFA, provisioned production hosting/secrets/private storage, selected notification delivery expectations, set recovery and retention targets, completed a formal security/accessibility/device review, and named pilot owners and support contacts. Start with selected centres, reconcile a known asset sample, and measure scan completion, mismatch handling, offline sync recovery, and operational response before expanding.
+
+## Operations extension (migrations 017–018)
+
+Apply `017_operational_tasks.sql` and `018_service_floorplan_finance.sql` once, in order, before deploying the new API and notification worker. The migrations are additive; retain their tables if reverting application binaries so operational records and approvals are not lost. Restart all API and worker instances on the same release. The new reminder sweeps run every five minutes and write deduplicated in-app reminders (one per recipient/task or ticket per UTC day). They do not send email, SMS, or WhatsApp.
+
+Validate in staging with two head-office identities, a scoped centre manager, a custodian, and a viewer:
+
+1. Assign an incomplete asset to an active scoped writer. Confirm a second open task is refused, another centre cannot access it, and completion fails until the purchase fields are saved. Confirm reminders stop when details are complete or the task closes.
+2. Search unused stock. Company ownership, good condition, explicit unused status and no active transfer are required. An unscanned asset is never treated as reusable stock. Scope remains enforced; head office can coordinate cross-region requests through existing transfers.
+3. Create an elapsed-hours service ticket using a real approved 24/7 contract. Acknowledge, resolve, inspect the proposed capped credit and have head office approve a reviewed amount. Business-hours, holidays, contractual pauses and external vendor portals are not yet supported; do not apply this timer model to those contracts.
+4. Build a floor schematic from approved layout information. Each rectangle references a real area in that floor. Verify cycle counts and the text alternative. This is an editable schematic, not CAD conversion or a certified architectural plan.
+5. Produce a straight-line depreciation snapshot using an approved policy, INR costs and company-owned assets. A second head-office user approves it. Download the CSV, reconcile it externally and record the ERP journal reference. Values are cumulative as of period end, not incremental monthly charges. There is no automatic ERP posting adapter; the ERP remains authoritative.
+6. Test the locator with the actual selected reader. The current web transport accepts UTF-8 newline-delimited JSON `{ "epc": "…", "rssi": -65 }` over a user-selected serial port at 115200 baud. RSSI must be negative dBm from -127 through -1, not vendor-normalized strength or percent. The adapter must document its units. Exact EPCs are matched; service UUIDs are never interpreted as EPCs. Demonstration mode never records a verification event. BLE requires a separate native/device adapter and has not been certified.
+
+Deployment is still blocked on a real hosting account, domain/TLS, OIDC tenant, PostgreSQL and private storage configuration. No public deployment or production load test was performed by adding these modules. Hardware commissioning, approved floor drawings, ERP vendor/API mappings and contract-specific calendars remain external integration work.

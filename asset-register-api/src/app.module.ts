@@ -1,3 +1,4 @@
+import { OperationsModule } from './operations/operations.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
@@ -16,7 +17,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AuditModule } from './audit/audit.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule, UsersModule, ExportsModule, NotificationsModule, AuditModule],
+  imports: [OperationsModule, ConfigModule.forRoot({ isGlobal: true }), DatabaseModule, AuthModule, AuthorizationModule, MeModule, LocationsModule, AssetsModule, VerificationModule, LifecycleModule, InsightsModule, UsersModule, ExportsModule, NotificationsModule, AuditModule],
   controllers: [HealthController],
 })
 export class AppModule {}

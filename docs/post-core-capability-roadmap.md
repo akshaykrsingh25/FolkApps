@@ -101,3 +101,7 @@ Reuse reporting can count verified refurbishment and redeployment events first. 
 ## Current application status
 
 The current app already provides scoped assets and locations, QR identities, private evidence uploads, repair reports, warranties/AMCs, transfers, audit history, verification cycles, and an in-app outbox/Watch foundation. It does **not** yet provide client leases or handovers, vendor ticketing/SLA calculations, consumables stock, floorplan rendering, BOQ imports, e-waste certificates, or ESG metrics. This roadmap is a reviewed proposal, not an implementation claim.
+
+## 11 October 2026 implementation update
+
+The Operations desk now includes a first service-ticket workflow and a safe editable room schematic. Service targets currently use elapsed 24/7 hours only; floorplans are area-linked rectangles, not imported CAD/SVG. The earlier “not implemented” statements for those two limited workflows are superseded by this update. Contract calendars, vendor portals, CAD conversion, and the other optional modules in this document remain outside this release. Refer to `production-runbook.md` for the exact supported boundaries and commissioning requirements.

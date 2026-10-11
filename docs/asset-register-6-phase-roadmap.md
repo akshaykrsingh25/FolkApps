@@ -121,3 +121,16 @@ The Needs purchase details filter is applied before server pagination and uses e
 | ERP depreciation synchronization | Export approved asset/accounting events, reconcile ERP acknowledgements, and surface differences for Finance. | ERP vendor/API, chart of accounts, asset class mapping, approved useful lives/residual values/methods, period locks, and a staging reconciliation. ERP remains the accounting authority. No accounting policy is inferred by the app. |
 
 Implement unused-stock matching first, then contract-based SLA tracking. Run proximity hardware selection alongside those. Plan floor maps and ERP integration once their source data and owners are confirmed. These proposals do not change the production rollout prerequisites.
+
+### Operations extension — 11 October 2026
+
+Implemented in the existing application and API (not yet deployed live):
+
+- Scoped completion assignments, due dates, completion validation, audit events and daily deduplicated in-app overdue reminders through the existing worker.
+- Unused-stock search restricted to company-owned, good-condition, explicitly unused items without open individual/batch transfers. Results lead to existing asset and transfer review, not automatic purchase approval.
+- Web locator with exact EPC isolation, EMA smoothing, a three-second signal timeout, safe feedback cadence, independent sound/vibration, stop/background cleanup and explicit demonstration. A serial JSON adapter boundary is implemented; no RFID/BLE model is certified. No meters or “percent close” are claimed.
+- Vendor tickets with immutable recorded contract targets, acknowledgement/resolution transitions, capped proposed credits, head-office review, audit events and scoped overdue inbox notifications. Only elapsed 24/7 clocks are supported in this release.
+- Versioned indoor room schematics tied to floor/area records, cycle-derived counts, keyboard room selection and text summaries. Actual CAD/SVG ingestion remains unimplemented.
+- INR straight-line depreciation snapshots with explicit useful life/residual assumptions, independent head-office approval, CSV export and manual ERP-reference reconciliation. Automatic ERP sync remains unimplemented.
+
+These supersede the earlier “not implemented” status for the limited workflows above. They do not establish live connectivity. Complete commissioning still requires the reader model/adapter, ERP credentials and mapping, approved drawings, contract calendars where applicable, and production infrastructure. See the operations extension in the production runbook for the exact release gates and supported boundaries.

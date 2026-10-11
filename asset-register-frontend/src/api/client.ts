@@ -25,6 +25,7 @@ async function request<T>(path: string, token: string, organizationId?: string, 
 }
 
 export const api = {
+  operations: <T>(token:string,organizationId:string,path:string,body?:unknown,method?:string)=>request<T>(`/operations/${path}`,token,organizationId,body,method),
   organizations: (token: string) => request<Organization[]>('/me/organizations', token),
   managedUsers: (token: string, organizationId: string) => request<ManagedUser[]>('/users', token, organizationId),
   createManagedUser: (token: string, organizationId: string, data: { identitySubject: string; email: string; displayName: string; phoneNumber?: string; role: Role; scopeLocationId?: string }) =>

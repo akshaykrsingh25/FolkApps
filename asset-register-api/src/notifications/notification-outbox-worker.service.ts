@@ -46,6 +46,8 @@ export class NotificationOutboxWorkerService {
         }
         if (Date.now() - this.lastVerificationSweepAt >= VERIFICATION_SWEEP_INTERVAL_MS) {
           await this.runOverdueVerificationSweep();
+          await this.runCompletionReminders();
+          await this.runServiceReminders();
           this.lastVerificationSweepAt = Date.now();
         }
         const didWork = await this.runOneJob();
@@ -55,6 +57,39 @@ export class NotificationOutboxWorkerService {
         await waitForPoll(signal);
       }
     }
+  }
+
+  async runServiceReminders(): Promise<void> {
+    await this.database.query(`WITH RECURSIVE paths AS (
+      SELECT organization_id,id AS leaf,id,parent_id FROM locations
+      UNION ALL SELECT p.organization_id,p.leaf,l.id,l.parent_id FROM paths p JOIN locations l ON l.organization_id=p.organization_id AND l.id=p.parent_id
+    ) INSERT INTO notification_inbox(organization_id,recipient_user_id,notification_key,kind,severity,title,description,asset_id,asset_tag,asset_name,location_name,related_id,occurred_at)
+    SELECT DISTINCT t.organization_id,u.id,'service:'||t.id||':'||(now() AT TIME ZONE 'UTC')::date,'service_overdue','high','Vendor service target exceeded',
+      'Review acknowledgement or resolution delay for '||a.asset_tag||'. Contract: '||t.contract_reference,a.id,a.asset_tag,a.name,l.name,t.id,now()
+    FROM service_tickets t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id
+    JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+    JOIN role_assignments r ON r.organization_id=t.organization_id AND r.role_key IN('head_office','state_head','centre_head')
+    JOIN users u ON u.organization_id=r.organization_id AND u.id=r.user_id AND u.active=true
+    WHERE t.status<>'resolved' AND ((t.acknowledged_at IS NULL AND now()>t.created_at+make_interval(hours=>t.ack_hours)) OR now()>t.created_at+make_interval(hours=>t.resolution_hours))
+    AND ((r.role_key='head_office' AND r.scope_location_id IS NULL) OR r.scope_location_id IN(SELECT id FROM paths WHERE organization_id=t.organization_id AND leaf=a.location_id))
+    ON CONFLICT(organization_id,recipient_user_id,notification_key) DO NOTHING`);
+  }
+
+  async runCompletionReminders(): Promise<void> {
+    await this.database.query(`WITH RECURSIVE paths AS (
+      SELECT organization_id,id AS leaf,id,parent_id FROM locations
+      UNION ALL SELECT p.organization_id,p.leaf,l.id,l.parent_id FROM paths p JOIN locations l ON l.organization_id=p.organization_id AND l.id=p.parent_id
+    ) INSERT INTO notification_inbox(organization_id,recipient_user_id,notification_key,kind,severity,title,description,asset_id,asset_tag,asset_name,location_name,related_id,occurred_at)
+    SELECT t.organization_id,t.assigned_to,'completion:'||t.id||':'||(now() AT TIME ZONE 'UTC')::date,'completion_due','medium','Purchase details need completion',
+      'Complete the purchase date, unit price and seller for '||a.asset_tag,a.id,a.asset_tag,a.name,l.name,t.id,now()
+    FROM asset_completion_tasks t JOIN assets a ON a.organization_id=t.organization_id AND a.id=t.asset_id
+    JOIN locations l ON l.organization_id=a.organization_id AND l.id=a.location_id
+    JOIN users u ON u.organization_id=t.organization_id AND u.id=t.assigned_to AND u.active=true
+    WHERE t.status='open' AND t.due_at<=now() AND (a.purchase_date IS NULL OR a.purchase_amount IS NULL OR NULLIF(trim(a.seller_name),'') IS NULL)
+    AND EXISTS(SELECT 1 FROM role_assignments r WHERE r.organization_id=t.organization_id AND r.user_id=t.assigned_to
+      AND r.role_key IN('head_office','state_head','centre_head','asset_custodian')
+      AND ((r.role_key='head_office' AND r.scope_location_id IS NULL) OR r.scope_location_id IN(SELECT id FROM paths WHERE organization_id=t.organization_id AND leaf=a.location_id)))
+    ON CONFLICT(organization_id,recipient_user_id,notification_key) DO NOTHING`);
   }
 
   async runScheduledVerificationCycles(): Promise<void> {
