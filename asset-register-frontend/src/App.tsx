@@ -3,6 +3,7 @@ import type { User } from 'oidc-client-ts';
 import QRCode from 'qrcode';
 import { api, ApiError } from './api/client';
 import { oidcConfigured, userManager } from './auth/oidc';
+import { saveDemoEvidence, listDemoEvidence, readDemoEvidence } from './demo/evidence';
 import { demoStore, DEMO_ORGANIZATION } from './demo/store';
 import type { Asset, AssetActivityEvent, AssetCustody, AssetExportJob, AuditEvent, Evidence, EligibleCustodian, Location, LocationKind, ManagedUser, NotificationCategory, NotificationPreference, OperationalAlert, Organization, Role, RfidScanReconcileResult, SessionUser, UserNotification, VerificationAsset, VerificationCycle, VerificationPolicy, LifecycleReport, AssetTransfer, TransferBatch, WarrantyRecord, InsightOverview, IndiaMapData, MapCentre } from './domain/types';
 import { isWithinIndia, parseLatitudeLongitude } from './domain/coordinates';
@@ -441,9 +442,8 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !organization || !selectedAsset || view !== 'asset-detail') return;
-    if (DEMO_MODE) { setEvidence([]); return; }
     let active = true;
-    api.evidence(user.accessToken, organization.id, selectedAsset.id)
+    (DEMO_MODE ? listDemoEvidence(selectedAsset.id) : api.evidence(user.accessToken, organization.id, selectedAsset.id))
       .then((items) => { if (active) setEvidence(items); })
       .catch((reason: unknown) => { if (active) setError(errorMessage(reason)); });
     return () => { active = false; };
@@ -1048,17 +1048,29 @@ export default function App() {
           setNotice('Asset saved. A capture needs upload; its encrypted copy is in the device queue for retry.');
         }
       } else if (attachments.length && DEMO_MODE) {
-        setNotice('Sample asset saved. Private photo and invoice storage is enabled on the live API.');
+        try {
+          await uploadEvidenceFiles(asset.id, attachments);
+          setNotice(`Sample asset and ${attachments.length} attachment${attachments.length === 1 ? '' : 's'} saved in this browser. Open the asset to view them.`);
+          setAssetPhotoFile(null); setInvoiceFile(null); setAssetPhotoUrl('');
+        } catch {
+          setView('asset-detail');
+          setNotice('Sample asset saved. An attachment could not be saved in this browser; retry below.');
+        }
       }
     } catch (reason) { setError(errorMessage(reason)); }
     finally { setSaving(false); }
   }
 
   async function uploadEvidenceFiles(assetId: string, files: PendingAttachment[]) {
-    if (!user || !organization || DEMO_MODE) return;
+    if (!user || !organization) throw new Error('Sign in before saving attachments.');
     setUploadingEvidence(true); setEvidenceError('');
     try {
       for (const attachment of files) {
+        if (DEMO_MODE) {
+          await saveDemoEvidence(assetId, attachment);
+          setPendingEvidenceFiles((current) => current.filter((item) => item.id !== attachment.id));
+          continue;
+        }
         const digest = await crypto.subtle.digest('SHA-256', await attachment.file.arrayBuffer());
         const sha256 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
         const visualHash = attachment.kind === 'asset_photo' ? await createVisualHash(attachment.file).catch(() => undefined) : undefined;
@@ -1074,7 +1086,7 @@ export default function App() {
         }
         setPendingEvidenceFiles((current) => current.filter((item) => item.id !== attachment.id));
       }
-      setEvidence(await api.evidence(user.accessToken, organization.id, assetId));
+      setEvidence(DEMO_MODE ? await listDemoEvidence(assetId) : await api.evidence(user.accessToken, organization.id, assetId));
     } catch (reason) {
       const message = errorMessage(reason);
       setEvidenceError(message);
@@ -1093,7 +1105,19 @@ export default function App() {
   }
 
   async function downloadEvidenceFile(item: Evidence) {
-    if (!user || !organization || !selectedAsset || DEMO_MODE) return;
+    if (!user || !organization || !selectedAsset) return;
+    if (DEMO_MODE) {
+      const preview = window.open('', '_blank');
+      if (preview) preview.opener = null;
+      try {
+        const file = await readDemoEvidence(selectedAsset.id, item.id);
+        const url = URL.createObjectURL(file);
+        if (preview) preview.location.href = url;
+        else { const link = document.createElement('a'); link.href = url; link.download = item.originalName; link.click(); }
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      } catch (reason) { preview?.close(); setEvidenceError(errorMessage(reason)); }
+      return;
+    }
     try {
       const result = await api.evidenceDownload(user.accessToken, organization.id, selectedAsset.id, item.id);
       window.open(result.downloadUrl, '_blank', 'noopener,noreferrer');
@@ -1442,7 +1466,7 @@ export default function App() {
 
           {view === 'asset-form' && <section className="view-panel narrow-view">
             <button className="back-action" onClick={() => setView(selectedAsset ? 'asset-detail' : 'assets')}>← Back to {selectedAsset ? 'asset' : 'register'}</button><p className="eyebrow">{selectedAsset ? 'ASSET RECORD · EDIT' : 'NEW ASSET · REGISTER'}</p><h1>{selectedAsset ? 'Keep this record up to date.' : 'Give it a place in the register.'}</h1><p className="view-lead">The QR identity stays with the item. Confirm changes against the product and bill.</p>
-            <form key={`${selectedAsset?.id || 'new'}-${formSeedVersion}`} className="panel entry-form asset-form" onSubmit={createAsset}>
+            <form key={`${selectedAsset?.id || 'new'}-${formSeedVersion}`} className="panel entry-form asset-form" onSubmit={createAsset} onInvalidCapture={() => setError('Please complete the required name, category, and location, and check the highlighted field.')}>
               <div className="form-section-title"><span>01</span><div><h2>Identify the item</h2><small>Name and category are required.</small></div></div>
               <div className="capture-grid">
                 <label className="capture-tile"><span className="capture-glyph"><Icon name="asset" /></span><strong>{assetPhotoFile ? 'Retake product photo' : 'Photograph the asset'}</strong><small>Suggest a common item type, read its label, and compare with registered photos</small><input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setAssetPhotoFile(file); setAssetPhotoUrl(URL.createObjectURL(file)); setAssetCaptureSuggestions(null); setMatchingAssets([]); setMatchingConfidence(null); void analyzeCapture(file, 'asset'); }} /></label>
@@ -1465,6 +1489,7 @@ export default function App() {
               <div className="form-grid"><label>Purchase date<input name="purchaseDate" type="date" defaultValue={selectedAsset?.purchaseDate || formSeed?.purchaseDate || ''} /></label><label>Purchase amount (₹)<input name="purchaseAmount" type="number" min="0" step="0.01" inputMode="decimal" defaultValue={selectedAsset?.purchaseAmount || formSeed?.purchaseAmount || ''} placeholder="0.00" /></label><label>Seller name<input name="sellerName" maxLength={160} defaultValue={selectedAsset?.sellerName || formSeed?.sellerName || ''} placeholder="Seller or supplier" /></label><label>Seller phone<input name="sellerPhone" type="tel" maxLength={40} defaultValue={selectedAsset?.sellerPhone || formSeed?.sellerPhone || ''} placeholder="Contact number" /></label></div>
               <label>Notes<textarea name="notes" rows={3} maxLength={2000} placeholder="Anything the next custodian should know" /></label>
               <div className="form-hint"><Icon name="asset" /><span>Photo and invoice details are suggestions. Review them in the form before saving; the original captures stay attached to the asset record.</span></div>
+              {error && <p className="capture-error" role="alert">{error}</p>}
               <div className="form-actions"><button type="button" className="quiet-button" onClick={() => setView(selectedAsset ? 'asset-detail' : 'assets')}>Cancel</button><button className="primary-button" disabled={saving}>{saving ? 'Saving asset…' : selectedAsset ? 'Save changes' : 'Save asset & create QR'}<span aria-hidden="true">→</span></button></div>
             </form>
           </section>}
@@ -1475,10 +1500,10 @@ export default function App() {
             <section className="panel custody-panel"><div className="panel-heading"><div><p className="eyebrow">WHO HAS IT NOW?</p><h2>Custody & handover</h2></div><span className="evidence-count">{activeCustody?'Issued':'Available'}</span></div><p className="custody-intro">Record who takes responsibility for this item, its condition at handover, and when it comes back.</p>{DEMO_MODE?<div className="empty-state custody-empty"><strong>Custody tracking is available in the live register.</strong><small>Sign in to issue an item and keep a handover history.</small></div>:activeCustody?<><div className="custody-active"><span className="custody-person-mark">{activeCustody.custodianName.slice(0,1).toUpperCase()}</span><span><strong>{activeCustody.custodianName}</strong><small>Issued {new Date(activeCustody.issuedAt).toLocaleString('en-IN')} · {activeCustody.issueCondition.replaceAll('_',' ')}</small>{activeCustody.issueNotes&&<small>{activeCustody.issueNotes}</small>}</span></div><form className="custody-form return-custody-form" onSubmit={(event)=>void returnAssetCustody(event,activeCustody)}><label>Condition on return<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Return notes<input name="notes" maxLength={2000} placeholder="Condition, accessories, or discrepancy"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving return…':'Record return'}</button></form></>:eligibleCustodians.length?<form className="custody-form" onSubmit={issueAssetCustody}><label>Issue to<select name="custodianUserId" defaultValue="" required><option value="" disabled>Choose an assigned custodian</option>{eligibleCustodians.map((person)=><option value={person.userId} key={person.userId}>{person.displayName}</option>)}</select></label><label>Condition at handover<select name="condition" defaultValue="good"><option value="good">Good · working</option><option value="fair">Fair · monitor</option><option value="damaged">Damaged</option><option value="not_working">Not working</option></select></label><label>Handover note<input name="notes" maxLength={2000} placeholder="Accessories, location, or purpose"/></label><button className="primary-button" disabled={saving}>{saving?'Recording…':'Issue to custodian'}</button></form>:<div className="empty-state custody-empty"><strong>No eligible custodians are assigned here yet.</strong><small>An organization administrator needs to assign an asset custodian to this centre.</small></div>}{custodyHistory.filter((item)=>item.returnedAt).length>0&&<div className="custody-history"><h3>Previous handovers</h3>{custodyHistory.filter((item)=>item.returnedAt).slice(0,5).map((item)=><article key={item.custodyId}><span><strong>{item.custodianName}</strong><small>Issued {new Date(item.issuedAt).toLocaleDateString('en-IN')} · returned {item.returnedAt?new Date(item.returnedAt).toLocaleDateString('en-IN'):''}</small></span><small>{item.issueCondition.replaceAll('_',' ')} → {item.returnCondition?.replaceAll('_',' ')}</small></article>)}</div>}</section>
             <section className="panel activity-panel"><div className="panel-heading"><div><p className="eyebrow">ACCOUNTABILITY TRAIL</p><h2>Asset activity</h2></div><span className="evidence-count">{assetActivity.length} events</span></div>{assetActivity.length?<ol className="activity-timeline">{assetActivity.map((event)=><li key={event.id}><span className="activity-node"><Icon name="history"/></span><div className="activity-copy"><strong>{activityTitle(event.eventType)}</strong><p>{activitySummary(event)}</p><small>{event.actorName} · {new Date(event.occurredAt).toLocaleString('en-IN')}</small></div></li>)}</ol>:<div className="empty-state activity-empty"><strong>No activity has been recorded yet.</strong><small>Scans, handovers, reports, transfers, and record changes will appear here.</small></div>}</section>
             <section className="panel warranty-panel"><div className="panel-heading"><div><p className="eyebrow">COVERAGE WATCH</p><h2>Warranty and service</h2></div><span className="evidence-count">{warranties.length} records</span></div>{warranties.map((warranty)=><article className="warranty-row" key={warranty.id}><span className="warranty-mark"><Icon name="check"/></span><span><strong>{warranty.coverageKind.toUpperCase()} · {warranty.provider||'Provider not listed'}</strong><small>{warranty.startsOn||'Start not recorded'} — {warranty.endsOn||'No end date'}{warranty.servicePhone?` · Service ${warranty.servicePhone}`:''}</small></span></article>)}{!warranties.length&&<p className="evidence-empty">No warranty or service coverage recorded yet.</p>}<form className="warranty-create" onSubmit={createWarrantyRecord}><label>Coverage<select name="coverageKind" defaultValue="warranty"><option value="warranty">Warranty</option><option value="guarantee">Guarantee</option><option value="amc">Annual maintenance</option><option value="other">Other</option></select></label><label>Seller or service provider<input name="provider" maxLength={160} defaultValue={selectedAsset.sellerName||''} placeholder="Provider name"/></label><label>Service centre phone<input name="servicePhone" type="tel" maxLength={40} placeholder="Support number"/></label><label>Coverage ends<input name="endsOn" type="date"/></label><button className="quiet-button" disabled={saving}>{saving?'Saving…':'Add coverage'}</button></form></section>
-            <section className="panel evidence-panel"><div className="panel-heading"><div><p className="eyebrow">PRIVATE ASSET RECORD</p><h2>Photos and documents</h2></div><span className="evidence-count">{evidence.length} saved</span></div><p className="evidence-intro">Keep the product photo and purchase proof with this item. Only people with access to this asset can open them.</p><div className="evidence-add-actions"><label className="quiet-button evidence-picker">Take asset photo<input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('asset_photo', file); event.currentTarget.value = ''; }} /></label><label className="quiet-button evidence-picker">Add invoice<input type="file" accept="image/*,application/pdf" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('invoice', file); event.currentTarget.value = ''; }} /></label></div>{evidenceError && <div className="inline-message error-message" role="alert">{evidenceError}</div>}{pendingEvidenceFiles.length > 0 && <div className="pending-evidence" role="status"><span>{pendingEvidenceFiles.length} capture{pendingEvidenceFiles.length === 1 ? '' : 's'} need upload</span><button className="text-button" disabled={uploadingEvidence} onClick={() => void uploadEvidenceFiles(selectedAsset.id, pendingEvidenceFiles)}>{uploadingEvidence ? 'Uploading…' : 'Retry upload'}</button>{pendingEvidenceFiles.map((item) => <small key={item.id}>{item.name}</small>)}</div>}{evidence.length > 0 ? <div className="evidence-list">{evidence.map((item) => <article className="evidence-row" key={item.id}><span className="evidence-type"><Icon name={item.kind === 'invoice' ? 'asset' : 'pin'} /></span><span><strong>{item.kind === 'invoice' ? 'Purchase invoice' : 'Asset photo'}</strong><small>{item.originalName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small></span><button className="text-button" onClick={() => void downloadEvidenceFile(item)}>Open file ↗</button></article>)}</div> : !pendingEvidenceFiles.length && <p className="evidence-empty">No photos or documents attached yet.</p>}</section>
+            <section className="panel evidence-panel"><div className="panel-heading"><div><p className="eyebrow">PRIVATE ASSET RECORD</p><h2>Photos and documents</h2></div><span className="evidence-count">{evidence.length} saved</span></div><p className="evidence-intro">{DEMO_MODE ? 'Demo attachments are saved on this browser only. They are not uploaded to the organization’s private storage.' : 'Keep the product photo and purchase proof with this item. Only people with access to this asset can open them.'}</p><div className="evidence-add-actions"><label className="quiet-button evidence-picker">Take asset photo<input type="file" accept="image/*" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('asset_photo', file); event.currentTarget.value = ''; }} /></label><label className="quiet-button evidence-picker">Add invoice<input type="file" accept="image/*,application/pdf" capture="environment" onChange={(event) => { const file = event.target.files?.[0]; if (file) void addEvidenceFile('invoice', file); event.currentTarget.value = ''; }} /></label></div>{evidenceError && <div className="inline-message error-message" role="alert">{evidenceError}</div>}{pendingEvidenceFiles.length > 0 && <div className="pending-evidence" role="status"><span>{pendingEvidenceFiles.length} capture{pendingEvidenceFiles.length === 1 ? '' : 's'} {DEMO_MODE ? 'await browser save' : 'need upload'}</span><button className="text-button" disabled={uploadingEvidence} onClick={() => void uploadEvidenceFiles(selectedAsset.id, pendingEvidenceFiles).catch(() => {})}>{uploadingEvidence ? 'Saving…' : DEMO_MODE ? 'Save attachments locally' : 'Retry upload'}</button>{pendingEvidenceFiles.map((item) => <small key={item.id}>{item.name}</small>)}</div>}{evidence.length > 0 ? <div className="evidence-list">{evidence.map((item) => <article className="evidence-row" key={item.id}><span className="evidence-type"><Icon name={item.kind === 'invoice' ? 'asset' : 'pin'} /></span><span><strong>{item.kind === 'invoice' ? 'Purchase invoice' : 'Asset photo'}</strong><small>{item.originalName} · {new Date(item.createdAt).toLocaleDateString('en-IN')}</small></span><button className="text-button" onClick={() => void downloadEvidenceFile(item)}>Open file ↗</button></article>)}</div> : !pendingEvidenceFiles.length && <p className="evidence-empty">No photos or documents attached yet.</p>}</section>
           </section>}
 
-          {view === 'qr-label' && selectedAsset && <section className="view-panel narrow-view label-view"><button className="back-action no-print" onClick={() => setView('asset-detail')}>← Back to asset</button><p className="eyebrow no-print">ASSET REGISTER · QR LABEL</p><h1 className="no-print">Print the asset’s identity.</h1><p className="view-lead no-print">Signed QR is ready. If an EPC is bound, it prints here too; RFID chip encoding needs a compatible writer.</p><div className="qr-label"><div className="qr-brand"><span className="brandmark">i</span><strong>INCUSPAZE <small>ASSET REGISTER</small></strong></div><span className={`qr-id-status ${selectedAsset.rfidEpc?'qr-id-dual':''}`}>{selectedAsset.rfidEpc?'QR + EPC BOUND':'SIGNED QR · RFID NOT BOUND'}</span>{qrImage ? <img className="qr-image" src={qrImage} alt={`Signed QR code for ${selectedAsset.assetTag}`} /> : <div className="qr-placeholder" aria-label="Preparing QR code" />}<strong className="qr-item-name">{selectedAsset.name}</strong><span className="qr-tag">{selectedAsset.assetTag}</span><small className="qr-location">{selectedAsset.locationName}</small>{selectedAsset.rfidEpc&&<div className="qr-epc"><small>UHF RFID EPC · PROGRAM CHIP SEPARATELY</small><strong>{selectedAsset.rfidEpc}</strong></div>}<small className="qr-id">{selectedAsset.qrPublicId}</small></div><button className="primary-button print-button no-print" onClick={() => window.print()}>Print label <span aria-hidden="true">↗</span></button></section>}
+          {view === 'qr-label' && selectedAsset && <section className="view-panel narrow-view label-view"><button className="back-action no-print" onClick={() => setView('asset-detail')}>← Back to asset</button><p className="eyebrow no-print">ASSET REGISTER · QR LABEL</p><h1 className="no-print">Print the asset’s identity.</h1><p className="view-lead no-print">Signed QR is ready. If an EPC is bound, it prints here too; RFID chip encoding needs a compatible writer.</p><div className="qr-label"><div className="qr-brand"><span className="brandmark">i</span><strong>INCUSPAZE <small>ASSET REGISTER</small></strong></div><span className={`qr-id-status ${selectedAsset.rfidEpc?'qr-id-dual':''}`}>{selectedAsset.rfidEpc?'QR + EPC BOUND':'SIGNED QR · RFID NOT BOUND'}</span>{qrImage ? <img className="qr-image" src={qrImage} alt={`Signed QR code for ${selectedAsset.assetTag}`} /> : <div className="qr-placeholder" aria-label="Preparing QR code" />}<strong className="qr-item-name">{selectedAsset.name}</strong><span className="qr-tag">{selectedAsset.assetTag}</span><small className="qr-location">{selectedAsset.locationName}</small>{selectedAsset.rfidEpc&&<div className="qr-epc"><small>UHF RFID EPC · PROGRAM CHIP SEPARATELY</small><strong>{selectedAsset.rfidEpc}</strong></div>}<small className="qr-id">{selectedAsset.qrPublicId}</small></div><button className="primary-button print-button no-print" disabled={!qrImage || saving} onClick={() => window.print()}>Print label <span aria-hidden="true">↗</span></button><p className="no-print privacy-copy">One 80 × 110 mm label. In the print dialog, turn off Headers and footers to remove the browser’s date and page address.</p></section>}
         </section>
       </div>
     </main>
