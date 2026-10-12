@@ -24,17 +24,19 @@ describe('on-device asset photo suggestions', () => {
     });
   });
 
-  it('uses the first confident supported label and skips unsupported guesses', () => {
+  it('does not substitute a weak asset guess for a confident unsupported object', () => {
     expect(suggestAssetFromPhotoLabel([
       { categoryName: 'tabby cat', displayName: 'tabby cat', score: 0.71 },
       { categoryName: 'computer keyboard', displayName: 'computer keyboard', score: 0.22 },
-    ])).toMatchObject({ name: 'Keyboard', confidence: 0.22 });
+    ])).toBeUndefined();
     expect(suggestAssetFromPhotoLabel([{ categoryName: 'tabby cat', displayName: 'tabby cat', score: 0.91 }])).toBeUndefined();
   });
 
   it('does not offer a category when model confidence is weak', () => {
     expect(suggestAssetFromPhotoLabel([{ categoryName: 'printer', displayName: 'printer', score: 0.17 }])).toBeUndefined();
   });
+
+  it('rejects malformed confidence and non-computer screen labels',()=>{expect(suggestAssetFromPhotoLabel([{categoryName:'printer',displayName:'printer',score:NaN}])).toBeUndefined();expect(suggestAssetFromPhotoLabel([{categoryName:'screen door',displayName:'screen door',score:.8}])).toBeUndefined();});
 
   it('does not claim to recognize a specialized network device from a generic model label', () => {
     expect(suggestAssetFromPhotoLabel([{ categoryName: 'switch', displayName: 'switch', score: 0.54 }])).toBeUndefined();

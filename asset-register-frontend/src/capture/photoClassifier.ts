@@ -20,7 +20,7 @@ export function localPhotoClassifierPaths(baseUrl = '/') {
 const ASSET_LABELS: Array<[RegExp, string, string]> = [
   [/\b(laptop|notebook computer)\b/i, 'IT equipment', 'Laptop'],
   [/\b(desktop computer|desktop pc|personal computer)\b/i, 'IT equipment', 'Desktop computer'],
-  [/\b(computer monitor|computer screen|monitor|screen)\b/i, 'IT equipment', 'Monitor'],
+  [/\b(computer monitor|computer screen|monitor)\b/i, 'IT equipment', 'Monitor'],
   [/\b(printer|photocopier|copier)\b/i, 'Office equipment', 'Printer'],
   [/\b(projector)\b/i, 'AV equipment', 'Projector'],
   [/\b(computer keyboard|keyboard)\b/i, 'IT equipment', 'Keyboard'],
@@ -32,21 +32,14 @@ const ASSET_LABELS: Array<[RegExp, string, string]> = [
 
 export function suggestAssetFromPhotoLabel(
   categories: Pick<Category, 'categoryName' | 'displayName' | 'score'>[],
-  minimumConfidence = 0.18,
+  minimumConfidence = 0.35,
 ): AssetPhotoSuggestion | undefined {
-  for (const prediction of categories) {
-    const label = (prediction.displayName || prediction.categoryName).trim();
-    if (!label || prediction.score < minimumConfidence) continue;
-    const mapped = ASSET_LABELS.find(([pattern]) => pattern.test(label));
-    if (!mapped) continue;
-    return {
-      category: mapped[1],
-      name: mapped[2],
-      label,
-      confidence: prediction.score,
-    };
-  }
-  return undefined;
+  const prediction=[...categories].filter(item=>Number.isFinite(item.score)&&item.score>=0&&item.score<=1).sort((a,b)=>b.score-a.score)[0];
+  if(!prediction||prediction.score<minimumConfidence)return undefined;
+  const label=(prediction.displayName||prediction.categoryName).trim();
+  const mapped=ASSET_LABELS.find(([pattern])=>pattern.test(label));
+  if(!mapped)return undefined;
+  return {category:mapped[1],name:mapped[2],label,confidence:prediction.score};
 }
 
 type ClassifierRuntime = typeof import('@mediapipe/tasks-vision');

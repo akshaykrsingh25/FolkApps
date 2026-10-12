@@ -1,9 +1,10 @@
-import type { Asset, LifecycleReport, Location, Organization } from '../domain/types';
+import { DEVICE_MODE } from '../appMode';
+import type { Asset, LifecycleReport, Location, Organization, WarrantyRecord } from '../domain/types';
 import centreDirectory from './centreDirectory.json';
 
 export const DEMO_ORGANIZATION: Organization = {
   id: '00000000-0000-4000-8000-000000000001',
-  name: 'IncuAsset demonstration workspace',
+  name: DEVICE_MODE ? 'Incuspaze Asset Register' : 'IncuAsset demonstration workspace',
   slug: 'demo',
   roles: [{ role: 'head_office', scopeLocationId: null }],
 };
@@ -71,25 +72,30 @@ const DEMO_REPORTS: LifecycleReport[] = [
   },
 ];
 
-const STORAGE_KEY = 'incuasset-demo-v3';
-interface DemoState { locations: Location[]; assets: Asset[]; reports: LifecycleReport[] }
+const STORAGE_KEY = DEVICE_MODE ? 'incuasset-device-v1' : 'incuasset-demo-v3';
+const storage=()=>DEVICE_MODE?localStorage:sessionStorage;
+interface DemoState { locations: Location[]; assets: Asset[]; reports: LifecycleReport[]; warranties?:Record<string,WarrantyRecord[]> }
 
 function read(): DemoState {
   try {
-    const value = sessionStorage.getItem(STORAGE_KEY);
+    const value = storage().getItem(STORAGE_KEY);
     if (value) {
       const saved=JSON.parse(value) as DemoState;
       return {...saved,locations:saved.locations.map((location)=>({...location,physicalAddress:location.physicalAddress??null,physicalAddressStatus:location.physicalAddressStatus||'unverified'})),assets:saved.assets.map(asset=>({...asset,ownershipType:asset.ownershipType||'INCUSPAZE_OWNED'})),reports:Array.isArray(saved.reports)?saved.reports:[...DEMO_REPORTS]};
     }
   } catch { /* use the clean synthetic fixtures */ }
-  return { locations: [...directoryLocations], assets: [...DEMO_ASSETS], reports: [...DEMO_REPORTS] };
+  return { locations: [...directoryLocations], assets: DEVICE_MODE?[]:[...DEMO_ASSETS], reports: DEVICE_MODE?[]:[...DEMO_REPORTS] };
 }
 
 function write(state: DemoState) {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  storage().setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 export const demoStore = {
+  exportRecords: async () => ({workflows:DEVICE_MODE?JSON.parse(localStorage.getItem('incuasset-device-workflows-v1')||'null'):null,floorplans:DEVICE_MODE?JSON.parse(localStorage.getItem('incuasset-device-floorplans-v1')||'null'):null,format:'incuasset-device-records-v1',exportedAt:new Date().toISOString(),...read()}),
+  summary: async()=>{const d=read();const cover=Object.values(d.warranties||{}).flat();return {assetCount:d.assets.length,centreCount:d.locations.filter(l=>l.kind==='centre'||l.kind==='warehouse').length,missingCount:d.assets.filter(a=>a.status==='missing').length,attentionCount:d.assets.filter(a=>a.status==='in_repair'||a.status==='out_of_service').length,unusedCount:d.assets.filter(a=>a.status==='unused').length,openReportCount:d.reports.filter(r=>!['resolved','closed'].includes(r.status)).length,warrantyExpiringCount:cover.filter(w=>w.endsOn&&Date.parse(w.endsOn)>=Date.now()&&Date.parse(w.endsOn)<=Date.now()+30*86400000).length};},
+  warranties: async (assetId:string) => read().warranties?.[assetId]||[],
+  addWarranty: async(assetId:string,data:Record<string,unknown>)=>{const state=read();if(!state.assets.some(a=>a.id===assetId))throw new Error('Asset not found');const item:WarrantyRecord={id:crypto.randomUUID(),coverageKind:String(data.coverageKind||'warranty'),provider:String(data.provider||'')||null,servicePhone:String(data.servicePhone||'')||null,startsOn:null,endsOn:String(data.endsOn||'')||null,terms:null};state.warranties||={};state.warranties[assetId]=[...(state.warranties[assetId]||[]),item];write(state);return item;},
   organizations: async () => [DEMO_ORGANIZATION],
   locations: async (q = '') => read().locations.filter((location) => !q || `${location.name} ${location.code || ''} ${location.city || ''} ${location.physicalAddress || ''}`.toLowerCase().includes(q.toLowerCase())),
   createLocation: async (data: { kind: Location['kind']; name: string; parentId?: string; code?: string; city?: string; stateName?: string }) => {
@@ -101,8 +107,11 @@ export const demoStore = {
   createAsset: async (data: Record<string, unknown>) => {
     const state = read();
     const requestId = String(data.clientRequestId || '');
+    if(!state.locations.some(l=>l.id===data.locationId&&l.kind!=='state'))throw new Error('Choose an existing centre, floor or area.');
+    if(!String(data.name||'').trim()||!String(data.category||'').trim())throw new Error('Name and category are required.');
     const replay = requestId ? state.assets.find((item) => item.id === requestId) : undefined;
     if (replay) return replay;
+    if(data.assetTag&&state.assets.some(a=>a.assetTag===data.assetTag))throw new Error('This asset tag is already registered.');
     const location = state.locations.find((item) => item.id === data.locationId);
     const asset: Asset = {
       id: requestId || crypto.randomUUID(), locationId: String(data.locationId), locationName: location?.name || 'Unknown place',
@@ -130,7 +139,7 @@ export const demoStore = {
   createReport: async (data: Record<string, unknown>) => {
     const state = read();
     const asset = state.assets.find((item)=>item.id===data.assetId);
-    if (!asset) throw new Error('Choose an asset from the sample register');
+    if (!asset) throw new Error('Choose an asset from the register');
     const report: LifecycleReport = {
       id: crypto.randomUUID(), assetId: asset.id, assetTag: asset.assetTag, assetName: asset.name,
       locationId: asset.locationId, locationName: asset.locationName,
@@ -144,7 +153,7 @@ export const demoStore = {
     const report = state.reports.find((item)=>item.id===id);
     if (!report) throw new Error('Report was not found');
     const allowed: Record<string,string[]> = { reported:['assigned'], assigned:['in_repair'], in_repair:['resolved'] };
-    if (!allowed[report.status]?.includes(status)) throw new Error('This sample report cannot move to that status');
+    if (!allowed[report.status]?.includes(status)) throw new Error('This report cannot move to that status');
     report.status = status;
     if (status === 'resolved') report.resolvedAt = new Date().toISOString();
     write(state); return report;

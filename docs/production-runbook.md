@@ -103,3 +103,19 @@ The configured receiver must implement `incuasset.depreciation-snapshot.v1`:
 - Acknowledgement confirms receipt only. The app does not mark the accounting batch reconciled automatically. Finance must still match the ERP result and record the journal reference.
 
 The outbox leases jobs, retries up to eight attempts with exponential delay, and preserves the delivery ID during an explicit retry of a failed job. The UI shows queued/sending/delivered/failed status. HTTPS redirects are rejected and responses are bounded. No live ERP request was made during implementation; tests use a synthetic receiver. Provision an approved vendor adapter and validate its idempotency and financial mappings in staging before enabling this worker.
+
+## Android device-edition audit — 12 October 2026
+
+The standalone APK is an offline device edition. Demo tags and synthetic inventory are excluded from this build, while Storage & install explains local storage and unavailable shared services. It is not a connected enterprise production deployment.
+
+Corrections made during the mobile audit:
+
+- Persisted device records across sessions, maintained idempotent creation, prevented duplicate local tags, and repaired local attachment synchronization.
+- Removed loose barcode search fallback and brand/model-only duplicate claims. Category inference now requires a confident leading supported prediction and rejects malformed scores and ambiguous “screen door” labels.
+- Added rear-camera preference, centered photo shutter, exposure/detail guidance, permission error handling, and camera/scanner teardown on screen exit/background.
+- Added native document export and label printing, Android back navigation, cutout/system-bar insets and scoped file selection.
+- Added screen entrance transitions with reduced-motion support, photo thumbnails, original workspace art and keyboard-accessible schematic building/floor/area selection with local asset lists.
+- Checked all eight main screens at a 320 CSS-pixel width; corrected the inventory action overflow. Android package launch, image loading, no demo banner and no horizontal overflow passed on the isolated emulator.
+- Added device floor walks, handover records, coverage persistence and locally saved room layouts so those core actions work without a company server. Corporate approvals are never simulated as real authenticated approvals.
+
+Validation evidence: frontend suite and backend regression suite passed; APK signature and emulator installation/launch were checked. Browser testing covered asset save/QR creation, record persistence, floor-walk verification and the India→centre→floor drilldown. Real phone camera conditions, printer output and unconfigured remote integrations remain unverified. This audit does not certify every function or every handset; use a controlled pilot before organization-wide production rollout.
