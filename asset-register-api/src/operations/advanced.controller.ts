@@ -1,3 +1,4 @@
+import { ErpSnapshotService } from './erp-snapshot.service';
 import { Body,Controller,Get,Param,ParseUUIDPipe,Post,Query,Req,UseGuards } from '@nestjs/common';
 import type { AuthenticatedRequest } from '../auth/authenticated-request';
 import { OidcAuthGuard } from '../auth/oidc-auth.guard';
@@ -8,7 +9,10 @@ import { AdvancedService } from './advanced.service';
 import { CreditDto,DepreciationDto,FinanceActionDto,PlanDto,PlanQueryDto,TicketActionDto,TicketDto } from './advanced.dto';
 @Controller('operations') @UseGuards(OidcAuthGuard,TenantMembershipGuard,PermissionsGuard)
 export class AdvancedController {
- constructor(private s:AdvancedService){}
+ constructor(private s:AdvancedService,private erp:ErpSnapshotService){}
+ @Post('erp/:id/retry') @RequirePermission('asset:write') retry(@Req() r:AuthenticatedRequest,@Param('id',ParseUUIDPipe) id:string){return this.erp.retry(r.actor!,id);}
+ @Get('erp') @RequirePermission('asset:read') erpStatus(@Req() r:AuthenticatedRequest){return this.erp.status(r.actor!);}
+ @Post('finance/:id/sync') @RequirePermission('asset:write') sync(@Req() r:AuthenticatedRequest,@Param('id',ParseUUIDPipe) id:string){return this.erp.enqueue(r.actor!,id);}
  @Get('tickets') @RequirePermission('asset:read') tickets(@Req() r:AuthenticatedRequest){return this.s.tickets(r.actor!);}
  @Post('tickets') @RequirePermission('asset:write') create(@Req() r:AuthenticatedRequest,@Body() d:TicketDto){return this.s.createTicket(r.actor!,d);}
  @Post('tickets/:id/action') @RequirePermission('asset:write') action(@Req() r:AuthenticatedRequest,@Param('id',ParseUUIDPipe) id:string,@Body() d:TicketActionDto){return this.s.ticketAction(r.actor!,id,d);}

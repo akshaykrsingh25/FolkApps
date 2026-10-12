@@ -134,3 +134,7 @@ Implemented in the existing application and API (not yet deployed live):
 - INR straight-line depreciation snapshots with explicit useful life/residual assumptions, independent head-office approval, CSV export and manual ERP-reference reconciliation. Automatic ERP sync remains unimplemented.
 
 These supersede the earlier “not implemented” status for the limited workflows above. They do not establish live connectivity. Complete commissioning still requires the reader model/adapter, ERP credentials and mapping, approved drawings, contract calendars where applicable, and production infrastructure. See the operations extension in the production runbook for the exact release gates and supported boundaries.
+
+### Follow-up: safe imports and queued ERP delivery
+
+Implemented a restricted SVG rectangle importer with area mapping, plus an optional tenant-bound ERP snapshot outbox/worker and UI delivery status/retry controls. The receiver protocol, canonical payload digest, retry behaviour and staging requirements are in the production runbook. This extends the earlier CSV-only handoff; it does not claim a live ERP connection or automatic journal posting. Native CAD import, BLE hardware commissioning and public deployment still require the actual vendor/system/infrastructure inputs.

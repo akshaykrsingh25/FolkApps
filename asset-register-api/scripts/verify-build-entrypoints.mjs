@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageJson = JSON.parse(await readFile(resolve(packageRoot, 'package.json'), 'utf8'));
-const runtimeScripts = ['start', 'worker:exports', 'worker:notifications'];
+const runtimeScripts = ['start', 'worker:exports', 'worker:notifications', 'worker:erp'];
 
 for (const name of runtimeScripts) {
   const command = packageJson.scripts[name];

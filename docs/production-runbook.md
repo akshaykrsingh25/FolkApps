@@ -86,3 +86,20 @@ Validate in staging with two head-office identities, a scoped centre manager, a 
 6. Test the locator with the actual selected reader. The current web transport accepts UTF-8 newline-delimited JSON `{ "epc": "…", "rssi": -65 }` over a user-selected serial port at 115200 baud. RSSI must be negative dBm from -127 through -1, not vendor-normalized strength or percent. The adapter must document its units. Exact EPCs are matched; service UUIDs are never interpreted as EPCs. Demonstration mode never records a verification event. BLE requires a separate native/device adapter and has not been certified.
 
 Deployment is still blocked on a real hosting account, domain/TLS, OIDC tenant, PostgreSQL and private storage configuration. No public deployment or production load test was performed by adding these modules. Hardware commissioning, approved floor drawings, ERP vendor/API mappings and contract-specific calendars remain external integration work.
+
+## SVG import and ERP snapshot connector update
+
+Room-only SVG import is now available. It accepts up to 200 rectangles in a 256 KB SVG, normalizes its viewBox and requires a one-to-one area mapping. The browser extracts only names and numeric geometry. Original SVG markup is neither mounted nor submitted to the API. Scripts, entities, external references, transforms, paths and embedded objects are rejected. DWG/DXF and arbitrary architectural SVG are still unsupported; export a simplified room rectangle layer first.
+
+Apply migration `019_erp_snapshot_outbox.sql` before enabling the optional `npm run worker:erp` process. The API and this worker require operator-injected `ERP_SNAPSHOT_ENDPOINT` (HTTPS URL without credentials/query/fragment), `ERP_SNAPSHOT_TOKEN` (secret), and `ERP_SYNC_ORGANIZATION_ID` (the single authorized organization). Never place the bearer token in frontend settings, repository files, screenshots or messages. This is an adapter contract, not a certified SAP/Tally/Oracle connector.
+
+The configured receiver must implement `incuasset.depreciation-snapshot.v1`:
+
+- Accept an authenticated POST with `Idempotency-Key` equal to the stable delivery UUID. The JSON body contains `schema`, `deliveryId`, `payloadHash` and `payload`.
+- The payload contains organization/batch IDs, period end, policy reference, currency, `measurement=cumulative_snapshot_not_posting_instruction`, and sealed lines. These are cumulative values, not an instruction to debit or credit accounts.
+- Recompute SHA-256 over UTF-8 canonical JSON of `payload`: recursively sort object keys, preserve array order, no extra whitespace, standard JSON primitive serialization. Reject a mismatch. Enforce the configured organization at the receiver too.
+- Persist each delivery ID once. For repeat requests, return the same result; never create a duplicate journal or receipt.
+- Return a bounded JSON acknowledgement with the exact `deliveryId`, exact `payloadHash` and a nonempty `externalReference` of at most 200 characters. A 2xx response alone is insufficient.
+- Acknowledgement confirms receipt only. The app does not mark the accounting batch reconciled automatically. Finance must still match the ERP result and record the journal reference.
+
+The outbox leases jobs, retries up to eight attempts with exponential delay, and preserves the delivery ID during an explicit retry of a failed job. The UI shows queued/sending/delivered/failed status. HTTPS redirects are rejected and responses are bounded. No live ERP request was made during implementation; tests use a synthetic receiver. Provision an approved vendor adapter and validate its idempotency and financial mappings in staging before enabling this worker.

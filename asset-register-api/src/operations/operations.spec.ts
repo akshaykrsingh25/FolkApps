@@ -1,7 +1,8 @@
+import { ErpSnapshotService } from './erp-snapshot.service';
 import { readFile,readdir } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
-import { beforeAll,afterAll,describe,it,expect } from 'vitest';
+import { beforeAll,afterAll,describe,it,expect,vi } from 'vitest';
 import { AdvancedService,depreciation } from './advanced.service';
 import { OperationsService } from './operations.service';
 import { AuthorizationService } from '../authorization/authorization.service';
@@ -9,7 +10,7 @@ import { NotificationOutboxWorkerService } from '../notifications/notification-o
 import type { ActorContext } from '../auth/authenticated-request';
 import type { DatabaseService } from '../database.service';
 describe('operational completion and reuse',()=>{
- let advanced:AdvancedService;
+ let advanced:AdvancedService,erp:ErpSnapshotService;
  let db:PGlite,service:OperationsService,worker:NotificationOutboxWorkerService,actor:ActorContext,location:string,asset:string,other:string;
  beforeAll(async()=>{
  db=new PGlite({extensions:{pgcrypto}});
@@ -22,7 +23,7 @@ describe('operational completion and reuse',()=>{
  asset=(await db.query<{id:string}>("INSERT INTO assets(organization_id,location_id,asset_tag,name,category,status,condition,created_by) VALUES($1,$2,'OPS-1','Chair','Furniture','unused','good',$3) RETURNING id",[org,location,user])).rows[0].id;
  actor={organizationId:org,userId:user,subject:'ops',memberships:[{role:'head_office',scopeLocationId:null}]};
  const adapter={query:async(sql:string,args:unknown[]=[]) => (await db.query(sql,args)).rows,transaction:async(fn:any)=>db.transaction(async tx=>fn(async(sql:string,args:unknown[]=[]) => (await tx.query(sql,args)).rows))} as unknown as DatabaseService;
- service=new OperationsService(adapter,new AuthorizationService(adapter));worker=new NotificationOutboxWorkerService(adapter);advanced=new AdvancedService(adapter,new AuthorizationService(adapter),service);
+ erp=new ErpSnapshotService(adapter);service=new OperationsService(adapter,new AuthorizationService(adapter));worker=new NotificationOutboxWorkerService(adapter);advanced=new AdvancedService(adapter,new AuthorizationService(adapter),service);
  },30000);
  afterAll(async()=>db.close());
  it('only recommends scoped owned unused stock and excludes transfers',async()=>{
@@ -77,6 +78,19 @@ describe('operational completion and reuse',()=>{
  expect(depreciation(0,'2025-01-01','2025-01-01',24,0).netBookValue).toBe(0);
  expect(()=>depreciation(100,'2026-01-01','2025-01-01',12,0)).toThrow();
  expect(()=>depreciation(Infinity,'2025-01-01','2026-01-01',12,0)).toThrow();
+ });
+
+ it('queues once, retries failed delivery and records only matched receipts',async()=>{
+ vi.stubEnv('ERP_SNAPSHOT_ENDPOINT','https://erp.example.test/snapshots');vi.stubEnv('ERP_SNAPSHOT_TOKEN','synthetic');vi.stubEnv('ERP_SYNC_ORGANIZATION_ID',actor.organizationId);
+ try{
+ const batch=(await advanced.financeBatches(actor))[0];const first=await erp.enqueue(actor,batch.id);const replay=await erp.enqueue(actor,batch.id);expect(replay.id).toBe(first.id);
+ vi.stubGlobal('fetch',async()=>new Response('',{status:503}));expect(await erp.runOne()).toBe(true);
+ expect((await erp.status(actor)).jobs[0].status).toBe('queued');
+ await db.query("UPDATE erp_snapshot_jobs SET next_attempt_at=now()-interval '1 second' WHERE id=$1",[first.id]);
+ vi.stubGlobal('fetch',async(_url:unknown,options:RequestInit)=>{const message=JSON.parse(String(options.body));return new Response(JSON.stringify({deliveryId:message.deliveryId,payloadHash:message.payloadHash,externalReference:'RECEIVED-1'}));});
+ await erp.runOne();expect((await erp.status(actor)).jobs[0].status).toBe('delivered');expect(await erp.runOne()).toBe(false);
+ expect((await db.query("SELECT * FROM audit_events WHERE event_type='erp.snapshot_delivered'")).rows).toHaveLength(1);
+ }finally{vi.unstubAllGlobals();vi.unstubAllEnvs();}
  });
 
 });
