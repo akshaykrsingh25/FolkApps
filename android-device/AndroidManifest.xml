@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.incuspaze.assetregister" android:versionCode="20261012" android:versionName="0.9.0-device">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.incuspaze.assetregister" android:versionCode="2026101202" android:versionName="0.9.1-device">
  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35"/>
  <uses-permission android:name="android.permission.CAMERA"/><uses-permission android:name="android.permission.INTERNET"/><uses-permission android:name="android.permission.VIBRATE"/>
  <uses-feature android:name="android.hardware.camera" android:required="false"/>

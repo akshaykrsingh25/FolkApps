@@ -22,7 +22,10 @@ public final class MainActivity extends Activity {
  @Override public void onCreate(Bundle state){
   super.onCreate(state);
   web=new WebView(this);setContentView(web);
-  if(android.os.Build.VERSION.SDK_INT>=30){getWindow().setDecorFitsSystemWindows(false);web.setOnApplyWindowInsetsListener((view,insets)->{android.graphics.Insets bars=insets.getInsets(android.view.WindowInsets.Type.systemBars()|android.view.WindowInsets.Type.displayCutout());view.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});}
+  // Keep the WebView inside the status/navigation bars on every handset. CSS fixed
+  // app bars then use the complete safe content rectangle instead of sitting below
+  // transparent system icons on cutout and edge-to-edge devices.
+  if(android.os.Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(true);
   getWindow().setStatusBarColor(android.graphics.Color.WHITE);getWindow().setNavigationBarColor(android.graphics.Color.WHITE);
   web.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
   WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setAllowFileAccess(false);settings.setAllowContentAccess(true);settings.setMediaPlaybackRequiresUserGesture(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
