@@ -892,8 +892,8 @@ body { background:var(--primary-soft); }
   background:var(--secondary-soft);
   color:var(--primary);
 }
-#asset-register-prototype .quick-grid button:nth-child(3n+2) i { border-color:var(--tertiary-soft); background:var(--tertiary-soft); color:var(--tertiary); }
-#asset-register-prototype .quick-grid button:nth-child(3n) i { border-color:var(--tertiary-soft); background:var(--tertiary-soft); color:var(--tertiary); }
+#asset-register-prototype .quick-grid button:nth-child(3n+2) i { border-color:var(--accent-soft); background:var(--accent-soft); color:var(--accent); }
+#asset-register-prototype .quick-grid button:nth-child(3n) i { border-color:var(--secondary-soft); background:var(--secondary-soft); color:var(--secondary); }
 #asset-register-prototype .primary-button {
   border-radius:11px;
   background:var(--primary);
@@ -901,7 +901,7 @@ body { background:var(--primary-soft); }
   letter-spacing:.01em;
 }
 #asset-register-prototype .primary-button:hover { background:var(--primary); transform:translateY(-1px); }
-#asset-register-prototype .secondary-button { border-color:var(--tertiary-soft); border-radius:11px; background:var(--tertiary-soft); color:var(--danger); }
+#asset-register-prototype .secondary-button { border-color:var(--primary-soft); border-radius:11px; background:var(--primary-soft); color:var(--primary); }
 #asset-register-prototype .bottom-toolbar {
   border:1px solid var(--surface-low);
   border-radius:17px;
@@ -1025,17 +1025,17 @@ body { background:var(--primary-soft); }
 #asset-register-prototype .wordmark,#asset-register-prototype .wordmark-strong { color:var(--primary); }
 #asset-register-prototype .mark { background:var(--primary); }
 #asset-register-prototype .primary-button,
-#asset-register-prototype .scan-fab { background:var(--tertiary); color:var(--primary); box-shadow:0 4px 14px #f37f2029; }
+#asset-register-prototype .scan-fab { background:var(--primary); color:var(--on-primary); box-shadow:0 4px 14px #20234429; }
 #asset-register-prototype .primary-button:hover,
-#asset-register-prototype .scan-fab:hover { background:var(--tertiary); }
+#asset-register-prototype .scan-fab:hover { background:var(--primary); }
 #asset-register-prototype .primary-button svg,
-#asset-register-prototype .scan-fab svg { stroke:var(--primary)!important; }
-#asset-register-prototype .capture-shutter { outline-color:var(--tertiary); background:var(--tertiary); color:var(--primary); box-shadow:0 4px 12px #20234426; }
-#asset-register-prototype .capture-shutter svg { stroke:var(--primary)!important; }
+#asset-register-prototype .scan-fab svg { stroke:var(--on-primary)!important; }
+#asset-register-prototype .capture-shutter { outline-color:var(--primary); background:var(--primary); color:var(--on-primary); box-shadow:0 4px 12px #20234426; }
+#asset-register-prototype .capture-shutter svg { stroke:var(--on-primary)!important; }
 #asset-register-prototype .capture-mode.active,
 #asset-register-prototype .filter-chip.active,
 #asset-register-prototype .source-choice.is-selected,
-#asset-register-prototype .report-type.is-selected { border-color:var(--tertiary); background:var(--tertiary-soft); color:var(--primary); box-shadow:inset 0 -2px var(--tertiary); }
+#asset-register-prototype .report-type.is-selected { border-color:var(--primary); background:var(--primary-soft); color:var(--primary); box-shadow:inset 0 -2px var(--primary); }
 #asset-register-prototype .location-mark,
 #asset-register-prototype .gps-icon,
 #asset-register-prototype .permission-note { background:var(--primary-soft); color:var(--primary); }
@@ -1066,8 +1066,8 @@ body { background:var(--primary-soft); }
 #asset-register-prototype i[data-lucide] > svg[data-lucide-icon] { stroke:var(--primary); stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 #asset-register-prototype .capture-shutter i > svg[data-lucide-icon],
 #asset-register-prototype .primary-button i > svg[data-lucide-icon],
-#asset-register-prototype .scan-fab i > svg[data-lucide-icon] { stroke:var(--primary); }
-#asset-register-prototype :is(button,a,[role="button"]):focus-visible { outline:3px solid #F37F2070; outline-offset:2px; }
+#asset-register-prototype .scan-fab i > svg[data-lucide-icon] { stroke:var(--on-primary); }
+#asset-register-prototype :is(button,a,[role="button"]):focus-visible { outline:3px solid #20234470; outline-offset:2px; }
 @media(max-width:420px) {
   #asset-register-prototype .incuspaze-logo { width:112px; }
   #asset-register-prototype .brand-lockup { gap:7px; }
