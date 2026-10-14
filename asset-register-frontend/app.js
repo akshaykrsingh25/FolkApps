@@ -258,19 +258,26 @@
       rows.forEach(row=>{const match=view==="all"||row.dataset.status===view;row.hidden=!match;if(match)shown++;});
       const empty=root.querySelector("#reports-empty-note"); if(empty)empty.hidden=shown>0;
       const filterCount=root.querySelector("#reports-filter-count"); if(filterCount&&view==="all")filterCount.textContent=root.querySelector("#reports-open-count")?.textContent||rows.length;
+      const totalEl=root.querySelector(view==="all"?"#reports-open-count":view==="damaged"?"#reports-damaged-count":view==="repair"?"#reports-repair-count":"#reports-urgent-count");
+      const caption=root.querySelector("#reports-list-caption");
+      if(caption)caption.textContent=`Showing ${shown} of ${totalEl?.textContent||shown}`;
     }
     root.querySelectorAll("[data-report-view]").forEach(button=>button.addEventListener("click",()=>applyReportView(button.dataset.reportView)));
 
+    const MISSING_TOTALS={all:24,centre:24,overdue:8};
     function applyMissingView(view){
       root.querySelectorAll("[data-missing-view]").forEach(b=>b.classList.toggle("active",b.dataset.missingView===view));
       const rows=[...root.querySelectorAll(".missing-row")];
       const list=rows[0]?.parentElement;
-      rows.forEach(row=>{row.hidden=view==="overdue"&&row.dataset.overdue!=="true";});
+      let shown=0;
+      rows.forEach(row=>{const match=!(view==="overdue"&&row.dataset.overdue!=="true");row.hidden=!match;if(match)shown++;});
       if(list&&view==="centre"){
         [...rows].sort((a,b)=>a.dataset.centre.localeCompare(b.dataset.centre)).forEach(row=>list.appendChild(row));
       } else if(list){
         rows.forEach(row=>list.appendChild(row));
       }
+      const caption=root.querySelector("#missing-list-caption");
+      if(caption)caption.textContent=view==="centre"?`Showing ${shown} of ${MISSING_TOTALS.all} · grouped by centre`:`Showing ${shown} of ${MISSING_TOTALS[view]}`;
     }
     root.querySelectorAll("[data-missing-view]").forEach(button=>button.addEventListener("click",()=>applyMissingView(button.dataset.missingView)));
 
@@ -297,6 +304,7 @@
     }
     root.querySelectorAll("[data-unused-view]").forEach(button=>button.addEventListener("click",()=>applyUnusedView(button.dataset.unusedView)));
 
+    const WARRANTY_TOTALS={all:74,warranty:50,guarantee:24};
     function applyWarrantyView(){
       const activeBtn=root.querySelector("[data-warranty-view].active");
       const view=activeBtn?activeBtn.dataset.warrantyView:"all";
@@ -309,6 +317,8 @@
         r.hidden=!match; if(match)shown++;
       });
       const empty=root.querySelector("#warranty-empty-note"); if(empty)empty.hidden=shown>0;
+      const caption=root.querySelector("#warranty-list-caption");
+      if(caption)caption.textContent=q?`${shown} match${shown===1?"":"es"} for "${q}"`:`Showing ${shown} of ${WARRANTY_TOTALS[view]}`;
     }
     root.querySelectorAll("[data-warranty-view]").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll("[data-warranty-view]").forEach(b=>b.classList.toggle("active",b===button));applyWarrantyView();}));
     root.querySelector("#warranty-search")?.addEventListener("input",applyWarrantyView);
@@ -358,7 +368,15 @@
       announce("Invite sent · they'll get an email to join IncuAsset");
     });
 
-    root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-new-centre"){root.querySelectorAll("[data-centre-field]").forEach(input=>input.value="");root.querySelector('[data-centre-field="code"]').focus();showScreen("centre-manager");}else if(action==="mark-not-seen"){button.textContent="Not seen · Centre Head notified";button.classList.add("action-done");announce("Centre Head and asset custodian notified. If still unconfirmed when the 2-month window closes, it escalates to the State Head and Head Office.");}else if(action==="notify-missing"){button.textContent="Owners and state heads notified";button.classList.add("action-done");announce("Centre owners and State Heads notified. Head Office can track every unresolved asset.");}else if(action==="attach-photo"){button.innerHTML='Photo attached · add another <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Evidence attached to the asset report.");}else if(action==="submit-report"){root.querySelector("#reports-open-count").textContent="19";button.innerHTML='Report submitted · owners notified <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}else if(action==="review-bulk-count"){announce("Reviewing bulk count · Office printer group · 3 found, 1 missing");}}));
+    root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-new-centre"){root.querySelectorAll("[data-centre-field]").forEach(input=>input.value="");root.querySelector('[data-centre-field="code"]').focus();showScreen("centre-manager");}else if(action==="mark-not-seen"){button.textContent="Not seen · Centre Head notified";button.classList.add("action-done");announce("Centre Head and asset custodian notified. If still unconfirmed when the 2-month window closes, it escalates to the State Head and Head Office.");}else if(action==="notify-missing"){button.textContent="Owners and state heads notified";button.classList.add("action-done");announce("Centre owners and State Heads notified. Head Office can track every unresolved asset.");}else if(action==="attach-photo"){button.innerHTML='Photo attached · add another <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Evidence attached to the asset report.");}else if(action==="submit-report"){
+        const openEl=root.querySelector("#reports-open-count"); if(openEl)openEl.textContent=Number(openEl.textContent)+1;
+        const selectedType=root.querySelector(".report-type.is-selected")?.dataset.type;
+        const statId=selectedType==="Damaged"?"#reports-damaged-count":selectedType==="Needs repair"?"#reports-repair-count":selectedType==="Not working"?"#reports-urgent-count":null;
+        if(statId){const el=root.querySelector(statId); if(el)el.textContent=Number(el.textContent)+1;}
+        const activeView=root.querySelector("[data-report-view].active")?.dataset.reportView||"all";
+        applyReportView(activeView);
+        button.innerHTML='Report submitted · owners notified <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");
+      }else if(action==="review-bulk-count"){announce("Reviewing bulk count · Office printer group · 3 found, 1 missing");}}));
     root.querySelectorAll(".source-choice").forEach((button) => button.addEventListener("click", () => {
       root.querySelectorAll(".source-choice").forEach((choice) => {
         const active = choice === button;
