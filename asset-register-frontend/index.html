@@ -16,6 +16,7 @@
     <label for="screen-picker">Explore screens</label>
     <select id="screen-picker" aria-label="Choose a screen to preview">
       <option value="home">Home · floor walk</option>
+      <option value="add-space">Name a space · Floor 4</option>
       <option value="scanner">Scan & capture</option>
       <option value="add-asset">Review new asset</option>
       <option value="inventory">Inventory</option>
@@ -71,6 +72,7 @@
           </div>
           <div class="progress-head"><span class="remaining-count"><strong>6</strong><b>TO VERIFY</b></span><span class="saved"><i data-lucide="cloud-check" aria-hidden="true"></i>Saved</span></div>
         </section>
+        <button class="evidence-upload" data-go="add-space"><i data-lucide="plus" aria-hidden="true"></i><span><strong>Name a space on this floor</strong><small>Room, zone or area — so assets can be placed precisely</small></span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
         <div class="section-heading"><h2>Keep it all together</h2><span>One asset · multiple captures</span></div>
         <div class="source-group" role="group" aria-label="Evidence capture sources">
           <button class="source-choice is-selected" aria-pressed="true"><i data-lucide="camera" aria-hidden="true"></i>Photo</button>
@@ -82,6 +84,28 @@
         <div class="quick-grid"><button data-go="map-india"><i data-lucide="map" aria-hidden="true"></i><span>India map</span><small>States → centres</small></button><button data-go="missing-assets"><i data-lucide="scan-search" aria-hidden="true"></i><span>Missing watch</span><small>Review not seen</small></button><button data-go="unused-map"><i data-lucide="package-open" aria-hidden="true"></i><span>Unused assets</span><small>Ready to transfer</small></button><button data-go="warranties"><i data-lucide="shield-check" aria-hidden="true"></i><span>Warranty watch</span><small>18 ending soon</small></button><button data-go="cycle-control"><i data-lucide="calendar-clock" aria-hidden="true"></i><span>Scan cycle</span><small>6 months · 2 months</small></button><button data-go="reports"><i data-lucide="clipboard-list" aria-hidden="true"></i><span>Reports</span><small>Damage & repair</small></button></div>
         <div class="section-heading recent-head"><h2>Last in the register</h2><button class="text-action" data-go="asset-detail">See all <i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div>
         <button class="asset-row" data-go="asset-detail"><img data-shared-photo="concept-photo-0" alt="Network switch mounted in a white equipment rack"><span class="asset-row-copy"><strong>Network switch</strong><small>IT-00482 · Floor 4</small></span><span class="check-mark"><i data-lucide="check" aria-hidden="true"></i></span></button>
+      </section>
+      <section class="screen" data-screen="add-space" aria-label="Name a space" hidden>
+        <button class="back-link" data-go="home"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor walk</button>
+        <p class="eyebrow">NEW SPACE · FLOOR 4</p><h1 class="page-title">Name this space.</h1>
+        <p class="subhead">Add a room, zone or area as you walk, so assets get placed precisely — not just left on the floor.</p>
+        <label class="field-label">Space name<input type="text" id="space-name-input" placeholder="e.g. Server room, Reception, Store"></label>
+        <label class="field-label">Type — what it is<div class="space-type-grid">
+          <button class="space-type is-selected" data-space-type="Room"><i data-lucide="layers-2" aria-hidden="true"></i><strong>Room</strong><small>Enclosed space</small></button>
+          <button class="space-type" data-space-type="Zone"><i data-lucide="inside-outside" aria-hidden="true"></i><strong>Zone</strong><small>Open area</small></button>
+          <button class="space-type" data-space-type="Storage"><i data-lucide="package-open" aria-hidden="true"></i><strong>Storage</strong><small>Store / closet</small></button>
+          <button class="space-type" data-space-type="Corridor"><i data-lucide="move-right" aria-hidden="true"></i><strong>Corridor</strong><small>Passage / lobby</small></button>
+        </div></label>
+        <label class="field-label">Where on this floor — location note<input type="text" id="space-where-input" placeholder="e.g. Near the north stairwell, left of the lift"></label>
+        <label class="field-label">How it's used<div class="segmented" role="group" aria-label="Internal or external"><button class="is-selected" aria-pressed="true">Internal</button><button aria-pressed="false">External</button></div></label>
+        <button class="primary-button full" data-action="save-space"><i data-lucide="plus" aria-hidden="true"></i>Add space</button>
+        <div class="section-heading"><h2>Already on Floor 4</h2><span id="space-count">4 spaces</span></div>
+        <div id="space-list">
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Open office</strong><small>Room · internal · 12 assets</small></span></div>
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Meeting 2A</strong><small>Room · internal · 6 assets</small></span></div>
+          <div class="compact-row"><i data-lucide="package-open" aria-hidden="true"></i><span><strong>IT store</strong><small>Storage · internal · 6 assets</small></span></div>
+          <div class="compact-row"><i data-lucide="inside-outside" aria-hidden="true"></i><span><strong>Pantry</strong><small>Zone · internal · 4 assets</small></span></div>
+        </div>
       </section>
       <section class="screen" data-screen="scanner" aria-label="Scan and capture" hidden>
         <button class="back-link" data-go="home"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor walk</button>
