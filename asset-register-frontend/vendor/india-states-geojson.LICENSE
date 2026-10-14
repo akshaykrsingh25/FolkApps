@@ -1,0 +1,5 @@
+geojson-india (MIT License)
+https://github.com/xiguaxigua/geojson-india
+
+India state/UT boundary GeoJSON, vendored locally so the map works fully
+offline (no live fetch to GitHub or any other server).

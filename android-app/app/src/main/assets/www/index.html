@@ -151,18 +151,18 @@
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
         <p class="eyebrow">SUGGESTED DETAILS · REVIEW BEFORE SAVE</p><h1 class="page-title">Add to the register.</h1>
         <div class="capture-strip"><img id="add-asset-photo" data-shared-photo="concept-photo-0" alt="Captured photo of a network switch"><div><strong id="add-asset-capture-count">3 captures attached</strong><small>Asset photo · invoice · QR / product label</small></div><button class="icon-button small" aria-label="Add another capture" data-go="scanner"><i data-lucide="plus" aria-hidden="true"></i></button></div>
-        <label class="field-label">Asset name<input value="Network switch" /></label>
-        <div class="two-fields"><label class="field-label">Asset code<input value="IT-00482" /></label><label class="field-label">Category<input value="IT equipment" /></label></div>
+        <label class="field-label">Asset name<input id="add-asset-name-field" value="Network switch" /></label>
+        <div class="two-fields"><label class="field-label">Asset code<input id="add-asset-code-field" value="IT-00482" /></label><label class="field-label">Category<input id="add-asset-category-field" value="IT equipment" /></label></div>
         <div class="two-fields"><label class="field-label">QR / barcode<input id="add-asset-qr-field" value="QR-IT-00482" /></label><label class="field-label">RFID tag <small>(optional)</small><input placeholder="Scan RFID or leave blank" /></label></div>
         <p class="quiet-note">RFID speeds up bulk scanning once tagged, but the printed label is always a QR code — RFID chips can't be printed from this device.</p>
-        <label class="field-label">Record type<div class="segmented"><button class="is-selected" aria-pressed="true">Tracked item</button><button aria-pressed="false">Bulk quantity</button></div></label>
-        <div class="two-fields"><label class="field-label">Condition · 1–10<input type="number" min="1" max="10" value="8" /></label><label class="field-label">Quantity<input type="number" min="1" value="1" /></label></div>
+        <label class="field-label">Record type<div class="segmented" id="add-asset-record-type"><button class="is-selected" aria-pressed="true">Tracked item</button><button aria-pressed="false">Bulk quantity</button></div></label>
+        <div class="two-fields"><label class="field-label">Condition · 1–10<input type="number" min="1" max="10" value="8" /></label><label class="field-label">Quantity<input id="add-asset-qty-field" type="number" min="1" value="1" /></label></div>
         <label class="field-label">Custodian<input value="A. Sharma" /></label>
         <button class="location-pill compact" data-go="locations"><span class="location-mark"><i data-lucide="map-pin" aria-hidden="true"></i></span><span><small>CENTRE · STORAGE LOCATION</small><strong>Gurugram · Building A · Floor 4</strong></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
         <div class="evidence-row"><span><i data-lucide="file-check-2" aria-hidden="true"></i>Purchase invoice linked</span><span>Change</span></div>
         <label class="reuse-toggle"><span><strong>Reusable asset</strong><small>Can be checked out again</small></span><input type="checkbox" checked aria-label="Reusable asset"></label>
         <div class="coverage-detected"><i data-lucide="shield-check"></i><span><strong>Coverage detected on invoice</strong><small>3-year manufacturer warranty · confirm after review</small></span><button data-go="warranty-detail">Review</button></div>
-        <button class="primary-button full" data-go="qr-label">Save asset & generate QR <i data-lucide="qr-code" aria-hidden="true"></i></button>
+        <button class="primary-button full" id="save-asset-button" data-go="qr-label">Save asset & generate QR <i data-lucide="qr-code" aria-hidden="true"></i></button>
       </section>
       <section class="screen" data-screen="batch-review" aria-label="Review captured assets" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
@@ -299,7 +299,7 @@
         <button class="text-action full-action" data-go="centre-directory"><i data-lucide="building-2"></i>View & manage active centres <i data-lucide="arrow-up-right"></i></button>
         <div class="india-map-wrap"><svg class="india-map" viewBox="0 0 248 260" role="img" aria-label="Map of India with state boundaries and centre locations"><g id="india-state-boundaries"><text x="28" y="128" fill="#536277" font-size="7">Loading state boundaries…</text></g><g id="india-map-pins"></g></svg></div>
         <div class="map-legend"><span><i class="legend-dot green"></i>Centre location</span><span>Tap a state for its centres</span></div>
-        <p class="quiet-note">State outlines use public 2011 Census boundary data from <a href="https://github.com/udit-001/india-maps-data" target="_blank" rel="noreferrer">India Maps Data</a>. Centre pins use city-level placement until a centre head confirms the building pin.</p>
+        <p class="quiet-note">State outlines use real India state/UT boundary data, bundled with the app so the map works offline. Centre pins use city-level placement until a centre head confirms the building pin.</p>
         <div class="section-heading"><h2>Centres by state</h2><span>Tap to see centres</span></div><div class="state-list" id="india-state-list"></div>
       </section>
       <section class="screen map-screen" data-screen="centre-directory" aria-label="Active centre directory" hidden>
@@ -469,6 +469,7 @@
   
 </div>
 <script src="./vendor/jsQR.js" defer></script>
+<script src="./vendor/india-states-geojson.js" defer></script>
 <script src="./app.js" defer></script>
 <script>
   if ("serviceWorker" in navigator) {

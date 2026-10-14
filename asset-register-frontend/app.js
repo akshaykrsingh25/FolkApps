@@ -164,6 +164,85 @@
       return items;
     }
     const assetCatalog=generateAssetCatalog(300);
+
+    // --- Local persistence (IndexedDB): assets captured on this device
+    // survive a reload/app restart, instead of resetting to the seed data
+    // every time. There's no backend yet, so this is per-device only — a
+    // second phone won't see what this one captured.
+    const DB_NAME = "incuasset-db";
+    const DB_VERSION = 1;
+    const ASSET_STORE = "capturedAssets";
+    let dbPromise = null;
+    function openDb() {
+      if (dbPromise) return dbPromise;
+      dbPromise = new Promise((resolve, reject) => {
+        if (!window.indexedDB) { reject(new Error("IndexedDB unavailable")); return; }
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => { req.result.createObjectStore(ASSET_STORE, { keyPath: "id" }); };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+      return dbPromise;
+    }
+    async function persistCapturedAsset(asset) {
+      try {
+        const db = await openDb();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(ASSET_STORE, "readwrite");
+          tx.objectStore(ASSET_STORE).put(asset);
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+      } catch (e) {
+        // IndexedDB unavailable (private mode, old WebView) — the asset still
+        // shows for the rest of this session, it just won't survive a reload.
+      }
+    }
+    async function loadCapturedAssets() {
+      try {
+        const db = await openDb();
+        return await new Promise((resolve, reject) => {
+          const tx = db.transaction(ASSET_STORE, "readonly");
+          const req = tx.objectStore(ASSET_STORE).getAll();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => reject(req.error);
+        });
+      } catch (e) { return []; }
+    }
+    let capturedAssetSeq = 1;
+    const CAPTURE_LOCATION = { centreId: "incuspaze-gurugram-01", centreName: "Incuspaze Gurugram", city: "Gurugram", state: "Haryana", floor: "Building A · Floor 4" };
+    function createCapturedAsset({ name, code, qrCode, category, isBulk, qty, photo }) {
+      const asset = {
+        id: `AST-NEW-${Date.now()}-${capturedAssetSeq++}`,
+        label: name || "Untitled asset",
+        tag: code || qrCode || `NEW-${Date.now()}`,
+        qrCode: qrCode || code || null,
+        category: category || "Uncategorized",
+        centreId: CAPTURE_LOCATION.centreId,
+        centreName: CAPTURE_LOCATION.centreName,
+        city: CAPTURE_LOCATION.city,
+        state: CAPTURE_LOCATION.state,
+        floor: CAPTURE_LOCATION.floor,
+        status: "Verified today",
+        statusClass: "status-ok",
+        isBulk: !!isBulk,
+        qty: qty && qty > 0 ? qty : 1,
+        warrantyMonths: null,
+        photoId: null,
+        imgSrc: photo || assetArtUri("desk", capturedAssetSeq),
+        capturedAt: Date.now(),
+      };
+      assetCatalog.unshift(asset);
+      persistCapturedAsset(asset);
+      return asset;
+    }
+    loadCapturedAssets().then((saved) => {
+      if (!saved.length) return;
+      saved.sort((a, b) => (b.capturedAt || 0) - (a.capturedAt || 0));
+      assetCatalog.unshift(...saved);
+      capturedAssetSeq = saved.length + 1;
+      renderInventory();
+    });
     function assetImgSrc(asset){if(asset.photoId){const node=root.querySelector("#"+asset.photoId);return node?node.src:"";}return asset.imgSrc;}
     let selectedAsset=null;
     function renderInventory(filter,query){
@@ -203,7 +282,6 @@
     root.querySelector("#centre-count").textContent=activeCentres.length;
     renderCentreDirectory();
     renderStateList();
-    loadIndiaBoundaries();
     renderInventory("all","");
     const invAllCountEl=root.querySelector("#inv-all-count");if(invAllCountEl)invAllCountEl.textContent=assetCatalog.length;
     const invTrackedCountEl=root.querySelector("#inv-tracked-count");if(invTrackedCountEl)invTrackedCountEl.textContent=assetCatalog.filter(a=>!a.isBulk).length;
@@ -281,25 +359,31 @@
       stack.querySelectorAll(".iso-floor").forEach(btn=>btn.addEventListener("click",()=>goToFloor(btn.dataset.floor)));
       if(listView)listView.querySelectorAll(".floor-list-row").forEach(btn=>btn.addEventListener("click",()=>goToFloor(btn.dataset.floor)));
     }
-    async function loadIndiaBoundaries(){
+    // Real India state/UT boundaries, bundled locally (vendor/india-states-geojson.js)
+    // so the map renders fully offline — no fetch, no server dependency.
+    function loadIndiaBoundaries(){
       const target=root.querySelector("#india-state-boundaries"); if(!target)return;
-      try { const res=await fetch("https://raw.githubusercontent.com/udit-001/india-maps-data/main/topojson/india.json"); if(!res.ok)throw Error("boundaries unavailable"); const topo=await res.json(); const arcs=topo.arcs.map(arc=>{let x=0,y=0;return arc.map(([dx,dy])=>{x+=dx;y+=dy;return [topo.transform.translate[0]+x*topo.transform.scale[0],topo.transform.translate[1]+y*topo.transform.scale[1]]})});
+      const geo=window.INDIA_STATES_GEOJSON;
+      try {
+        if(!geo||!Array.isArray(geo.features))throw Error("boundary data unavailable");
         const project=([lon,lat])=>[(lon-68.1)*8.4,(37.08-lat)*8.4];
-        const arcPoints=id=>{const pts=arcs[id<0?~id:id];return id<0?[...pts].reverse():pts};
-        const geoms=topo.objects.districts.geometries; const states=[...new Set(geoms.map(g=>g.properties.st_nm))];
-        target.innerHTML=states.map(state=>{const shape=geoms.filter(g=>g.properties.st_nm===state).map(g=>{const polys=g.type==="Polygon"?[g.arcs]:g.arcs;return polys.map(poly=>poly.map(ring=>ring.flatMap((ref,i)=>{const pts=arcPoints(ref);return (i?pts.slice(1):pts).map(project)}).map((pt,i)=>`${i?"L":"M"}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join("")+"Z").join("")).map(d=>`<path d="${d}"/>`).join("")}).join("");return `<g class="india-state" data-state="${state}">${shape}<title>${state}</title></g>`}).join("");
+        const ringPath=ring=>ring.map((pt,i)=>{const [x,y]=project(pt);return `${i?"L":"M"}${x.toFixed(1)},${y.toFixed(1)}`;}).join("")+"Z";
+        const polygonPath=polygon=>polygon.map(ringPath).join("");
+        const shapePath=geom=>geom.type==="Polygon"?polygonPath(geom.coordinates):geom.coordinates.map(polygonPath).join("");
+        target.innerHTML=geo.features.map(f=>{const state=f.properties.name;return `<g class="india-state" data-state="${state}"><path d="${shapePath(f.geometry)}"/><title>${state}</title></g>`;}).join("");
         root.querySelectorAll(".india-state").forEach(g=>g.addEventListener("click",()=>{const match=stateNames.find(s=>s.toLowerCase()===g.dataset.state.toLowerCase());if(match){chooseState(match);showScreen("map-state");}}));
         const pins=root.querySelector("#india-map-pins"); const agg={};activeCentres.forEach(c=>agg[c.city]=(agg[c.city]||0)+1);
         pins.innerHTML=Object.entries(agg).map(([city,count])=>{const [lat,lon]=cityCoords[city], [x,y]=project([lon,lat]);return `<g class="city-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" data-city="${city}" role="button" tabindex="0" aria-label="${city} · ${count} centres"><title>${city} · ${count} centres</title><circle r="3.5"/><circle class="pin-pulse" r="7"/><text x="5" y="-5">${city} · ${count}</text></g>`}).join("");
         pins.querySelectorAll(".city-pin").forEach(pin=>{const c=activeCentres.find(x=>x.city===pin.dataset.city);const go=()=>{if(c){chooseState(c.state);showScreen("map-state");}};pin.addEventListener("click",go);pin.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}})});
         renderStateList();
         if(selectedState)chooseState(selectedState);
-      } catch(e) { target.innerHTML='<text x="28" y="128" fill="#536277" font-size="11">Map needs an internet connection.</text>'; }
+      } catch(e) { target.innerHTML='<text x="28" y="128" fill="#536277" font-size="11">Map data unavailable.</text>'; }
     }
     const stateData = Object.fromEntries(stateNames.map(state=>[state,{centers:activeCentres.filter(c=>c.state===state)}]));
     let selectedCentre=activeCentres[0];
     let selectedState=null;
     chooseState(stateNames[0]);
+    loadIndiaBoundaries();
     function chooseCentre(name, centre) {
       selectedCentre=centre||activeCentres.find(c=>c.name===name)||selectedCentre;
       if(selectedCentre){root.querySelectorAll("[data-centre-field]").forEach(input=>{const f=input.dataset.centreField;input.value=f==="code"?(selectedCentre.code||""):f==="name"?selectedCentre.name:f==="city"?`${selectedCentre.city}, ${selectedCentre.state}`:input.value;});}
@@ -542,9 +626,11 @@
       restartCamera();
     }));
     let pendingBatch = [];
+    let pendingBatchItems = [];
     function renderBatchReview() {
       const list = root.querySelector("#batch-review-list");
       if (!list) return;
+      pendingBatchItems = sessionCaptures.map((item) => ({ name: item.name, photo: item.photo || null }));
       root.querySelector("#batch-count-label").textContent = sessionCaptures.length;
       root.querySelector("#batch-generate-count").textContent = sessionCaptures.length;
       list.innerHTML = sessionCaptures.map((item, i) => `<div class="batch-review-row">${item.photo ? `<img src="${item.photo}" alt="Captured asset photo">` : `<img data-shared-photo="concept-photo-0" alt="Captured asset photo">`}<div><input value="${item.name}" data-batch-index="${i}" aria-label="Asset name"><small>Building A · Floor 4 · auto-located</small></div></div>`).join("");
@@ -559,12 +645,30 @@
       sessionCaptures.length = 0;
       syncCaptureSessionUI();
     });
+    root.querySelector("#save-asset-button")?.addEventListener("click", () => {
+      const isBulk = root.querySelector("#add-asset-record-type button.is-selected")?.textContent.trim() === "Bulk quantity";
+      createCapturedAsset({
+        name: root.querySelector("#add-asset-name-field")?.value.trim(),
+        code: root.querySelector("#add-asset-code-field")?.value.trim(),
+        qrCode: root.querySelector("#add-asset-qr-field")?.value.trim(),
+        category: root.querySelector("#add-asset-category-field")?.value.trim(),
+        isBulk,
+        qty: parseInt(root.querySelector("#add-asset-qty-field")?.value, 10),
+        photo: lastSingleCapturePhoto,
+      });
+      renderInventory();
+    });
     root.querySelector("[data-action='generate-batch-labels']")?.addEventListener("click", () => {
       root.querySelectorAll("#batch-review-list [data-batch-index]").forEach((input) => {
         const row = input.closest(".batch-review-row");
         row.dataset.name = input.value.trim() || "Untitled asset";
       });
-      pendingBatch = [...root.querySelectorAll("#batch-review-list .batch-review-row")].map((row) => row.dataset.name);
+      pendingBatch = [...root.querySelectorAll("#batch-review-list .batch-review-row")].map((row, i) => {
+        const name = row.dataset.name;
+        createCapturedAsset({ name, photo: pendingBatchItems[i]?.photo });
+        return name;
+      });
+      renderInventory();
       announce(`${pendingBatch.length} QR labels generated · ready to print`);
       showScreen("qr-label");
     });
