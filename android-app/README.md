@@ -1,11 +1,16 @@
-# IncuAsset Android app (Trusted Web Activity)
+# IncuAsset Android app (fully offline, bundled UI)
 
-This is a native Android wrapper around the live prototype hosted at
-[akshaykrsingh25.github.io/FolkApps](https://akshaykrsingh25.github.io/FolkApps/),
-built with [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) (a
-Trusted Web Activity / TWA project). It's a thin native shell — the actual
-UI is the same web app in `asset-register-frontend/`, loaded from the live
-GitHub Pages URL.
+This is a native Android app that bundles the entire IncuAsset UI
+(`app/src/main/assets/www/` — a copy of `asset-register-frontend/`) directly
+inside the APK and loads it in a `WebView` from local assets
+(`file:///android_asset/www/index.html`). **It does not fetch anything from
+GitHub Pages, or any server, at runtime** — it has no dependency on GitHub
+being up, reachable, or involved in any way once installed. Everything the
+app needs ships inside the `.apk` file itself.
+
+(An earlier version of this app was a Trusted Web Activity that loaded the
+UI live from GitHub Pages. That approach is no longer used — this is a
+completely self-contained app now.)
 
 **Package ID:** `com.incuspaze.assetregister`
 
@@ -13,19 +18,14 @@ GitHub Pages URL.
 
 1. Open this `android-app/` folder directly in Android Studio ("Open an
    existing project").
-2. Let Gradle sync — it will download the Android Gradle Plugin and
-   dependencies from Google's and Maven Central's repositories.
-3. To run a debug build on a device/emulator, just hit Run. A debug build
-   doesn't need the release keystore.
+2. Let Gradle sync.
+3. Hit Run for a debug build (no keystore needed) on a device/emulator.
 
 ## Signing a release build
 
 **The signing keystore (`android.keystore`) is intentionally not committed
 to this repo** — keystores should never go into version control, especially
-a public one. It was sent to you separately (as a file in the chat) the
-first time this was built.
-
-To build a signed release APK from the command line:
+a public one. It was sent to you separately as a file in the chat.
 
 ```
 ./gradlew assembleRelease \
@@ -36,46 +36,47 @@ To build a signed release APK from the command line:
 ```
 
 Or add those four properties to your own (never-committed)
-`~/.gradle/gradle.properties` so you don't need to pass them every time, or
-to Android Studio's Build > Generate Signed Bundle/APK wizard directly
-(point it at the keystore file).
+`~/.gradle/gradle.properties`, or use Android Studio's Build > Generate
+Signed Bundle/APK wizard pointed at the keystore file.
 
-If you don't have the keystore sent earlier, generate a **new** one instead
-of trying to recover it — for app updates to install over an existing
-install, the new APK must be signed with the same key as what's already on
-the device, so once you pick a real signing key, keep it safe and back it
-up. For anything beyond testing with your team, consider using
+If you don't have the keystore, generate a **new** one instead of trying to
+recover it — but note that an update must be signed with the *same* key as
+whatever's already installed on a device, so once you pick a real key, keep
+it safe and back it up. For distributing beyond ad-hoc testing, consider
 [Play App Signing](https://support.google.com/googleplay/android-developer/answer/9842756)
 on the Play Console, which manages the real release key for you.
 
-## Known limitation: the address bar
-
-Because this app is hosted at `akshaykrsingh25.github.io/FolkApps/` (a
-project path under GitHub's own shared domain, not a domain you control the
-root of), Digital Asset Links verification (`/.well-known/assetlinks.json`
-at the domain *root*) isn't possible from this repo alone — GitHub's domain
-root isn't under this repo's control. Without that verification, the TWA
-falls back to a Custom Tabs-style view with a thin address bar shown at the
-top, instead of a fully "chromeless" native look.
-
-To remove the address bar entirely, either:
-- Point a custom domain you own at the GitHub Pages site, and publish
-  `assetlinks.json` at that domain's root, or
-- Host the web app at the root of a domain you control outright (e.g. a
-  `username.github.io` *user* page instead of a project page, if you don't
-  already have one).
-
-Then update `twaManifest.host`/`hostName` here to match, and rebuild.
-
 ## Updating the app after UI changes
 
-The app always loads from the live URL — most UI changes to
-`asset-register-frontend/` need no Android rebuild at all, since the TWA is
-just a thin wrapper. You only need to rebuild and re-sign here when you
-change:
-- the app's package ID, name, icon, splash/theme colors, or
-- anything in `twa-manifest.json` / `app/build.gradle`'s `twaManifest` block.
+Unlike the earlier GitHub-Pages-backed version, UI changes made in
+`asset-register-frontend/` are **not** automatically reflected here — since
+nothing is fetched live, the UI has to be re-copied into the app and the
+APK rebuilt. After changing anything in `asset-register-frontend/`:
 
-If you do change those, after editing `twa-manifest.json` you can
-regenerate the Android project files with Bubblewrap itself
-(`npx @bubblewrap/cli update`) instead of hand-editing `app/build.gradle`.
+```
+cp asset-register-frontend/{index.html,app.js,styles.css,manifest.webmanifest,service-worker.js} \
+   android-app/app/src/main/assets/www/
+cp -r asset-register-frontend/icons android-app/app/src/main/assets/www/
+```
+
+Then rebuild and re-sign as above.
+
+## What still needs network access
+
+Nothing required — the app works fully offline. Two decorative/optional
+things still reach out to the internet when available, and degrade
+gracefully without it:
+- The Google Fonts stylesheet linked in `index.html`'s `<head>` (falls back
+  to system fonts if unreachable).
+- Nothing else — all data in the app (the demo asset catalog, centres,
+  etc.) is simulated/seeded locally in `app.js`, same as the web version.
+
+## Real camera, real data, real login
+
+This app is still a **UI/UX prototype with simulated data** — see
+`asset-register-frontend/README.md`. The `CAMERA` permission is already
+declared and `WebView` is configured to grant camera access to the page on
+request, so wiring up real `getUserMedia()`-based QR/barcode scanning in
+the web UI would work here without any native code changes. Real data
+persistence and real login need a backend (not included) — ask to scope
+that separately when you're ready for it.
