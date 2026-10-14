@@ -17,6 +17,7 @@
     <select id="screen-picker" aria-label="Choose a screen to preview">
       <option value="home">Home · floor walk</option>
       <option value="add-space">Name a space · Floor 4</option>
+      <option value="move-to-space">Move assets · into a space</option>
       <option value="scanner">Scan & capture</option>
       <option value="add-asset">Review new asset</option>
       <option value="inventory">Inventory</option>
@@ -101,11 +102,24 @@
         <button class="primary-button full" data-action="save-space"><i data-lucide="plus" aria-hidden="true"></i>Add space</button>
         <div class="section-heading"><h2>Already on Floor 4</h2><span id="space-count">4 spaces</span></div>
         <div id="space-list">
-          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Open office</strong><small>Room · internal · 12 assets</small></span></div>
-          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Meeting 2A</strong><small>Room · internal · 6 assets</small></span></div>
-          <div class="compact-row"><i data-lucide="package-open" aria-hidden="true"></i><span><strong>IT store</strong><small>Storage · internal · 6 assets</small></span></div>
-          <div class="compact-row"><i data-lucide="inside-outside" aria-hidden="true"></i><span><strong>Pantry</strong><small>Zone · internal · 4 assets</small></span></div>
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Open office</strong><small>Room · internal · 12 assets</small></span><button class="text-action space-move-btn" data-space-name="Open office">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Meeting 2A</strong><small>Room · internal · 6 assets</small></span><button class="text-action space-move-btn" data-space-name="Meeting 2A">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="package-open" aria-hidden="true"></i><span><strong>IT store</strong><small>Storage · internal · 6 assets</small></span><button class="text-action space-move-btn" data-space-name="IT store">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="inside-outside" aria-hidden="true"></i><span><strong>Pantry</strong><small>Zone · internal · 4 assets</small></span><button class="text-action space-move-btn" data-space-name="Pantry">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
         </div>
+      </section>
+      <section class="screen" data-screen="move-to-space" aria-label="Move assets to a space" hidden>
+        <button class="back-link" data-go="add-space"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor 4 spaces</button>
+        <p class="eyebrow">MOVE ASSETS · FLOOR 4</p>
+        <h1 class="page-title">Move into <span id="move-target-name">this space</span>.</h1>
+        <p class="subhead">Select assets already on this floor. Moving within the same floor updates the location instantly — no approval needed.</p>
+        <div id="move-asset-list" class="move-asset-list">
+          <label class="move-asset-row"><input type="checkbox" value="Network switch · IT-00482"><span><strong>Network switch</strong><small>IT-00482 · currently: unassigned</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Projector · AV-00077"><span><strong>Projector</strong><small>AV-00077 · currently: Open office</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Office chairs ×6 · CH-00142"><span><strong>Office chairs ×6</strong><small>CH-00142 · currently: Meeting 2A</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Whiteboard · WB-00019"><span><strong>Whiteboard</strong><small>WB-00019 · currently: IT store</small></span></label>
+        </div>
+        <button class="primary-button full" data-action="move-assets" disabled><i data-lucide="move-right" aria-hidden="true"></i><span>Move <span id="move-count">0</span> asset<span id="move-plural">s</span> here</span></button>
       </section>
       <section class="screen" data-screen="scanner" aria-label="Scan and capture" hidden>
         <button class="back-link" data-go="home"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor walk</button>

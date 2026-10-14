@@ -1211,3 +1211,14 @@ body { background:var(--primary-soft); }
     /* unconstrained flex item next to the cycle-card-head's icon and text block. */
     #asset-register-prototype .cycle-card-head { flex-wrap:wrap; }
     #asset-register-prototype .window-badge { flex:none; margin-left:auto; padding:4px 8px; border-radius:8px; background:var(--tertiary-soft); color:var(--tertiary); font-size:9px; font-weight:700; letter-spacing:.02em; text-align:center; white-space:normal; max-width:90px; }
+    /* Move-assets-into-a-space screen */
+    #asset-register-prototype .compact-row { gap:8px; }
+    #asset-register-prototype .space-move-btn { flex:none; margin-left:6px; }
+    #asset-register-prototype .move-asset-list { display:flex; flex-direction:column; margin:10px 0 4px; }
+    #asset-register-prototype .move-asset-row { display:flex; align-items:center; gap:11px; padding:11px 2px; border-bottom:1px solid var(--divider); cursor:pointer; }
+    #asset-register-prototype .move-asset-row:last-child { border-bottom:0; }
+    #asset-register-prototype .move-asset-row input { width:18px; height:18px; flex:none; accent-color:var(--primary); }
+    #asset-register-prototype .move-asset-row span { display:grid; gap:2px; min-width:0; }
+    #asset-register-prototype .move-asset-row strong { font-size:12px; }
+    #asset-register-prototype .move-asset-row small { font-size:10.5px; color:var(--muted); }
+    #asset-register-prototype .move-asset-row.is-moved small { color:var(--secondary); font-weight:600; }
