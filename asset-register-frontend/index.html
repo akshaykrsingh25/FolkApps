@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#202344">
   <title>IncuAsset · India asset register</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;800&family=Figtree:wght@400;500;600;700&family=Source+Sans+3:wght@400;600;700&family=Courier+Prime:wght@700&display=swap">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -31,7 +33,9 @@
       <option value="map-india">India · asset overview</option>
       <option value="centre-directory">Centres · active directory</option>
       <option value="centre-manager">Centre · manage floors & assets</option>
-      <option value="map-state">State · centre overview</option>
+      <option value="map-state">State · cities overview</option>
+      <option value="map-city">City · area-wise buildings</option>
+      <option value="map-building">Building · 3D floor stack</option>
       <option value="map-centre">Centre · floor overview</option>
       <option value="map-area">Floor & area · asset list</option>
       <option value="unused-map">Unused assets · map</option>
@@ -57,12 +61,15 @@
           <div class="progress-hero-copy"><p class="eyebrow"><span class="live-dot"></span>FLOOR WALK · IN PROGRESS</p><h1>Floor 4 is<br>nearly verified.</h1><p class="subhead">Building A · Udyog Vihar</p></div>
         </div>
         <section class="progress-block">
+          <div class="ring-gauge">
+            <svg viewBox="0 0 140 140" role="img" aria-label="67 percent complete, 12 of 18 assets verified">
+              <circle class="ring-track" cx="70" cy="70" r="58"/>
+              <circle class="ring-value" cx="70" cy="70" r="58" stroke-dasharray="364.4" stroke-dashoffset="120.2"/>
+              <text x="70" y="66" text-anchor="middle" class="ring-pct">67%</text>
+              <text x="70" y="84" text-anchor="middle" class="ring-label">12 OF 18 VERIFIED</text>
+            </svg>
+          </div>
           <div class="progress-head"><span class="remaining-count"><strong>6</strong><b>TO VERIFY</b></span><span class="saved"><i data-lucide="cloud-check" aria-hidden="true"></i>Saved</span></div>
-          <svg class="wave" viewBox="0 0 360 34" role="img" aria-label="67 percent complete">
-            <path class="wave-track" d="M8 18 C22 5 36 31 50 18 S78 5 92 18 S120 31 134 18 S162 5 176 18 S204 31 218 18 S246 5 260 18 S288 31 302 18 S330 5 344 18 S358 31 372 18"/>
-            <path class="wave-value" d="M8 18 C22 5 36 31 50 18 S78 5 92 18 S120 31 134 18 S162 5 176 18 S204 31 218 18 S246 5 260 18"/>
-          </svg>
-          <div class="progress-foot"><span>12 of 18 assets verified</span><span>67%</span></div>
         </section>
         <div class="section-heading"><h2>Keep it all together</h2><span>One asset · multiple captures</span></div>
         <div class="source-group" role="group" aria-label="Evidence capture sources">
@@ -258,11 +265,27 @@
       </section>
       <section class="screen map-screen" data-screen="map-state" aria-label="State centre map" hidden>
         <button class="back-link" data-go="map-india"><i data-lucide="arrow-left"></i>India overview</button><div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <b class="selected-state">GUJARAT</b></div>
-        <p class="eyebrow">STATE VIEW</p><h1 class="page-title selected-state-title">Gujarat</h1><p class="subhead">Choose a centre to see its floors and asset hotspots.</p>
+        <p class="eyebrow">STATE VIEW</p><h1 class="page-title selected-state-title">Gujarat</h1><p class="subhead">Choose a city to see its buildings.</p>
         <div class="state-map-card"><div class="state-shape"><svg id="selected-state-shape" viewBox="0 0 220 150" role="img" aria-label="Selected state boundary"></svg></div></div>
-        <div class="section-heading"><h2 id="state-centre-heading">Centres</h2><span class="state-verified">Centre directory</span></div>
+        <div class="section-heading"><h2 id="state-centre-heading">Cities</h2><span class="state-verified">Grouped by locality</span></div>
         <div id="state-centre-list"></div>
         <button class="secondary-button full" data-go="centre-directory">Open all centres</button>
+      </section>
+      <section class="screen" data-screen="map-city" aria-label="City buildings" hidden>
+        <button class="back-link" data-go="map-state"><i data-lucide="arrow-left"></i><span class="selected-state">Gujarat</span></button>
+        <div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <span class="selected-state">GUJARAT</span> <i data-lucide="chevron-right"></i> <b class="selected-city">AHMEDABAD</b></div>
+        <p class="eyebrow">CITY VIEW</p><h1 class="page-title selected-city-title">Ahmedabad</h1>
+        <p class="subhead">Area-wise buildings in this city. Tap a building to walk its floors.</p>
+        <div id="city-building-list" class="city-building-grid"></div>
+      </section>
+      <section class="screen" data-screen="map-building" aria-label="Building floors" hidden>
+        <button class="back-link" data-go="map-city"><i data-lucide="arrow-left"></i><span class="selected-city">Ahmedabad</span></button>
+        <div class="crumbs"><span class="selected-state">GUJARAT</span> <i data-lucide="chevron-right"></i> <span class="selected-city">AHMEDABAD</span> <i data-lucide="chevron-right"></i> <b class="selected-centre">—</b></div>
+        <p class="eyebrow">BUILDING VIEW · 3D</p><h1 class="page-title selected-centre-title">—</h1>
+        <p class="subhead">Tap a floor to open its walk-verified floor chart.</p>
+        <div class="iso-stage"><div id="building-floor-stack" class="iso-building"></div></div>
+        <div class="map-legend building-legend"><span><i class="legend-dot green"></i>Verified</span><span><i class="legend-dot amber"></i>Due</span><span><i class="legend-dot red"></i>Overdue</span></div>
+        <button class="text-action full-action" data-go="map-centre"><i data-lucide="building-2"></i>View building overview & stats</button>
       </section>
       <section class="screen map-screen" data-screen="map-centre" aria-label="Centre floor map" hidden>
         <button class="back-link" data-go="map-state"><i data-lucide="arrow-left"></i>Maharashtra</button><div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <span class="selected-state">MAHARASHTRA</span> <i data-lucide="chevron-right"></i> <b class="selected-centre">MUMBAI · BKC</b></div>
@@ -272,9 +295,15 @@
         <button class="text-action full-action" data-go="centre-manager"><i data-lucide="settings-2"></i>Manage floors, areas & centre pin</button><a class="text-action full-action map-search-link" href="https://www.google.com/maps/search/?api=1&query=Ahmedabad%20Krish%20Cubicle" target="_blank" rel="noreferrer"><i data-lucide="map-pin"></i>Confirm exact building pin on Maps</a><button class="text-action full-action" data-go="unused-map"><i data-lucide="package-open"></i>View 7 unused assets at this centre</button>
       </section>
       <section class="screen map-screen" data-screen="map-area" aria-label="Floor and area assets" hidden>
-        <button class="back-link" data-go="map-centre"><i data-lucide="arrow-left"></i>Mumbai · BKC</button><div class="crumbs">MAHARASHTRA <i data-lucide="chevron-right"></i> BKC <i data-lucide="chevron-right"></i> <b>FLOOR 2</b></div>
-        <p class="eyebrow">FLOOR PLAN · OPERATIONS</p><h1 class="page-title">Floor 2</h1>
-        <div class="area-plan"><div class="room room-a" data-go="map-area"><strong>Open office</strong><small>12 assets · 1 missing</small></div><div class="room room-b" data-go="map-area"><strong>Meeting 2A</strong><small>6 assets · scanned</small></div><div class="room room-c" data-go="map-area"><strong>IT store</strong><small>6 assets · 2 unused</small></div><div class="room room-d"><strong>Pantry</strong><small>4 assets</small></div><span class="area-plan-label">Tap an area · Floor 2</span></div>
+        <button class="back-link" data-go="map-building"><i data-lucide="arrow-left"></i>Floors</button><div class="crumbs">MAHARASHTRA <i data-lucide="chevron-right"></i> BKC <i data-lucide="chevron-right"></i> <b class="selected-floor">FLOOR 2</b></div>
+        <p class="eyebrow">FLOOR PLAN · OPERATIONS</p><h1 class="page-title selected-floor-title">Floor 2</h1>
+        <p class="walk-caption"><i data-lucide="scan-line" aria-hidden="true"></i>Built from today's floor walk — path follows scan order</p>
+        <div class="area-plan">
+          <svg class="walk-path" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M44,43 L97,43 L97,97 L44,97"/>
+            <circle cx="44" cy="43" r="2"/><circle cx="97" cy="43" r="2"/><circle cx="97" cy="97" r="2"/><circle cx="44" cy="97" r="2"/>
+          </svg>
+          <div class="room room-a" data-go="map-area"><strong>Open office</strong><small>12 assets · 1 missing</small></div><div class="room room-b" data-go="map-area"><strong>Meeting 2A</strong><small>6 assets · scanned</small></div><div class="room room-c" data-go="map-area"><strong>IT store</strong><small>6 assets · 2 unused</small></div><div class="room room-d"><strong>Pantry</strong><small>4 assets</small></div><span class="area-plan-label">Tap an area · Floor 2</span></div>
         <div class="section-heading"><h2>Open office</h2><span>11 of 12 verified</span></div><div class="area-alert"><i data-lucide="triangle-alert"></i><span><strong>1 asset not seen in this scan</strong><small>Projector · last verified 8 months ago</small></span><button data-go="asset-detail">Review</button></div>
         <div class="asset-row compact-row" data-go="asset-detail"><span class="asset-status-dot green"></span><span><strong>Network switch</strong><small>IT-00482 · Desk zone A · good</small></span><i data-lucide="chevron-right"></i></div><div class="asset-row compact-row" data-go="asset-detail"><span class="asset-status-dot amber"></span><span><strong>Projector</strong><small>AV-00024 · Meeting area · overdue</small></span><i data-lucide="chevron-right"></i></div>
         <button class="primary-button full" data-go="verification">Start area scan <i data-lucide="scan-line"></i></button>

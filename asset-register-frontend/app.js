@@ -32,9 +32,6 @@
       }
     }
     picker.addEventListener("change", () => showScreen(picker.value));
-    renderCentreDirectory();
-    renderStateList();
-    loadIndiaBoundaries();
     const activeCentres = [
       ["AHKC","Ahmedabad Krish Cubicle","Ahmedabad","Gujarat"],["AHTL","AHM The Link","Ahmedabad","Gujarat"],["BBJR","Bhubaneswar Janpath","Bhubaneswar","Odisha"],
       ["BGMA","Bangalore Meta Apply","Bangalore","Karnataka"],["BLQS","Bangalore Qube Software","Bangalore","Karnataka"],["BLUB","Bangalore UB City","Bangalore","Karnataka"],["PBTP","Bangalore Prasad Tech Park","Bangalore","Karnataka"],
@@ -53,6 +50,9 @@
     const stateNames=[...new Set(activeCentres.map(c=>c.state))].sort();
     function googleMapUrl(c){return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${c.name}, ${c.city}, ${c.state}, India}`)}`;}
     root.querySelector("#centre-count").textContent=activeCentres.length;
+    renderCentreDirectory();
+    renderStateList();
+    loadIndiaBoundaries();
     function renderCentreDirectory(query=""){
       const target=root.querySelector("#centre-directory-list"); if(!target)return;
       const q=query.trim().toLowerCase(); const items=activeCentres.filter(c=>`${c.code} ${c.name} ${c.city} ${c.state}`.toLowerCase().includes(q));
@@ -61,9 +61,56 @@
       target.querySelectorAll("[data-centre-id]").forEach(b=>b.addEventListener("click",()=>{const c=activeCentres.find(x=>x.id===b.dataset.centreId);if(c){chooseCentre(c.name,c);showScreen("map-centre");}}));
     }
     function renderStateList(){const target=root.querySelector("#india-state-list");if(!target)return;target.innerHTML=stateNames.map(state=>{const n=activeCentres.filter(c=>c.state===state).length;return `<button data-go="map-state" data-state="${state}"><span class="state-bullet green"></span><strong>${state}</strong><small>${n} centres</small><i data-lucide="chevron-right"></i></button>`}).join("");if(window.lucide)window.lucide.createIcons();}
-    function renderStateCentres(state){const list=root.querySelector("#state-centre-list");if(!list)return;const items=activeCentres.filter(c=>c.state===state);root.querySelector("#state-centre-heading").textContent=`${items.length} centres`;
-      list.innerHTML=items.map((c,i)=>`<button class="centre-card" data-centre-id="${c.id}" data-go="map-centre"><span class="centre-index">${String(i+1).padStart(2,"0")}</span><span><strong>${c.name}</strong><small>${c.code||"No code in source list"} · ${c.city}</small><em>${c.locationConflict?"Source mismatch · centre name says Gurgaon; city cell says Pune":c.pinSeeded?"DPR seed coordinates · verify building entrance":"City-level map pin · centre head to confirm building"}</em></span><i data-lucide="chevron-right"></i></button>`).join("");if(window.lucide)window.lucide.createIcons();
-      list.querySelectorAll("[data-centre-id]").forEach(b=>b.addEventListener("click",()=>{const c=activeCentres.find(x=>x.id===b.dataset.centreId);if(c){chooseCentre(c.name,c);showScreen("map-centre");}}));
+    function strHash(s){let h=0;for(let i=0;i<s.length;i++){h=(h*31+s.charCodeAt(i))|0;}return Math.abs(h);}
+    function floorsForCentre(centre){
+      const n=3+(strHash(centre.id)%4);
+      const statuses=["is-verified","is-verified","is-due","is-overdue"];
+      return Array.from({length:n},(_,i)=>{
+        const seed=strHash(centre.id+"-"+i);
+        const status=statuses[seed%statuses.length];
+        const assets=14+(seed%26);
+        const scanned=status==="is-verified"?assets:Math.max(0,assets-1-(seed%5));
+        return {num:i+1,status,assets,scanned};
+      });
+    }
+    function renderStateCentres(state){const list=root.querySelector("#state-centre-list");if(!list)return;const items=activeCentres.filter(c=>c.state===state);
+      const byCity={};items.forEach(c=>{(byCity[c.city]=byCity[c.city]||[]).push(c);});
+      const cities=Object.keys(byCity).sort();
+      root.querySelector("#state-centre-heading").textContent=`${cities.length} ${cities.length===1?"city":"cities"}`;
+      list.innerHTML=cities.map((city,i)=>{const group=byCity[city];const totalAssets=group.reduce((sum,c)=>sum+floorsForCentre(c).reduce((s,f)=>s+f.assets,0),0);
+        return `<button class="centre-card" data-city="${city}"><span class="centre-index">${String(i+1).padStart(2,"0")}</span><span><strong>${city}</strong><small>${group.length} building${group.length===1?"":"s"} · ~${totalAssets} assets</small></span><i data-lucide="chevron-right"></i></button>`;
+      }).join("")||'<p class="quiet-note">No centres recorded for this state yet.</p>';
+      if(window.lucide)window.lucide.createIcons();
+      list.querySelectorAll("[data-city]").forEach(b=>b.addEventListener("click",()=>{chooseCity(state,b.dataset.city);showScreen("map-city");}));
+    }
+    function chooseCity(state,city){
+      root.querySelectorAll(".selected-city,.selected-city-title").forEach(el=>{el.textContent=city;});
+      renderCityBuildings(state,city);
+    }
+    function renderCityBuildings(state,city){
+      const target=root.querySelector("#city-building-list");if(!target)return;
+      const items=activeCentres.filter(c=>c.state===state&&c.city===city);
+      target.innerHTML=items.map(c=>{
+        const floors=floorsForCentre(c);
+        const mini=floors.map(f=>`<span class="mini-floor ${f.status}"></span>`).join("");
+        const label=c.name.startsWith(city)?c.name.slice(city.length).trim().replace(/^[\s·-]+/,"")||c.name:c.name;
+        return `<button class="city-building-card" data-centre-id="${c.id}"><span class="mini-building">${mini}<span class="mini-roof"></span></span><strong>${label}</strong><small>${floors.length} floors · ${c.code||"no code"}</small></button>`;
+      }).join("")||'<p class="quiet-note">No buildings recorded for this city yet.</p>';
+      if(window.lucide)window.lucide.createIcons();
+      target.querySelectorAll("[data-centre-id]").forEach(b=>b.addEventListener("click",()=>{const c=items.find(x=>x.id===b.dataset.centreId);if(c){chooseCentre(c.name,c);renderBuildingFloors(c);showScreen("map-building");}}));
+    }
+    function renderBuildingFloors(c){
+      const stack=root.querySelector("#building-floor-stack");if(!stack)return;
+      const floors=floorsForCentre(c);
+      const statusWord={"is-verified":"Verified","is-due":"Due","is-overdue":"Overdue"};
+      stack.innerHTML=floors.map(f=>`<button class="iso-floor ${f.status}" data-floor="${f.num}"><span><strong>Floor ${f.num}</strong><small>${f.scanned} of ${f.assets} scanned</small></span><span class="iso-status">${statusWord[f.status]}</span></button>`).join("")+'<div class="iso-roof"></div>';
+      if(window.lucide)window.lucide.createIcons();
+      stack.querySelectorAll(".iso-floor").forEach(btn=>btn.addEventListener("click",()=>{
+        const n=btn.dataset.floor;
+        root.querySelectorAll(".selected-floor").forEach(el=>{el.textContent=`FLOOR ${n}`;});
+        root.querySelectorAll(".selected-floor-title").forEach(el=>{el.textContent=`Floor ${n}`;});
+        showScreen("map-area");
+      }));
     }
     async function loadIndiaBoundaries(){
       const target=root.querySelector("#india-state-boundaries"); if(!target)return;
@@ -98,11 +145,13 @@
     }
     root.querySelector("#centre-search")?.addEventListener("input",e=>renderCentreDirectory(e.target.value));
     root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-floor"||action==="add-area"){button.textContent=action==="add-floor"?"Floor added":"Area added";button.classList.add("action-done");}else if(action==="save-centre"){button.innerHTML='Centre details saved <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}}));
-    root.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => {
+    root.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-go]");
+      if (!button) return;
       if (button.dataset.state) chooseState(button.dataset.state);
       if (button.classList.contains("centre-card")) chooseCentre(button.querySelector("strong").textContent);
       showScreen(button.dataset.go);
-    }));
+    });
     function announce(message){let toast=root.querySelector(".prototype-toast");if(!toast){toast=document.createElement("div");toast.className="prototype-toast";toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");root.querySelector(".prototype-phone").appendChild(toast);}toast.textContent=message;toast.classList.add("show");window.clearTimeout(toast._timer);toast._timer=window.setTimeout(()=>toast.classList.remove("show"),3200);}
     root.querySelectorAll(".report-type").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll(".report-type").forEach(b=>b.classList.toggle("is-selected",b===button));}));
     root.querySelectorAll("[data-report-filter]").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll("[data-report-filter]").forEach(b=>b.classList.toggle("active",b===button));}));
@@ -152,4 +201,11 @@
         choice.setAttribute("aria-pressed", String(active));
       });
     }));
+    if (activeCentres[0]) {
+      const defaultCentre = activeCentres[0];
+      root.querySelectorAll(".selected-city,.selected-city-title").forEach((el) => { el.textContent = defaultCentre.city; });
+      renderCityBuildings(defaultCentre.state, defaultCentre.city);
+      chooseCentre(defaultCentre.name, defaultCentre);
+      renderBuildingFloors(defaultCentre);
+    }
   
