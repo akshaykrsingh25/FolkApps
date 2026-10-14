@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#202344">
   <title>IncuAsset · India asset register</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Archivo:wght@400;500;600;700&family=Big+Shoulders+Display:wght@600;800&family=Figtree:wght@400;500;600;700&family=Source+Sans+3:wght@400;600;700&family=Courier+Prime:wght@700&display=swap">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -14,8 +19,12 @@
     <label for="screen-picker">Explore screens</label>
     <select id="screen-picker" aria-label="Choose a screen to preview">
       <option value="home">Home · floor walk</option>
+      <option value="add-space">Name a space · Floor 4</option>
+      <option value="move-to-space">Move assets · into a space</option>
       <option value="scanner">Scan & capture</option>
       <option value="add-asset">Review new asset</option>
+      <option value="batch-review">Batch review · multiple captures</option>
+      <option value="printer-connect">Connect a label printer</option>
       <option value="inventory">Inventory</option>
       <option value="asset-detail">Asset details</option>
       <option value="locations">Locations</option>
@@ -31,7 +40,9 @@
       <option value="map-india">India · asset overview</option>
       <option value="centre-directory">Centres · active directory</option>
       <option value="centre-manager">Centre · manage floors & assets</option>
-      <option value="map-state">State · centre overview</option>
+      <option value="map-state">State · cities overview</option>
+      <option value="map-city">City · area-wise buildings</option>
+      <option value="map-building">Building · 3D floor stack</option>
       <option value="map-centre">Centre · floor overview</option>
       <option value="map-area">Floor & area · asset list</option>
       <option value="unused-map">Unused assets · map</option>
@@ -57,13 +68,17 @@
           <div class="progress-hero-copy"><p class="eyebrow"><span class="live-dot"></span>FLOOR WALK · IN PROGRESS</p><h1>Floor 4 is<br>nearly verified.</h1><p class="subhead">Building A · Udyog Vihar</p></div>
         </div>
         <section class="progress-block">
+          <div class="ring-gauge">
+            <svg viewBox="0 0 140 140" role="img" aria-label="67 percent complete, 12 of 18 assets verified">
+              <circle class="ring-track" cx="70" cy="70" r="58"/>
+              <circle class="ring-value" cx="70" cy="70" r="58" stroke-dasharray="364.4" stroke-dashoffset="120.2"/>
+              <text x="70" y="66" text-anchor="middle" class="ring-pct">67%</text>
+              <text x="70" y="84" text-anchor="middle" class="ring-label">12 OF 18 VERIFIED</text>
+            </svg>
+          </div>
           <div class="progress-head"><span class="remaining-count"><strong>6</strong><b>TO VERIFY</b></span><span class="saved"><i data-lucide="cloud-check" aria-hidden="true"></i>Saved</span></div>
-          <svg class="wave" viewBox="0 0 360 34" role="img" aria-label="67 percent complete">
-            <path class="wave-track" d="M8 18 C22 5 36 31 50 18 S78 5 92 18 S120 31 134 18 S162 5 176 18 S204 31 218 18 S246 5 260 18 S288 31 302 18 S330 5 344 18 S358 31 372 18"/>
-            <path class="wave-value" d="M8 18 C22 5 36 31 50 18 S78 5 92 18 S120 31 134 18 S162 5 176 18 S204 31 218 18 S246 5 260 18"/>
-          </svg>
-          <div class="progress-foot"><span>12 of 18 assets verified</span><span>67%</span></div>
         </section>
+        <button class="evidence-upload" data-go="add-space"><i data-lucide="plus" aria-hidden="true"></i><span><strong>Name a space on this floor</strong><small>Room, zone or area — so assets can be placed precisely</small></span><i data-lucide="arrow-right" aria-hidden="true"></i></button>
         <div class="section-heading"><h2>Keep it all together</h2><span>One asset · multiple captures</span></div>
         <div class="source-group" role="group" aria-label="Evidence capture sources">
           <button class="source-choice is-selected" aria-pressed="true"><i data-lucide="camera" aria-hidden="true"></i>Photo</button>
@@ -76,16 +91,59 @@
         <div class="section-heading recent-head"><h2>Last in the register</h2><button class="text-action" data-go="asset-detail">See all <i data-lucide="arrow-up-right" aria-hidden="true"></i></button></div>
         <button class="asset-row" data-go="asset-detail"><img data-shared-photo="concept-photo-0" alt="Network switch mounted in a white equipment rack"><span class="asset-row-copy"><strong>Network switch</strong><small>IT-00482 · Floor 4</small></span><span class="check-mark"><i data-lucide="check" aria-hidden="true"></i></span></button>
       </section>
-      <section class="screen" data-screen="scanner" aria-label="Scan and capture" hidden>
+      <section class="screen" data-screen="add-space" aria-label="Name a space" hidden>
         <button class="back-link" data-go="home"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor walk</button>
+        <p class="eyebrow">NEW SPACE · FLOOR 4</p><h1 class="page-title">Name this space.</h1>
+        <p class="subhead">Add a room, zone or area as you walk, so assets get placed precisely — not just left on the floor.</p>
+        <label class="field-label">Space name<input type="text" id="space-name-input" placeholder="e.g. Server room, Reception, Store"></label>
+        <label class="field-label">Type — what it is<div class="space-type-grid">
+          <button class="space-type is-selected" data-space-type="Room"><i data-lucide="layers-2" aria-hidden="true"></i><strong>Room</strong><small>Enclosed space</small></button>
+          <button class="space-type" data-space-type="Zone"><i data-lucide="inside-outside" aria-hidden="true"></i><strong>Zone</strong><small>Open area</small></button>
+          <button class="space-type" data-space-type="Storage"><i data-lucide="package-open" aria-hidden="true"></i><strong>Storage</strong><small>Store / closet</small></button>
+          <button class="space-type" data-space-type="Corridor"><i data-lucide="move-right" aria-hidden="true"></i><strong>Corridor</strong><small>Passage / lobby</small></button>
+        </div></label>
+        <label class="field-label">Where on this floor — location note<input type="text" id="space-where-input" placeholder="e.g. Near the north stairwell, left of the lift"></label>
+        <label class="field-label">How it's used<div class="segmented" role="group" aria-label="Internal or external"><button class="is-selected" aria-pressed="true">Internal</button><button aria-pressed="false">External</button></div></label>
+        <button class="primary-button full" data-action="save-space"><i data-lucide="plus" aria-hidden="true"></i>Add space</button>
+        <div class="section-heading"><h2>Already on Floor 4</h2><span id="space-count">4 spaces</span></div>
+        <div id="space-list">
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Open office</strong><small>Room · internal · 12 assets</small></span><button class="text-action space-move-btn" data-space-name="Open office">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="layers-2" aria-hidden="true"></i><span><strong>Meeting 2A</strong><small>Room · internal · 6 assets</small></span><button class="text-action space-move-btn" data-space-name="Meeting 2A">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="package-open" aria-hidden="true"></i><span><strong>IT store</strong><small>Storage · internal · 6 assets</small></span><button class="text-action space-move-btn" data-space-name="IT store">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+          <div class="compact-row"><i data-lucide="inside-outside" aria-hidden="true"></i><span><strong>Pantry</strong><small>Zone · internal · 4 assets</small></span><button class="text-action space-move-btn" data-space-name="Pantry">Move<i data-lucide="move-right" aria-hidden="true"></i></button></div>
+        </div>
+      </section>
+      <section class="screen" data-screen="move-to-space" aria-label="Move assets to a space" hidden>
+        <button class="back-link" data-go="add-space"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor 4 spaces</button>
+        <p class="eyebrow">MOVE ASSETS · FLOOR 4</p>
+        <h1 class="page-title">Move into <span id="move-target-name">this space</span>.</h1>
+        <p class="subhead">Select assets already on this floor. Moving within the same floor updates the location instantly — no approval needed.</p>
+        <div id="move-asset-list" class="move-asset-list">
+          <label class="move-asset-row"><input type="checkbox" value="Network switch · IT-00482"><span><strong>Network switch</strong><small>IT-00482 · currently: unassigned</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Projector · AV-00077"><span><strong>Projector</strong><small>AV-00077 · currently: Open office</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Office chairs ×6 · CH-00142"><span><strong>Office chairs ×6</strong><small>CH-00142 · currently: Meeting 2A</small></span></label>
+          <label class="move-asset-row"><input type="checkbox" value="Whiteboard · WB-00019"><span><strong>Whiteboard</strong><small>WB-00019 · currently: IT store</small></span></label>
+        </div>
+        <button class="primary-button full" data-action="move-assets" disabled><i data-lucide="move-right" aria-hidden="true"></i><span>Move <span id="move-count">0</span> asset<span id="move-plural">s</span> here</span></button>
+      </section>
+      <section class="screen camera-screen" data-screen="scanner" aria-label="Scan and capture" hidden>
+        <div class="camera-view full">
+          <img data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div>
+          <button class="back-link on-camera" data-go="home" aria-label="Back to floor walk"><i data-lucide="arrow-left" aria-hidden="true"></i></button>
+          <span class="camera-session-pill" id="camera-session-pill" hidden><i data-lucide="images" aria-hidden="true"></i><span id="camera-session-count">0</span> captured</span>
+          <span class="camera-switch" role="button" tabindex="0" aria-label="Switch camera"><i data-lucide="switch-camera" aria-hidden="true"></i></span>
+          <span class="camera-hint"><i data-lucide="scan-line" aria-hidden="true"></i> Aim at a QR or barcode</span>
+          <div class="camera-permission-banner" id="camera-permission-banner" hidden><i data-lucide="lock-keyhole" aria-hidden="true"></i><span>Camera access is needed to scan and capture assets. Asked once — not on every visit.</span><button class="secondary-button" data-action="grant-camera">Allow camera</button></div>
+          <div class="capture-dock">
+            <div class="capture-controls three"><button class="capture-mode active" aria-pressed="true"><i data-lucide="qr-code" aria-hidden="true"></i>Scan code</button><button class="capture-mode" aria-pressed="false"><i data-lucide="rfid" aria-hidden="true"></i>RFID</button><button class="capture-mode" aria-pressed="false"><i data-lucide="camera" aria-hidden="true"></i>Photo</button><button class="capture-shutter" aria-label="Capture asset"><i data-lucide="camera" aria-hidden="true"></i></button></div>
+          </div>
+        </div>
         <p class="eyebrow">NEW ASSET · CAMERA</p><h1 class="page-title">Capture it as you find it.</h1>
-        <p class="subhead">Scan a registered tag to find it, or photograph a new item to identify it.</p>
-        <div class="camera-meta"><span><i data-lucide="camera" aria-hidden="true"></i>Back camera</span><span><i data-lucide="zap" aria-hidden="true"></i>Flash auto</span><span class="camera-switch" role="button" tabindex="0" aria-label="Switch camera"><i data-lucide="switch-camera" aria-hidden="true"></i></span></div>
-        <div class="camera-view"><img data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div><span class="camera-hint"><i data-lucide="scan-line" aria-hidden="true"></i> Aim at a QR or barcode</span></div>
-        <div class="capture-controls"><button class="capture-mode active" aria-pressed="true"><i data-lucide="qr-code" aria-hidden="true"></i>Scan code</button><button class="capture-mode" aria-pressed="false"><i data-lucide="camera" aria-hidden="true"></i>Photo</button><button class="capture-shutter" aria-label="Capture asset"><i data-lucide="camera" aria-hidden="true"></i></button></div>
+        <p class="subhead">Scan a registered tag to find it, or photograph new items one after another — review and save them all together.</p>
+        <div id="capture-thumbstrip" class="capture-thumbstrip" hidden></div>
         <div class="permission-note"><i data-lucide="map-pin" aria-hidden="true"></i><span><strong>Building A · Floor 4</strong><small>Location saved with this capture · adjust indoors</small></span><i data-lucide="check" aria-hidden="true"></i></div>
         <p class="capture-storage"><i data-lucide="lock-keyhole" aria-hidden="true"></i>Photos are saved on this device and queued to sync when online.</p>
-        <button class="primary-button full" data-go="asset-detail">Open scanned asset <i data-lucide="arrow-right" aria-hidden="true"></i></button><button class="text-action full-action" data-go="purchase-capture"><i data-lucide="plus"></i>New purchase · bill &amp; product photo</button>
+        <button class="primary-button full" id="scanner-primary-action" data-go="asset-detail">Open scanned asset <i data-lucide="arrow-right" aria-hidden="true"></i></button><button class="text-action full-action" data-go="purchase-capture"><i data-lucide="plus"></i>New purchase · bill &amp; product photo</button>
       </section>
       <section class="screen" data-screen="add-asset" aria-label="Review new asset" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
@@ -93,7 +151,8 @@
         <div class="capture-strip"><img data-shared-photo="concept-photo-0" alt="Captured photo of a network switch"><div><strong>3 captures attached</strong><small>Asset photo · invoice · QR / product label</small></div><button class="icon-button small" aria-label="Add another capture" data-go="scanner"><i data-lucide="plus" aria-hidden="true"></i></button></div>
         <label class="field-label">Asset name<input value="Network switch" /></label>
         <div class="two-fields"><label class="field-label">Asset code<input value="IT-00482" /></label><label class="field-label">Category<input value="IT equipment" /></label></div>
-        <label class="field-label">QR / barcode<input value="QR-IT-00482" /></label>
+        <div class="two-fields"><label class="field-label">QR / barcode<input value="QR-IT-00482" /></label><label class="field-label">RFID tag <small>(optional)</small><input placeholder="Scan RFID or leave blank" /></label></div>
+        <p class="quiet-note">RFID speeds up bulk scanning once tagged, but the printed label is always a QR code — RFID chips can't be printed from this device.</p>
         <label class="field-label">Record type<div class="segmented"><button class="is-selected" aria-pressed="true">Tracked item</button><button aria-pressed="false">Bulk quantity</button></div></label>
         <div class="two-fields"><label class="field-label">Condition · 1–10<input type="number" min="1" max="10" value="8" /></label><label class="field-label">Quantity<input type="number" min="1" value="1" /></label></div>
         <label class="field-label">Custodian<input value="A. Sharma" /></label>
@@ -102,6 +161,14 @@
         <label class="reuse-toggle"><span><strong>Reusable asset</strong><small>Can be checked out again</small></span><input type="checkbox" checked aria-label="Reusable asset"></label>
         <div class="coverage-detected"><i data-lucide="shield-check"></i><span><strong>Coverage detected on invoice</strong><small>3-year manufacturer warranty · confirm after review</small></span><button data-go="warranty-detail">Review</button></div>
         <button class="primary-button full" data-go="qr-label">Save asset & generate QR <i data-lucide="qr-code" aria-hidden="true"></i></button>
+      </section>
+      <section class="screen" data-screen="batch-review" aria-label="Review captured assets" hidden>
+        <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
+        <p class="eyebrow">BATCH REVIEW · <span id="batch-count-label">0</span> CAPTURED</p>
+        <h1 class="page-title">Quick-check each one, then save together.</h1>
+        <p class="subhead">Names are suggested from what's in frame — edit any that need it, then generate every QR label in one go.</p>
+        <div id="batch-review-list" class="batch-review-list"></div>
+        <button class="primary-button full" data-action="generate-batch-labels"><i data-lucide="qr-code" aria-hidden="true"></i>Generate &amp; print <span id="batch-generate-count">0</span> QR labels</button>
       </section>
       <section class="screen map-screen" data-screen="missing-assets" aria-label="Organization missing asset watch" hidden>
         <button class="back-link" data-go="verification"><i data-lucide="arrow-left"></i>Verification cycle</button>
@@ -256,23 +323,50 @@
       </section>
       <section class="screen map-screen" data-screen="map-state" aria-label="State centre map" hidden>
         <button class="back-link" data-go="map-india"><i data-lucide="arrow-left"></i>India overview</button><div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <b class="selected-state">GUJARAT</b></div>
-        <p class="eyebrow">STATE VIEW</p><h1 class="page-title selected-state-title">Gujarat</h1><p class="subhead">Choose a centre to see its floors and asset hotspots.</p>
+        <p class="eyebrow">STATE VIEW</p><h1 class="page-title selected-state-title">Gujarat</h1><p class="subhead">Choose a city to see its buildings.</p>
         <div class="state-map-card"><div class="state-shape"><svg id="selected-state-shape" viewBox="0 0 220 150" role="img" aria-label="Selected state boundary"></svg></div></div>
-        <div class="section-heading"><h2 id="state-centre-heading">Centres</h2><span class="state-verified">Centre directory</span></div>
+        <div class="section-heading"><h2 id="state-centre-heading">Cities</h2><span class="state-verified">Grouped by locality</span></div>
         <div id="state-centre-list"></div>
         <button class="secondary-button full" data-go="centre-directory">Open all centres</button>
+      </section>
+      <section class="screen" data-screen="map-city" aria-label="City buildings" hidden>
+        <button class="back-link" data-go="map-state"><i data-lucide="arrow-left"></i><span class="selected-state">Gujarat</span></button>
+        <div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <span class="selected-state">GUJARAT</span> <i data-lucide="chevron-right"></i> <b class="selected-city">AHMEDABAD</b></div>
+        <p class="eyebrow">CITY VIEW</p><h1 class="page-title selected-city-title">Ahmedabad</h1>
+        <p class="subhead">Area-wise buildings in this city. Tap a building to walk its floors.</p>
+        <div id="city-building-list" class="city-building-grid"></div>
+      </section>
+      <section class="screen" data-screen="map-building" aria-label="Building floors" hidden>
+        <button class="back-link" data-go="map-city"><i data-lucide="arrow-left"></i><span class="selected-city">Ahmedabad</span></button>
+        <div class="crumbs"><span class="selected-state">GUJARAT</span> <i data-lucide="chevron-right"></i> <span class="selected-city">AHMEDABAD</span> <i data-lucide="chevron-right"></i> <b class="selected-centre">—</b></div>
+        <p class="eyebrow">BUILDING VIEW · 3D</p><h1 class="page-title selected-centre-title">—</h1>
+        <p class="subhead">Tap a floor to open its walk-verified floor chart.</p>
+        <div class="segmented view-toggle" role="group" aria-label="Floor view"><button class="is-selected" aria-pressed="true">Building</button><button aria-pressed="false">List</button></div>
+        <div id="building-view-wrap">
+          <div class="iso-stage"><div id="building-floor-stack" class="iso-building"></div></div>
+          <div class="map-legend building-legend"><span><i class="legend-dot green"></i>Verified</span><span><i class="legend-dot amber"></i>Due</span><span><i class="legend-dot red"></i>Overdue</span></div>
+        </div>
+        <div id="floor-list-view" hidden></div>
+        <button class="text-action full-action" data-go="map-centre"><i data-lucide="building-2"></i>View building overview & stats</button>
       </section>
       <section class="screen map-screen" data-screen="map-centre" aria-label="Centre floor map" hidden>
         <button class="back-link" data-go="map-state"><i data-lucide="arrow-left"></i>Maharashtra</button><div class="crumbs">INDIA <i data-lucide="chevron-right"></i> <span class="selected-state">MAHARASHTRA</span> <i data-lucide="chevron-right"></i> <b class="selected-centre">MUMBAI · BKC</b></div>
         <p class="eyebrow">CENTRE OVERVIEW</p><h1 class="page-title selected-centre-title">Mumbai · BKC</h1><p class="subhead">62 recorded assets · last full scan 5 months ago</p>
         <div class="centre-stats"><span><b id="centre-stat-verified">54</b><small>verified</small></span><span><b id="centre-stat-due">5</b><small>due soon</small></span><span class="risk"><b id="centre-stat-unmatched">3</b><small>unmatched</small></span></div>
+        <button class="primary-button full" data-go="scanner"><i data-lucide="scan-line" aria-hidden="true"></i>Scan or capture an asset here</button>
         <div class="floor-map"><div class="floor-map-head"><strong>Choose a floor</strong><span>Tap a zone for details</span></div><button data-go="map-area"><span class="floor-num">03</span><span><strong>Floor 3 · Admin</strong><small>18 assets · 17 scanned</small><em>1 asset not seen</em></span><span class="mini-plan"><i></i><i></i><i></i><i></i></span><i data-lucide="chevron-right"></i></button><button data-go="map-area"><span class="floor-num">02</span><span><strong>Floor 2 · Operations</strong><small>24 assets · 22 scanned</small><em>2 assets not seen</em></span><span class="mini-plan"><i></i><i></i><i></i><i></i></span><i data-lucide="chevron-right"></i></button><button data-go="map-area"><span class="floor-num">01</span><span><strong>Floor 1 · Reception</strong><small>12 assets · all scanned</small><em class="positive">All accounted for</em></span><span class="mini-plan"><i></i><i></i><i></i><i></i></span><i data-lucide="chevron-right"></i></button><button data-go="map-area"><span class="floor-num">B1</span><span><strong>Basement · Store</strong><small>8 assets · 6 scanned</small><em>2 assets idle</em></span><span class="mini-plan"><i></i><i></i><i></i><i></i></span><i data-lucide="chevron-right"></i></button></div>
         <button class="text-action full-action" data-go="centre-manager"><i data-lucide="settings-2"></i>Manage floors, areas & centre pin</button><a class="text-action full-action map-search-link" href="https://www.google.com/maps/search/?api=1&query=Ahmedabad%20Krish%20Cubicle" target="_blank" rel="noreferrer"><i data-lucide="map-pin"></i>Confirm exact building pin on Maps</a><button class="text-action full-action" data-go="unused-map"><i data-lucide="package-open"></i>View 7 unused assets at this centre</button>
       </section>
       <section class="screen map-screen" data-screen="map-area" aria-label="Floor and area assets" hidden>
-        <button class="back-link" data-go="map-centre"><i data-lucide="arrow-left"></i>Mumbai · BKC</button><div class="crumbs">MAHARASHTRA <i data-lucide="chevron-right"></i> BKC <i data-lucide="chevron-right"></i> <b>FLOOR 2</b></div>
-        <p class="eyebrow">FLOOR PLAN · OPERATIONS</p><h1 class="page-title">Floor 2</h1>
-        <div class="area-plan"><div class="room room-a" data-go="map-area"><strong>Open office</strong><small>12 assets · 1 missing</small></div><div class="room room-b" data-go="map-area"><strong>Meeting 2A</strong><small>6 assets · scanned</small></div><div class="room room-c" data-go="map-area"><strong>IT store</strong><small>6 assets · 2 unused</small></div><div class="room room-d"><strong>Pantry</strong><small>4 assets</small></div><span class="area-plan-label">Tap an area · Floor 2</span></div>
+        <button class="back-link" data-go="map-building"><i data-lucide="arrow-left"></i>Floors</button><div class="crumbs">MAHARASHTRA <i data-lucide="chevron-right"></i> BKC <i data-lucide="chevron-right"></i> <b class="selected-floor">FLOOR 2</b></div>
+        <p class="eyebrow">FLOOR PLAN · OPERATIONS</p><h1 class="page-title selected-floor-title">Floor 2</h1>
+        <p class="walk-caption"><i data-lucide="scan-line" aria-hidden="true"></i>Built from today's floor walk — path follows scan order</p>
+        <div class="area-plan">
+          <svg class="walk-path" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <path d="M44,43 L97,43 L97,97 L44,97"/>
+            <circle cx="44" cy="43" r="2"/><circle cx="97" cy="43" r="2"/><circle cx="97" cy="97" r="2"/><circle cx="44" cy="97" r="2"/>
+          </svg>
+          <div class="room room-a" data-go="map-area"><strong>Open office</strong><small>12 assets · 1 missing</small></div><div class="room room-b" data-go="map-area"><strong>Meeting 2A</strong><small>6 assets · scanned</small></div><div class="room room-c" data-go="map-area"><strong>IT store</strong><small>6 assets · 2 unused</small></div><div class="room room-d"><strong>Pantry</strong><small>4 assets</small></div><span class="area-plan-label">Tap an area · Floor 2</span></div>
         <div class="section-heading"><h2>Open office</h2><span>11 of 12 verified</span></div><div class="area-alert"><i data-lucide="triangle-alert"></i><span><strong>1 asset not seen in this scan</strong><small>Projector · last verified 8 months ago</small></span><button data-go="asset-detail">Review</button></div>
         <div class="asset-row compact-row" data-go="asset-detail"><span class="asset-status-dot green"></span><span><strong>Network switch</strong><small>IT-00482 · Desk zone A · good</small></span><i data-lucide="chevron-right"></i></div><div class="asset-row compact-row" data-go="asset-detail"><span class="asset-status-dot amber"></span><span><strong>Projector</strong><small>AV-00024 · Meeting area · overdue</small></span><i data-lucide="chevron-right"></i></div>
         <button class="primary-button full" data-go="verification">Start area scan <i data-lucide="scan-line"></i></button>
@@ -338,11 +432,21 @@
         <p class="quiet-note">Photo matching is a helper. Asset identity is confirmed by the person recording it, the barcode/serial, and the purchase bill.</p>
       </section>
       <section class="screen map-screen" data-screen="qr-label" aria-label="Generated asset QR label and print options" hidden>
-        <button class="back-link" data-go="add-asset"><i data-lucide="arrow-left"></i>Asset details</button><p class="eyebrow">ASSET SAVED · LABEL READY</p><h1 class="page-title">Give it a<br>scan-to-find tag.</h1><p class="subhead">This label opens the asset record and keeps its history attached.</p>
-        <div class="qr-label-preview"><div class="qr-sample" role="img" aria-label="QR code preview"><span class="finder one"></span><span class="finder two"></span><span class="finder three"></span><i></i></div><div class="qr-label-copy"><strong>Network switch</strong><b>IT-00482</b><small>Building A · Floor 4</small><span>INCUASSET · ASSET RECORD</span></div></div>
-        <div class="qr-status"><i data-lucide="circle-check"></i><span><strong>QR generated and linked</strong><small>Asset code: IT-00482 · unique record ID attached</small></span></div>
-        <div class="label-options"><div><span><strong>Label size</strong><small>Choose based on printer and asset</small></span><select aria-label="Label size"><option>50 × 30 mm · recommended</option><option>40 × 25 mm</option><option>A4 sheet · 24 labels</option></select></div><div><span><strong>Number of copies</strong><small>One per tracked asset</small></span><div class="quantity-stepper"><button aria-label="Decrease copies">−</button><b>1</b><button aria-label="Increase copies">+</button></div></div><label><input type="checkbox" checked> Include asset name and code below QR</label></div>
-        <button class="primary-button full" data-print-label><i data-lucide="printer"></i>Print label</button><button class="secondary-button full" data-go="asset-detail">Done · open asset record <i data-lucide="arrow-right"></i></button><p class="quiet-note">For bulk records, print one batch label per quantity group or individual tags when each unit needs its own tracking history.</p>
+        <button class="back-link" data-go="add-asset"><i data-lucide="arrow-left"></i>Asset details</button><p class="eyebrow" id="qr-label-eyebrow">ASSET SAVED · LABEL READY</p><h1 class="page-title" id="qr-label-title">Give it a<br>scan-to-find tag.</h1><p class="subhead" id="qr-label-subhead">This label opens the asset record and keeps its history attached.</p>
+        <div class="qr-label-preview"><div class="qr-sample" role="img" aria-label="QR code preview"><span class="finder one"></span><span class="finder two"></span><span class="finder three"></span><i></i></div><div class="qr-label-copy"><strong id="qr-label-name">Network switch</strong><b id="qr-label-code">IT-00482</b><small>Building A · Floor 4</small><span>INCUASSET · ASSET RECORD</span></div></div>
+        <div class="qr-status"><i data-lucide="circle-check"></i><span><strong id="qr-status-title">QR generated and linked</strong><small id="qr-status-sub">Asset code: IT-00482 · unique record ID attached</small></span></div>
+        <div class="label-options"><div><span><strong>Label size</strong><small id="label-size-cmd">Printer command: 50 × 30 mm</small></span><select aria-label="Label size" id="label-size-select"><option data-cmd="Printer command: 50 × 30 mm" selected>50 × 30 mm · recommended</option><option data-cmd="Printer command: 1.5in × 1.5in (38 × 38 mm)">1.5 × 1.5 in · square QR tag</option><option data-cmd="Printer command: 1in × 1in (25 × 25 mm)">1 × 1 in · small asset tag</option><option data-cmd="Printer command: 2in × 1in (51 × 25 mm)">2 × 1 in · wide label</option><option data-cmd="Printer command: 40 × 25 mm">40 × 25 mm</option><option data-cmd="Printer command: A4, 24-up">A4 sheet · 24 labels</option></select></div><div><span><strong>Number of copies</strong><small>One per tracked asset</small></span><div class="quantity-stepper"><button aria-label="Decrease copies">−</button><b>1</b><button aria-label="Increase copies">+</button></div></div><label><input type="checkbox" checked> Include asset name and code below QR</label><label><input type="checkbox" id="auto-print-toggle"> Auto-print label as soon as the asset is saved · one click, one print</label></div>
+        <button class="secondary-button full" id="printer-connect-row" data-go="printer-connect"><i data-lucide="printer" aria-hidden="true"></i><span id="printer-connect-label">Printer: not connected · connect over Wi-Fi or Bluetooth</span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <button class="primary-button full" data-print-label><i data-lucide="printer"></i><span id="qr-print-btn-text">Print label</span></button><button class="secondary-button full" data-go="asset-detail">Done · open asset record <i data-lucide="arrow-right"></i></button><p class="quiet-note">For bulk records, print one batch label per quantity group or individual tags when each unit needs its own tracking history.</p>
+      </section>
+      <section class="screen" data-screen="printer-connect" aria-label="Connect a label printer" hidden>
+        <button class="back-link" data-go="qr-label"><i data-lucide="arrow-left" aria-hidden="true"></i>QR label</button>
+        <p class="eyebrow">LABEL PRINTER</p><h1 class="page-title">Connect a printer.</h1>
+        <p class="subhead">Pick how this device reaches your label printer. Once connected, printing sends a direct print command instead of opening a print dialog each time.</p>
+        <div class="segmented printer-mode-tabs"><button class="is-selected" aria-pressed="true" data-printer-mode="wifi"><i data-lucide="wifi" aria-hidden="true"></i>Wi-Fi</button><button aria-pressed="false" data-printer-mode="bluetooth"><i data-lucide="bluetooth" aria-hidden="true"></i>Bluetooth</button><button aria-pressed="false" data-printer-mode="other"><i data-lucide="printer" aria-hidden="true"></i>Other</button></div>
+        <div class="printer-scan-status"><i data-lucide="scan-search" aria-hidden="true"></i><span id="printer-scan-text">Searching for Wi-Fi printers on this network…</span></div>
+        <div id="printer-device-list" class="printer-device-list"></div>
+        <p class="quiet-note">Other options cover USB-connected print stations and shared network print queues set up by your IT admin.</p>
       </section>
       <section class="screen map-screen" data-screen="access-scope" aria-label="State and centre access" hidden>
         <button class="back-link" data-go="roles"><i data-lucide="arrow-left"></i>People & access</button><p class="eyebrow">ACCESS BY RESPONSIBILITY</p><h1 class="page-title">The right view<br>for each leader.</h1><p class="subhead">Head Office sets the rules; state and centre heads see their own scope.</p>
@@ -354,8 +458,8 @@
     <nav class="bottom-toolbar" aria-label="Main navigation">
       <button class="nav-tab active" data-go="home"><i data-lucide="house" aria-hidden="true"></i><span>Today</span></button>
       <button class="nav-tab" data-go="map-india"><i data-lucide="map" aria-hidden="true"></i><span>Map</span></button><button class="nav-tab" data-go="inventory"><i data-lucide="boxes" aria-hidden="true"></i><span>Assets</span></button>
-      <button class="nav-tab" data-go="verification"><i data-lucide="clipboard-check" aria-hidden="true"></i><span>Verify</span></button><button class="nav-tab" data-go="reports"><i data-lucide="clipboard-list" aria-hidden="true"></i><span>Reports</span></button>
       <button class="scan-fab" data-go="scanner"><i data-lucide="scan-line" aria-hidden="true"></i><span>Scan</span></button>
+      <button class="nav-tab" data-go="verification"><i data-lucide="clipboard-check" aria-hidden="true"></i><span>Verify</span></button><button class="nav-tab" data-go="reports"><i data-lucide="clipboard-list" aria-hidden="true"></i><span>Reports</span></button>
     </nav>
     <p class="scan-live" role="status" aria-live="polite"></p>
   </div>
@@ -363,5 +467,12 @@
   
 </div>
 <script src="./app.js" defer></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>
