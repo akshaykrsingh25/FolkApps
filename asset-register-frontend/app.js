@@ -30,6 +30,9 @@
         camera.classList.add("is-scanning");
         window.setTimeout(() => camera.classList.remove("is-scanning"), 1150);
       }
+      if (name === "qr-label" && root.querySelector("#auto-print-toggle")?.checked) {
+        window.setTimeout(() => window.print(), 300);
+      }
     }
     picker.addEventListener("change", () => showScreen(picker.value));
     const activeCentres = [
@@ -195,6 +198,20 @@
       }, 1200);
     });
     root.querySelectorAll("[data-print-label]").forEach((button) => button.addEventListener("click", () => window.print()));
+    const labelSizeSelect = root.querySelector("#label-size-select");
+    const labelSizeCmd = root.querySelector("#label-size-cmd");
+    if (labelSizeSelect && labelSizeCmd) {
+      labelSizeSelect.addEventListener("change", () => {
+        labelSizeCmd.textContent = labelSizeSelect.selectedOptions[0].dataset.cmd;
+      });
+    }
+    const autoPrintToggle = root.querySelector("#auto-print-toggle");
+    if (autoPrintToggle) {
+      try { autoPrintToggle.checked = localStorage.getItem("incuasset-auto-print") === "1"; } catch (e) {}
+      autoPrintToggle.addEventListener("change", () => {
+        try { localStorage.setItem("incuasset-auto-print", autoPrintToggle.checked ? "1" : "0"); } catch (e) {}
+      });
+    }
     root.querySelectorAll(".switch-ui").forEach((button) => button.addEventListener("click", () => {
       button.classList.toggle("on");
       button.setAttribute("aria-pressed", String(button.classList.contains("on")));
