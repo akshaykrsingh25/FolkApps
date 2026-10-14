@@ -426,6 +426,8 @@
     #asset-register-prototype .verify-item strong { font-size:11px; }
     #asset-register-prototype .verify-item small { color:var(--muted); font-size:11px; }
     #asset-register-prototype .verify-item > i { width:16px; height:16px; color:var(--primary); }
+    #asset-register-prototype .verify-item[data-verify-status="done"] > i { color:var(--secondary); }
+    #asset-register-prototype .report-row[hidden],#asset-register-prototype .missing-row[hidden],#asset-register-prototype .verify-item[hidden] { display:none; }
     #asset-register-prototype .move-asset { display:flex; align-items:center; gap:9px; padding:9px; border-radius:16px; background:var(--surface-low); }
     #asset-register-prototype .move-asset img { width:49px; height:46px; border-radius:12px; object-fit:cover; }
     #asset-register-prototype .move-asset span { display:grid; gap:3px; }

@@ -251,7 +251,34 @@
     });
     function announce(message){let toast=root.querySelector(".prototype-toast");if(!toast){toast=document.createElement("div");toast.className="prototype-toast";toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");root.querySelector(".prototype-phone").appendChild(toast);}toast.textContent=message;toast.classList.add("show");window.clearTimeout(toast._timer);toast._timer=window.setTimeout(()=>toast.classList.remove("show"),3200);}
     root.querySelectorAll(".report-type").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll(".report-type").forEach(b=>b.classList.toggle("is-selected",b===button));}));
-    root.querySelectorAll("[data-report-filter]").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll("[data-report-filter]").forEach(b=>b.classList.toggle("active",b===button));}));
+    function applyReportView(view){
+      root.querySelectorAll("[data-report-view]").forEach(b=>b.classList.toggle("active",b.dataset.reportView===view));
+      const rows=root.querySelectorAll(".report-row");
+      let shown=0;
+      rows.forEach(row=>{const match=view==="all"||row.dataset.status===view;row.hidden=!match;if(match)shown++;});
+      const empty=root.querySelector("#reports-empty-note"); if(empty)empty.hidden=shown>0;
+      const filterCount=root.querySelector("#reports-filter-count"); if(filterCount&&view==="all")filterCount.textContent=root.querySelector("#reports-open-count")?.textContent||rows.length;
+    }
+    root.querySelectorAll("[data-report-view]").forEach(button=>button.addEventListener("click",()=>applyReportView(button.dataset.reportView)));
+
+    function applyMissingView(view){
+      root.querySelectorAll("[data-missing-view]").forEach(b=>b.classList.toggle("active",b.dataset.missingView===view));
+      const rows=[...root.querySelectorAll(".missing-row")];
+      const list=rows[0]?.parentElement;
+      rows.forEach(row=>{row.hidden=view==="overdue"&&row.dataset.overdue!=="true";});
+      if(list&&view==="centre"){
+        [...rows].sort((a,b)=>a.dataset.centre.localeCompare(b.dataset.centre)).forEach(row=>list.appendChild(row));
+      } else if(list){
+        rows.forEach(row=>list.appendChild(row));
+      }
+    }
+    root.querySelectorAll("[data-missing-view]").forEach(button=>button.addEventListener("click",()=>applyMissingView(button.dataset.missingView)));
+
+    function applyVerifyView(view){
+      root.querySelectorAll("[data-verify-view]").forEach(b=>b.classList.toggle("active",b.dataset.verifyView===view));
+      root.querySelectorAll("[data-verify-status]").forEach(el=>{el.hidden=el.dataset.verifyStatus!==view;});
+    }
+    root.querySelectorAll("[data-verify-view]").forEach(button=>button.addEventListener("click",()=>applyVerifyView(button.dataset.verifyView)));
     root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-new-centre"){root.querySelectorAll("[data-centre-field]").forEach(input=>input.value="");root.querySelector('[data-centre-field="code"]').focus();showScreen("centre-manager");}else if(action==="mark-not-seen"){button.textContent="Not seen · Centre Head notified";button.classList.add("action-done");announce("Centre Head and asset custodian notified. If still unconfirmed when the 2-month window closes, it escalates to the State Head and Head Office.");}else if(action==="notify-missing"){button.textContent="Owners and state heads notified";button.classList.add("action-done");announce("Centre owners and State Heads notified. Head Office can track every unresolved asset.");}else if(action==="attach-photo"){button.innerHTML='Photo attached · add another <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Evidence attached to the asset report.");}else if(action==="submit-report"){root.querySelector("#reports-open-count").textContent="19";button.innerHTML='Report submitted · owners notified <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}}));
     root.querySelectorAll(".source-choice").forEach((button) => button.addEventListener("click", () => {
       root.querySelectorAll(".source-choice").forEach((choice) => {
