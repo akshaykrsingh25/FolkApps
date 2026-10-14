@@ -14,6 +14,12 @@ completely self-contained app now.)
 
 **Package ID:** `com.incuspaze.assetregister`
 
+**New to this project?** Read [`APP_SPEC.md`](./APP_SPEC.md) first — it's the
+full A–Z framework: every screen, the UX flows, the design system (colors,
+fonts, components), the data model, what's persisted vs. simulated, how the
+Android project maps to the web app, and exactly what's real vs. not yet
+built.
+
 ## Opening in Android Studio
 
 1. Open this `android-app/` folder directly in Android Studio ("Open an
