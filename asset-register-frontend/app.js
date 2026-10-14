@@ -204,10 +204,12 @@
         pins.innerHTML=Object.entries(agg).map(([city,count])=>{const [lat,lon]=cityCoords[city], [x,y]=project([lon,lat]);return `<g class="city-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" data-city="${city}" role="button" tabindex="0" aria-label="${city} · ${count} centres"><title>${city} · ${count} centres</title><circle r="3.5"/><circle class="pin-pulse" r="7"/><text x="5" y="-5">${city} · ${count}</text></g>`}).join("");
         pins.querySelectorAll(".city-pin").forEach(pin=>{const c=activeCentres.find(x=>x.city===pin.dataset.city);const go=()=>{if(c){chooseState(c.state);showScreen("map-state");}};pin.addEventListener("click",go);pin.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}})});
         renderStateList();
+        if(selectedState)chooseState(selectedState);
       } catch(e) { target.innerHTML='<text x="28" y="128" fill="#536277" font-size="11">Map needs an internet connection.</text>'; }
     }
     const stateData = Object.fromEntries(stateNames.map(state=>[state,{centers:activeCentres.filter(c=>c.state===state)}]));
     let selectedCentre=activeCentres[0];
+    let selectedState=null;
     chooseState(stateNames[0]);
     function chooseCentre(name, centre) {
       selectedCentre=centre||activeCentres.find(c=>c.name===name)||selectedCentre;
@@ -230,17 +232,23 @@
     }
     function chooseState(name) {
       const data=stateData[name]; if(!data)return;
+      selectedState=name;
       root.querySelector(".selected-state-title").textContent=name;root.querySelector(".selected-state").textContent=name.toUpperCase();renderStateCentres(name);
       const group=root.querySelector(`#india-state-boundaries .india-state[data-state="${CSS.escape(name)}"]`);const shape=root.querySelector("#selected-state-shape");
       if(group&&shape){shape.innerHTML=group.innerHTML;const box=group.getBBox();shape.setAttribute("viewBox",`${box.x-4} ${box.y-4} ${box.width+8} ${box.height+8}`);}
     }
     root.querySelector("#centre-search")?.addEventListener("input",e=>renderCentreDirectory(e.target.value));
     root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-floor"||action==="add-area"){button.textContent=action==="add-floor"?"Floor added":"Area added";button.classList.add("action-done");}else if(action==="save-centre"){button.innerHTML='Centre details saved <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}}));
-    root.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => {
-      if (button.dataset.state) chooseState(button.dataset.state);
-      if (button.classList.contains("centre-card")) chooseCentre(button.querySelector("strong").textContent);
-      showScreen(button.dataset.go);
-    }));
+    root.querySelectorAll("[data-go]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (button.dataset.state) chooseState(button.dataset.state);
+        if (button.classList.contains("centre-card")) chooseCentre(button.querySelector("strong").textContent);
+        showScreen(button.dataset.go);
+      });
+      if (button.getAttribute("role") === "button" && button.tagName !== "BUTTON" && button.tagName !== "A") {
+        button.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); button.click(); } });
+      }
+    });
     function announce(message){let toast=root.querySelector(".prototype-toast");if(!toast){toast=document.createElement("div");toast.className="prototype-toast";toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");root.querySelector(".prototype-phone").appendChild(toast);}toast.textContent=message;toast.classList.add("show");window.clearTimeout(toast._timer);toast._timer=window.setTimeout(()=>toast.classList.remove("show"),3200);}
     root.querySelectorAll(".report-type").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll(".report-type").forEach(b=>b.classList.toggle("is-selected",b===button));}));
     root.querySelectorAll("[data-report-filter]").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll("[data-report-filter]").forEach(b=>b.classList.toggle("active",b===button));}));
@@ -277,6 +285,32 @@
         scanFab.classList.remove("is-scanning");
         root.querySelector(".scan-live").textContent = "";
       }, 1200);
+    });
+    root.querySelectorAll(".camera-switch").forEach((btn) => {
+      const toggle = () => {
+        const metaSpan = btn.closest(".camera-meta")?.querySelector("span:first-child");
+        if (!metaSpan) return;
+        const isBack = metaSpan.textContent.trim().startsWith("Back");
+        metaSpan.innerHTML = `<i data-lucide="camera" aria-hidden="true"></i>${isBack ? "Front camera" : "Back camera"}`;
+        if (window.lucide) window.lucide.createIcons();
+        announce(`Switched to ${isBack ? "front" : "back"} camera`);
+      };
+      btn.addEventListener("click", toggle);
+      btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    });
+    const purchaseShutter = root.querySelector(".purchase-shutter");
+    purchaseShutter?.addEventListener("click", () => {
+      purchaseShutter.classList.add("is-captured");
+      const tile = root.querySelector(".evidence-tile:not(.done)");
+      if (tile) {
+        tile.classList.add("done");
+        const icon = tile.querySelector("i"); if (icon) icon.setAttribute("data-lucide", "file-check-2");
+        const small = tile.querySelector("small"); if (small) small.textContent = "SN · captured just now";
+        const em = tile.querySelector("em"); if (em) em.textContent = "Serial matched to invoice";
+        if (window.lucide) window.lucide.createIcons();
+      }
+      announce("Product photo captured · serial matched to invoice");
+      window.setTimeout(() => purchaseShutter.classList.remove("is-captured"), 260);
     });
     root.querySelectorAll("[data-print-label]").forEach((button) => button.addEventListener("click", () => window.print()));
     root.querySelectorAll(".switch-ui").forEach((button) => button.addEventListener("click", () => {
