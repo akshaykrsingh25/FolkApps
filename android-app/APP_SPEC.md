@@ -353,6 +353,19 @@ nobody assumes they already work:
   data all ship inside the app, ~8.6MB) fully on-device to read the bill,
   then pulls out an amount and a date with a couple of regexes and shows the
   full recognized text. No cloud OCR API, no network call.
+- **On-device object detection — now real.** The purchase-capture screen's
+  product photo is now a real camera feed (own video element, separate from
+  the scanner's); the `camera-match` screen runs that photo through a real
+  MediaPipe Tasks Vision `ImageClassifier` with an EfficientNet-Lite0 (int8)
+  model, both vendored locally (vendor/vision/, ~15MB), fully on-device, no
+  network call. The top categories and confidence shown are the model's
+  actual output — on an object outside its ImageNet training classes (most
+  office/IT assets aren't ImageNet categories), that honestly means a low
+  confidence score rather than the old hardcoded "Office printer · 93%".
+  The "similar items already in your register" duplicate-detection list
+  below it is **still simulated** — that would need a real visual
+  similarity/embedding search against the existing photo catalog, which is
+  a separate, bigger feature than single-image classification.
 - **Login/accounts** — `sign-in` screen exists visually; there's no real
   authentication, session, or per-user identity behind it.
 - **Multi-device sync** — since there's no backend, nothing captured on one

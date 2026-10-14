@@ -398,7 +398,12 @@
       </section>
       <section class="screen map-screen" data-screen="purchase-capture" aria-label="Purchase bill and product capture" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left"></i>Back to capture</button><p class="eyebrow">NEW PURCHASE · EVIDENCE</p><h1 class="page-title">Bill, product,<br>one record.</h1><p class="subhead">Capture both; review details before they enter the register.</p>
-        <div class="purchase-camera"><img data-shared-photo="concept-photo-0" alt="Sample office equipment purchase"><div><span class="live-pill"><i></i> CAMERA READY</span><strong>Product photo</strong><small>Back camera · tap to capture</small></div><button class="purchase-shutter" aria-label="Capture product"><i data-lucide="camera"></i></button></div>
+        <div class="purchase-camera">
+          <video id="purchase-live-feed" class="camera-live-feed" autoplay playsinline muted hidden></video>
+          <canvas id="purchase-capture-canvas" hidden></canvas>
+          <img id="purchase-fallback-image" data-shared-photo="concept-photo-0" alt="Sample office equipment purchase">
+          <div><span class="live-pill" id="purchase-live-pill"><i></i> CAMERA READY</span><strong>Product photo</strong><small>Back camera · tap to capture</small></div><button class="purchase-shutter" aria-label="Capture product"><i data-lucide="camera"></i></button>
+        </div>
         <div class="purchase-evidence">
           <button class="evidence-tile" id="invoice-evidence-tile" type="button"><span><i data-lucide="file-check-2"></i></span><strong>Invoice / bill</strong><small id="invoice-evidence-sub">Tap to scan — reads the bill on-device</small><em id="invoice-evidence-em">Not captured yet</em></button>
           <div class="evidence-tile" id="product-serial-tile"><span><i data-lucide="barcode"></i></span><strong>Product / serial</strong><small>Scan label or type</small><em>Not captured yet</em></div>
@@ -429,8 +434,8 @@
       </section>
       <section class="screen map-screen" data-screen="camera-match" aria-label="Camera product identification and similar items" hidden>
         <button class="back-link" data-go="purchase-capture"><i data-lucide="arrow-left"></i>Purchase capture</button><p class="eyebrow">CAMERA ASSIST · REVIEW SUGGESTIONS</p><h1 class="page-title">We found a<br>close match.</h1><p class="subhead">Suggestions come from the photo and your existing register. Confirm before saving.</p>
-        <div class="match-photo"><img data-shared-photo="concept-photo-0" alt="Captured product photo"><span><i data-lucide="check"></i>Photo clear</span></div>
-        <div class="prediction-card"><div class="prediction-head"><span class="prediction-spark"><i data-lucide="sparkles"></i></span><span><small>CAMERA SUGGESTION</small><strong>Office printer</strong></span><b>93%</b></div><div class="prediction-tags"><span>Printer</span><span>Office equipment</span><span>Laser · multifunction</span></div><p>Suggested category and type · confirm or change these details</p></div>
+        <div class="match-photo"><img id="match-photo-img" data-shared-photo="concept-photo-0" alt="Captured product photo"><span id="match-photo-status"><i data-lucide="check"></i>Photo clear</span></div>
+        <div class="prediction-card"><div class="prediction-head"><span class="prediction-spark"><i data-lucide="sparkles"></i></span><span><small>ON-DEVICE CAMERA SUGGESTION</small><strong id="match-prediction-label">Analyzing photo…</strong></span><b id="match-prediction-confidence">—</b></div><div class="prediction-tags" id="match-prediction-tags"></div><p>Suggested category and type, from a real on-device image classifier · confirm or change these details</p></div>
         <div class="possible-duplicate"><i data-lucide="copy-check"></i><span><strong>2 similar items already in your register</strong><small>Check these before creating a new record</small></span><b>Review</b></div>
         <div class="similar-item"><img data-shared-photo="concept-photo-0" alt="Similar registered printer"><span><strong>Office printer · OF-00087</strong><small>Mumbai BKC · Floor 1 · same model family</small><em>89% visual resemblance · registered</em></span><i data-lucide="chevron-right"></i></div>
         <div class="similar-item"><img data-shared-photo="concept-photo-0" alt="Similar registered printer"><span><strong>Printer · WH-00314</strong><small>Central warehouse · available</small><em>78% resemblance · inspect serial</em></span><i data-lucide="chevron-right"></i></div>

@@ -35,8 +35,19 @@
         camera.classList.add("is-scanning");
         window.setTimeout(() => camera.classList.remove("is-scanning"), 1150);
         startCamera();
+        stopPurchaseCamera();
+      } else if (name === "purchase-capture") {
+        stopCamera();
+        startPurchaseCamera();
       } else {
         stopCamera();
+        stopPurchaseCamera();
+      }
+      if (name === "camera-match") {
+        const photo = lastPurchasePhoto || root.querySelector("#purchase-fallback-image")?.src;
+        const img = root.querySelector("#match-photo-img");
+        if (img && photo) img.src = photo;
+        runCameraMatch(photo);
       }
       if (name === "qr-label") {
         syncPrinterConnectUI();
@@ -572,6 +583,95 @@
       try { return cameraCanvas.toDataURL("image/jpeg", 0.85); } catch (e) { return null; }
     }
 
+    // --- Real camera for the purchase-capture product photo (separate video
+    // element from the scanner's, since both screens can't be open at once
+    // but each keeps its own simple start/stop pair). ---
+    let purchaseStream = null;
+    const purchaseVideo = root.querySelector("#purchase-live-feed");
+    const purchaseCanvas = root.querySelector("#purchase-capture-canvas");
+    const purchaseFallbackImage = root.querySelector("#purchase-fallback-image");
+    let lastPurchasePhoto = null;
+    async function startPurchaseCamera() {
+      if (!navigator.mediaDevices?.getUserMedia || !purchaseVideo) return;
+      try {
+        purchaseStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+        purchaseVideo.srcObject = purchaseStream;
+        purchaseVideo.hidden = false;
+        await purchaseVideo.play().catch(() => {});
+        if (purchaseFallbackImage) purchaseFallbackImage.hidden = true;
+      } catch (e) {
+        if (purchaseFallbackImage) purchaseFallbackImage.hidden = false;
+        purchaseVideo.hidden = true;
+      }
+    }
+    function stopPurchaseCamera() {
+      if (purchaseStream) { purchaseStream.getTracks().forEach((t) => t.stop()); purchaseStream = null; }
+      if (purchaseVideo) { purchaseVideo.pause(); purchaseVideo.srcObject = null; purchaseVideo.hidden = true; }
+      if (purchaseFallbackImage) purchaseFallbackImage.hidden = false;
+    }
+    function capturePurchasePhotoFrame() {
+      if (!purchaseVideo || !purchaseCanvas || !purchaseVideo.videoWidth) return null;
+      purchaseCanvas.width = purchaseVideo.videoWidth;
+      purchaseCanvas.height = purchaseVideo.videoHeight;
+      const ctx = purchaseCanvas.getContext("2d");
+      ctx.drawImage(purchaseVideo, 0, 0, purchaseCanvas.width, purchaseCanvas.height);
+      try { return purchaseCanvas.toDataURL("image/jpeg", 0.85); } catch (e) { return null; }
+    }
+
+    // --- Real on-device object detection for the camera-match screen
+    // (MediaPipe Tasks Vision + an EfficientNet-Lite0 classifier, both
+    // vendored locally — vendor/vision/ — so classification runs fully
+    // offline, with no call to any server.) ---
+    let imageClassifierPromise = null;
+    function getImageClassifier() {
+      if (!imageClassifierPromise) {
+        imageClassifierPromise = import("./vendor/vision/vision_bundle.mjs").then((vision) => vision.ImageClassifier.createFromOptions(
+          {
+            wasmLoaderPath: "./vendor/vision/wasm/vision_wasm_internal.js",
+            wasmBinaryPath: "./vendor/vision/wasm/vision_wasm_internal.wasm",
+          },
+          {
+            baseOptions: { modelAssetPath: "./vendor/vision/efficientnet_lite0_int8.tflite" },
+            maxResults: 3,
+            runningMode: "IMAGE",
+          },
+        ));
+      }
+      return imageClassifierPromise;
+    }
+    function formatClassLabel(name) {
+      return String(name || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+    async function runCameraMatch(photoSrc) {
+      const labelEl = root.querySelector("#match-prediction-label");
+      const confEl = root.querySelector("#match-prediction-confidence");
+      const tagsEl = root.querySelector("#match-prediction-tags");
+      if (!labelEl) return;
+      labelEl.textContent = "Analyzing photo…";
+      confEl.textContent = "—";
+      tagsEl.innerHTML = "";
+      if (!photoSrc) { labelEl.textContent = "No photo to analyze"; return; }
+      try {
+        const classifier = await getImageClassifier();
+        const img = new Image();
+        await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = photoSrc; });
+        const result = classifier.classify(img);
+        const categories = (result.classifications[0] && result.classifications[0].categories) || [];
+        if (categories.length) {
+          const top = categories[0];
+          labelEl.textContent = formatClassLabel(top.categoryName);
+          confEl.textContent = `${Math.round(top.score * 100)}%`;
+          tagsEl.innerHTML = categories.slice(0, 3).map((c) => `<span>${formatClassLabel(c.categoryName)}</span>`).join("");
+        } else {
+          labelEl.textContent = "No confident match";
+          confEl.textContent = "—";
+        }
+      } catch (e) {
+        labelEl.textContent = "On-device analysis unavailable";
+        confEl.textContent = "—";
+      }
+    }
+
     const sessionCaptures = [];
     let lastSingleCapturePhoto = null;
     const sessionNames = ["Network switch","Office chair","Desktop monitor","Projector","Whiteboard","Fire extinguisher","Printer","Router"];
@@ -695,6 +795,11 @@
     const purchaseShutter = root.querySelector(".purchase-shutter");
     purchaseShutter?.addEventListener("click", () => {
       purchaseShutter.classList.add("is-captured");
+      const capturedPhoto = capturePurchasePhotoFrame();
+      if (capturedPhoto) {
+        lastPurchasePhoto = capturedPhoto;
+        if (purchaseFallbackImage) purchaseFallbackImage.src = capturedPhoto;
+      }
       const tile = root.querySelector("#product-serial-tile");
       if (tile) {
         tile.classList.add("done");

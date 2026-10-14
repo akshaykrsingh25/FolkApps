@@ -1,0 +1,9 @@
+@mediapipe/tasks-vision (Apache License 2.0)
+https://github.com/google-ai-edge/mediapipe
+
+EfficientNet-Lite0 (int8) image classification model
+https://storage.googleapis.com/mediapipe-models/image_classifier/efficientnet_lite0/int8/1/efficientnet_lite0.tflite
+(Apache License 2.0 — MediaPipe Model Maker / TensorFlow Lite models)
+
+Vendored locally so on-device image classification works fully offline,
+with no call to any server at runtime.
