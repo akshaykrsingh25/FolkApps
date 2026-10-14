@@ -279,7 +279,86 @@
       root.querySelectorAll("[data-verify-status]").forEach(el=>{el.hidden=el.dataset.verifyStatus!==view;});
     }
     root.querySelectorAll("[data-verify-view]").forEach(button=>button.addEventListener("click",()=>applyVerifyView(button.dataset.verifyView)));
-    root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-new-centre"){root.querySelectorAll("[data-centre-field]").forEach(input=>input.value="");root.querySelector('[data-centre-field="code"]').focus();showScreen("centre-manager");}else if(action==="mark-not-seen"){button.textContent="Not seen · Centre Head notified";button.classList.add("action-done");announce("Centre Head and asset custodian notified. If still unconfirmed when the 2-month window closes, it escalates to the State Head and Head Office.");}else if(action==="notify-missing"){button.textContent="Owners and state heads notified";button.classList.add("action-done");announce("Centre owners and State Heads notified. Head Office can track every unresolved asset.");}else if(action==="attach-photo"){button.innerHTML='Photo attached · add another <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Evidence attached to the asset report.");}else if(action==="submit-report"){root.querySelector("#reports-open-count").textContent="19";button.innerHTML='Report submitted · owners notified <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}}));
+
+    function applyAuditView(view){
+      root.querySelectorAll("[data-audit-view]").forEach(b=>b.classList.toggle("active",b.dataset.auditView===view));
+      const entries=root.querySelectorAll(".audit-entry"); let shown=0;
+      entries.forEach(e=>{const match=view==="all"||e.dataset.author==="A. Sharma";e.hidden=!match;if(match)shown++;});
+      const empty=root.querySelector("#audit-empty-note"); if(empty)empty.hidden=shown>0;
+    }
+    root.querySelectorAll("[data-audit-view]").forEach(button=>button.addEventListener("click",()=>applyAuditView(button.dataset.auditView)));
+
+    function applyUnusedView(view){
+      root.querySelectorAll("[data-unused-view]").forEach(b=>b.classList.toggle("active",b.dataset.unusedView===view));
+      const cards=root.querySelectorAll(".match-card"); let shown=0;
+      cards.forEach(c=>{const match=view==="all"||c.dataset.locationType==="warehouse";c.hidden=!match;if(match)shown++;});
+      root.querySelectorAll(".unused-node").forEach(n=>n.classList.toggle("dimmed",view==="warehouse"&&n.dataset.locationType!=="warehouse"));
+      const empty=root.querySelector("#unused-empty-note"); if(empty)empty.hidden=shown>0;
+    }
+    root.querySelectorAll("[data-unused-view]").forEach(button=>button.addEventListener("click",()=>applyUnusedView(button.dataset.unusedView)));
+
+    function applyWarrantyView(){
+      const activeBtn=root.querySelector("[data-warranty-view].active");
+      const view=activeBtn?activeBtn.dataset.warrantyView:"all";
+      const q=(root.querySelector("#warranty-search")?.value||"").trim().toLowerCase();
+      const rows=root.querySelectorAll(".warranty-row"); let shown=0;
+      rows.forEach(r=>{
+        const matchType=view==="all"||r.dataset.coverage===view;
+        const matchText=!q||r.textContent.toLowerCase().includes(q);
+        const match=matchType&&matchText;
+        r.hidden=!match; if(match)shown++;
+      });
+      const empty=root.querySelector("#warranty-empty-note"); if(empty)empty.hidden=shown>0;
+    }
+    root.querySelectorAll("[data-warranty-view]").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll("[data-warranty-view]").forEach(b=>b.classList.toggle("active",b===button));applyWarrantyView();}));
+    root.querySelector("#warranty-search")?.addEventListener("input",applyWarrantyView);
+
+    root.querySelectorAll(".hierarchy-row[data-building]").forEach(row=>{
+      row.addEventListener("click",()=>{
+        const floors=root.querySelector(`[data-building-floors="${row.dataset.building}"]`);
+        const expanded=row.getAttribute("aria-expanded")==="true";
+        row.setAttribute("aria-expanded",String(!expanded));
+        if(floors)floors.hidden=expanded;
+        const icon=row.querySelector("i:last-child");
+        if(icon){icon.setAttribute("data-lucide",expanded?"chevron-right":"chevron-down");if(window.lucide)window.lucide.createIcons();}
+      });
+    });
+    root.querySelectorAll(".hierarchy-child[data-floor]").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        root.querySelectorAll(".hierarchy-child").forEach(b=>{
+          b.classList.remove("selected");
+          b.querySelector(".location-current")?.remove();
+          if(!b.querySelector("i:last-child"))b.insertAdjacentHTML("beforeend",'<i data-lucide="chevron-right" aria-hidden="true"></i>');
+        });
+        btn.classList.add("selected");
+        btn.querySelector("i:last-child")?.remove();
+        btn.insertAdjacentHTML("beforeend",'<span class="location-current">Here</span>');
+        if(window.lucide)window.lucide.createIcons();
+        announce(`${btn.dataset.floor} set as your current floor`);
+      });
+    });
+
+    let verifySortAlpha=false;
+    root.querySelector('[data-screen="verification"] [aria-label="Sort list"]')?.addEventListener("click",function(){
+      verifySortAlpha=!verifySortAlpha;
+      this.classList.toggle("active",verifySortAlpha);
+      const groups={};
+      root.querySelectorAll('[data-screen="verification"] [data-verify-status]').forEach(item=>{
+        const status=item.dataset.verifyStatus; (groups[status]=groups[status]||[]).push(item);
+      });
+      Object.values(groups).forEach(list=>{
+        const parent=list[0]?.parentElement; if(!parent)return;
+        const ordered=verifySortAlpha?[...list].sort((a,b)=>(a.querySelector("strong")?.textContent||"").localeCompare(b.querySelector("strong")?.textContent||"")):[...list].sort((a,b)=>Number(a.querySelector(".verify-number")?.textContent||0)-Number(b.querySelector(".verify-number")?.textContent||0));
+        ordered.forEach(el=>parent.appendChild(el));
+      });
+      announce(verifySortAlpha?"Sorted alphabetically":"Sorted by default order");
+    });
+
+    root.querySelector('[data-screen="roles"] [aria-label="Invite person"]')?.addEventListener("click",()=>{
+      announce("Invite sent · they'll get an email to join IncuAsset");
+    });
+
+    root.querySelectorAll("[data-action]").forEach(button=>button.addEventListener("click",()=>{const action=button.dataset.action;if(action==="add-new-centre"){root.querySelectorAll("[data-centre-field]").forEach(input=>input.value="");root.querySelector('[data-centre-field="code"]').focus();showScreen("centre-manager");}else if(action==="mark-not-seen"){button.textContent="Not seen · Centre Head notified";button.classList.add("action-done");announce("Centre Head and asset custodian notified. If still unconfirmed when the 2-month window closes, it escalates to the State Head and Head Office.");}else if(action==="notify-missing"){button.textContent="Owners and state heads notified";button.classList.add("action-done");announce("Centre owners and State Heads notified. Head Office can track every unresolved asset.");}else if(action==="attach-photo"){button.innerHTML='Photo attached · add another <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Evidence attached to the asset report.");}else if(action==="submit-report"){root.querySelector("#reports-open-count").textContent="19";button.innerHTML='Report submitted · owners notified <i data-lucide="check"></i>';button.classList.add("action-done");if(window.lucide)window.lucide.createIcons();announce("Report filed. Centre Head notified; State Head and Head Office can track it.");}else if(action==="review-bulk-count"){announce("Reviewing bulk count · Office printer group · 3 found, 1 missing");}}));
     root.querySelectorAll(".source-choice").forEach((button) => button.addEventListener("click", () => {
       root.querySelectorAll(".source-choice").forEach((choice) => {
         const active = choice === button;
