@@ -87,11 +87,138 @@
     ].map(([code,name,city,state],i)=>({code,name,city,state,id:`${code||"NO-CODE"}-${i+1}`,pinSeeded:code==="AHKC"||code==="GCA1",locationConflict:code==="TGAO"||code==="TGUC"}));
     const cityCoords={Ahmedabad:[23.0225,72.5714],Bhubaneswar:[20.2961,85.8245],Bangalore:[12.9716,77.5946],Chennai:[13.0827,80.2707],Gurgaon:[28.4595,77.0266],Hyderabad:[17.385,78.4867],Indore:[22.7196,75.8577],Jaipur:[26.9124,75.7873],Kochi:[9.9312,76.2673],Lucknow:[26.8467,80.9462],Mumbai:[19.076,72.8777],Noida:[28.5355,77.391],Pune:[18.5204,73.8567],Trivandrum:[8.5241,76.9366],Vadodara:[22.3072,73.1812]};
     const stateNames=[...new Set(activeCentres.map(c=>c.state))].sort();
+
+    // ---- Demo asset catalog: 300 synthetic assets distributed across the real centre network ----
+    const ASSET_CATEGORIES=[
+      {key:'chair',label:'Ergonomic office chair',tag:'OF',photo:'concept-photo-1',weight:9},
+      {key:'desk',label:'Workstation desk',tag:'OF',art:'desk',weight:8},
+      {key:'standing-desk',label:'Standing desk',tag:'OF',art:'desk',weight:3},
+      {key:'monitor',label:'24" monitor',tag:'IT',art:'monitor',weight:7},
+      {key:'switch',label:'Network switch',tag:'IT',photo:'concept-photo-0',weight:3},
+      {key:'router',label:'Wi-Fi router',tag:'IT',art:'router',weight:4},
+      {key:'ups',label:'UPS backup unit',tag:'IT',art:'ups',weight:3},
+      {key:'rack',label:'Server rack',tag:'IT',photo:'concept-photo-0',weight:2},
+      {key:'ac',label:'Split AC unit',tag:'AC',art:'ac',weight:6},
+      {key:'printer',label:'Office printer',tag:'OF',photo:'concept-photo-2',weight:4},
+      {key:'projector',label:'Projector',tag:'AV',art:'projector',weight:3},
+      {key:'phone',label:'Conference phone',tag:'AV',art:'phone',weight:3},
+      {key:'display',label:'Meeting-room display',tag:'AV',art:'display',weight:3},
+      {key:'cctv',label:'CCTV camera',tag:'SEC',art:'cctv',weight:4},
+      {key:'access',label:'Access control reader',tag:'SEC',art:'access',weight:2},
+      {key:'water',label:'Water purifier',tag:'OF',art:'water',weight:2,bulk:true},
+      {key:'fire',label:'Fire extinguisher',tag:'SAFE',art:'fire',weight:3,bulk:true},
+      {key:'coffee',label:'Coffee machine',tag:'OF',art:'coffee',weight:2,bulk:true}
+    ];
+    const ASSET_ART={
+      desk:'<rect x="20" y="88" width="120" height="9" rx="4"/><rect x="32" y="97" width="9" height="32" rx="3"/><rect x="119" y="97" width="9" height="32" rx="3"/><rect x="36" y="62" width="88" height="26" rx="6"/><rect x="46" y="42" width="30" height="20" rx="4"/>',
+      monitor:'<rect x="36" y="38" width="88" height="62" rx="8"/><rect x="48" y="50" width="64" height="38" rx="3" fill="none" stroke="#fff" stroke-width="4"/><rect x="72" y="100" width="16" height="13"/><rect x="58" y="113" width="44" height="8" rx="4"/>',
+      router:'<rect x="38" y="72" width="84" height="24" rx="8"/><path d="M60 72 54 48M80 72 80 44M100 72 106 48" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="50" cy="84" r="3"/><circle cx="62" cy="84" r="3"/><circle cx="74" cy="84" r="3"/>',
+      ups:'<rect x="48" y="30" width="64" height="98" rx="10"/><rect x="58" y="44" width="44" height="16" rx="3" fill-opacity=".55"/><path d="M82 68 70 94h16l-8 20 26-30H86z"/>',
+      ac:'<rect x="26" y="54" width="108" height="34" rx="10"/><path d="M38 98 46 86M66 98 70 86M94 98 90 86M120 98 114 86" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/><rect x="36" y="65" width="88" height="6" rx="3" fill-opacity=".55"/>',
+      projector:'<rect x="30" y="58" width="100" height="42" rx="12"/><circle cx="104" cy="79" r="14"/><circle cx="104" cy="79" r="6" fill-opacity=".4"/><rect x="40" y="98" width="20" height="8" rx="3"/>',
+      phone:'<rect x="34" y="72" width="92" height="18" rx="9"/><circle cx="80" cy="81" r="24" fill="none" stroke="#fff" stroke-width="6"/><circle cx="80" cy="81" r="5"/>',
+      display:'<rect x="24" y="42" width="112" height="68" rx="8"/><rect x="36" y="54" width="88" height="44" rx="3" fill-opacity=".5"/><rect x="66" y="112" width="28" height="8" rx="4"/>',
+      cctv:'<rect x="30" y="56" width="68" height="28" rx="8"/><circle cx="106" cy="70" r="16"/><circle cx="106" cy="70" r="6" fill-opacity=".4"/><path d="M30 60 16 51v38l14-10z"/>',
+      access:'<rect x="50" y="30" width="60" height="100" rx="14"/><circle cx="80" cy="58" r="11" fill-opacity=".9"/><rect x="64" y="78" width="32" height="7" rx="3" fill-opacity=".6"/><rect x="64" y="90" width="22" height="7" rx="3" fill-opacity=".4"/>',
+      water:'<path d="M80 28 112 78a32 32 0 1 1-64 0z"/><path d="M66 94a14 14 0 0 0 14 14" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>',
+      fire:'<path d="M80 24c20 22 8 30 20 46 9 13 3 28-8 36-17 12-42 7-49-12-6-15 1-25 10-31-3 11 4 17 11 15-7-16 1-27 16-54z"/>',
+      coffee:'<rect x="38" y="56" width="64" height="58" rx="10"/><path d="M104 66h10a13 13 0 0 1 0 26h-10" fill="none" stroke="#fff" stroke-width="6"/><path d="M54 42c2 6-4 8-2 14M74 42c2 6-4 8-2 14" stroke="#fff" stroke-width="5" fill="none" stroke-linecap="round"/>'
+    };
+    const ASSET_TINTS=['#202344','#F37F20','#3B9F94','#4C5A78','#C96414','#2C7A71'];
+    function assetArtUri(key,idx){
+      const body=ASSET_ART[key]||ASSET_ART.desk; const tint=ASSET_TINTS[idx%ASSET_TINTS.length];
+      const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160"><rect width="160" height="160" rx="28" fill="${tint}"/><g fill="#fff">${body}</g></svg>`;
+      return "data:image/svg+xml,"+encodeURIComponent(svg);
+    }
+    function mulberry32(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+    const rand=mulberry32(190226);
+    const floorsList=["Ground floor","Floor 1","Floor 2","Floor 3","Floor 4","Basement store"];
+    const STATUS_TABLE=[
+      {status:"Verified today",cls:"status-ok",weight:48},
+      {status:"Verified this cycle",cls:"status-ok",weight:31},
+      {status:"Tracked · In service",cls:"",weight:13},
+      {status:"Needs repair",cls:"",weight:4},
+      {status:"Not seen this cycle",cls:"",weight:3},
+      {status:"Out of service",cls:"",weight:1}
+    ];
+    function pickWeighted(list,r){const total=list.reduce((s,i)=>s+i.weight,0);let x=r*total;for(const item of list){if(x<item.weight)return item;x-=item.weight;}return list[list.length-1];}
+    function generateAssetCatalog(total){
+      const items=[]; const baseSeq={OF:14000,IT:21000,AC:33000,AV:41000,SEC:52000,SAFE:61000};
+      const catWeighted=[]; ASSET_CATEGORIES.forEach((c,i)=>{for(let w=0;w<c.weight;w++)catWeighted.push(i);});
+      const centreSlots=[]; activeCentres.forEach(c=>{centreSlots.push(c,c);});
+      while(centreSlots.length<total){centreSlots.push(activeCentres[Math.floor(rand()*activeCentres.length)]);}
+      centreSlots.length=total;
+      for(let i=centreSlots.length-1;i>0;i--){const j=Math.floor(rand()*(i+1));[centreSlots[i],centreSlots[j]]=[centreSlots[j],centreSlots[i]];}
+      for(let i=0;i<total;i++){
+        const cat=ASSET_CATEGORIES[catWeighted[Math.floor(rand()*catWeighted.length)]];
+        const centre=centreSlots[i];
+        const floor=floorsList[Math.floor(rand()*floorsList.length)];
+        const statusInfo=pickWeighted(STATUS_TABLE,rand());
+        const seqBase=baseSeq[cat.tag]; baseSeq[cat.tag]=seqBase+1;
+        const tag=`${cat.tag}-${String(seqBase).padStart(5,"0")}`;
+        const isBulk=!!cat.bulk&&rand()<0.55;
+        const qty=isBulk?2+Math.floor(rand()*5):1;
+        const warrantyMonths=2+Math.floor(rand()*34);
+        const imgSrc=cat.photo?null:assetArtUri(cat.art,i);
+        items.push({id:`AST-${1000+i}`,label:cat.label,tag,category:cat.key,centreId:centre.id,centreName:centre.name,city:centre.city,state:centre.state,floor,status:statusInfo.status,statusClass:statusInfo.cls,isBulk,qty,warrantyMonths,photoId:cat.photo||null,imgSrc});
+      }
+      return items;
+    }
+    const assetCatalog=generateAssetCatalog(300);
+    function assetImgSrc(asset){if(asset.photoId){const node=root.querySelector("#"+asset.photoId);return node?node.src:"";}return asset.imgSrc;}
+    let selectedAsset=null;
+    function renderInventory(filter,query){
+      filter=filter||(root.querySelector("[data-inv-filter].active")?.dataset.invFilter)||"all";
+      query=query==null?(root.querySelector("#inventory-search")?.value||""):query;
+      const list=root.querySelector("#inventory-list"); if(!list)return;
+      const q=query.trim().toLowerCase();
+      let items=assetCatalog;
+      if(filter==="tracked")items=items.filter(a=>!a.isBulk);
+      if(filter==="bulk")items=items.filter(a=>a.isBulk);
+      if(q)items=items.filter(a=>`${a.label} ${a.tag} ${a.centreName} ${a.city}`.toLowerCase().includes(q));
+      const shown=items.slice(0,60);
+      list.innerHTML=shown.map(a=>`<button class="inventory-item" data-go="asset-detail" data-asset-id="${a.id}"><img src="${assetImgSrc(a)}" alt="${a.label}"><span><strong>${a.label}</strong><small>${a.tag} · ${a.floor}, ${a.centreName}</small><em class="${a.statusClass}">${a.isBulk?`Bulk group · ${a.qty} units`:a.status}</em></span><i data-lucide="chevron-right" aria-hidden="true"></i></button>`).join("")||'<p class="quiet-note">No assets match your search.</p>';
+      const caption=root.querySelector("#inv-result-caption");
+      if(caption)caption.textContent=(q||filter!=="all")?`${items.length} match${items.length===1?"":"es"}`:`Showing ${shown.length} of ${items.length} · search to narrow`;
+      if(window.lucide)window.lucide.createIcons();
+      list.querySelectorAll("[data-asset-id]").forEach(btn=>btn.addEventListener("click",()=>{
+        const asset=assetCatalog.find(a=>a.id===btn.dataset.assetId);
+        if(asset)openAssetDetail(asset);
+        showScreen("asset-detail");
+      }));
+    }
+    function openAssetDetail(asset){
+      selectedAsset=asset;
+      const img=root.querySelector("#detail-photo-img");if(img)img.src=assetImgSrc(asset);
+      const eyebrow=root.querySelector("#detail-eyebrow");if(eyebrow)eyebrow.textContent=`${asset.isBulk?"BULK ASSET":"TRACKED ASSET"} · ${asset.tag}`;
+      const title=root.querySelector("#detail-title");if(title)title.textContent=asset.label;
+      const pill=root.querySelector("#detail-status-pill");if(pill)pill.innerHTML=`<i data-lucide="${asset.statusClass==="status-ok"?"check":"triangle-alert"}" aria-hidden="true"></i>${asset.isBulk?`${asset.qty} units`:asset.status}`;
+      const loc=root.querySelector("#detail-location");if(loc)loc.textContent=`${asset.centreName} · ${asset.floor}`;
+      const serial=root.querySelector("#detail-serial");if(serial)serial.textContent=`SN ··· ${asset.id.slice(-4)}`;
+      const condition=root.querySelector("#detail-condition");if(condition)condition.textContent=asset.statusClass==="status-ok"?"Good":(asset.status==="Needs repair"?"Needs repair":asset.status==="Out of service"?"Out of service":"Review needed");
+      const warranty=root.querySelector("#detail-warranty-text");if(warranty)warranty.textContent=`Warranty active · ${asset.warrantyMonths} months left`;
+      if(window.lucide)window.lucide.createIcons();
+    }
+
     function googleMapUrl(c){return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${c.name}, ${c.city}, ${c.state}, India}`)}`;}
     root.querySelector("#centre-count").textContent=activeCentres.length;
     renderCentreDirectory();
     renderStateList();
     loadIndiaBoundaries();
+    renderInventory("all","");
+    const invAllCountEl=root.querySelector("#inv-all-count");if(invAllCountEl)invAllCountEl.textContent=assetCatalog.length;
+    const invTrackedCountEl=root.querySelector("#inv-tracked-count");if(invTrackedCountEl)invTrackedCountEl.textContent=assetCatalog.filter(a=>!a.isBulk).length;
+    const invBulkCountEl=root.querySelector("#inv-bulk-count");if(invBulkCountEl)invBulkCountEl.textContent=assetCatalog.filter(a=>a.isBulk).length;
+    const networkAssetTotalEl=root.querySelector("#network-asset-total");if(networkAssetTotalEl)networkAssetTotalEl.textContent=assetCatalog.length;
+    const networkAttentionCountEl=root.querySelector("#network-attention-count");if(networkAttentionCountEl)networkAttentionCountEl.textContent=assetCatalog.filter(a=>a.status==="Needs repair"||a.status==="Out of service"||a.status==="Not seen this cycle").length;
+    root.querySelectorAll("[data-inv-filter]").forEach(btn=>btn.addEventListener("click",()=>{
+      root.querySelectorAll("[data-inv-filter]").forEach(b=>b.classList.toggle("active",b===btn));
+      renderInventory(btn.dataset.invFilter,root.querySelector("#inventory-search")?.value||"");
+    }));
+    root.querySelector("#inventory-search")?.addEventListener("input",e=>{
+      const active=root.querySelector("[data-inv-filter].active");
+      renderInventory(active?active.dataset.invFilter:"all",e.target.value);
+    });
     function renderCentreDirectory(query=""){
       const target=root.querySelector("#centre-directory-list"); if(!target)return;
       const q=query.trim().toLowerCase(); const items=activeCentres.filter(c=>`${c.code} ${c.name} ${c.city} ${c.state}`.toLowerCase().includes(q));
@@ -164,13 +291,16 @@
         target.innerHTML=states.map(state=>{const shape=geoms.filter(g=>g.properties.st_nm===state).map(g=>{const polys=g.type==="Polygon"?[g.arcs]:g.arcs;return polys.map(poly=>poly.map(ring=>ring.flatMap((ref,i)=>{const pts=arcPoints(ref);return (i?pts.slice(1):pts).map(project)}).map((pt,i)=>`${i?"L":"M"}${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join("")+"Z").join("")).map(d=>`<path d="${d}"/>`).join("")}).join("");return `<g class="india-state" data-state="${state}">${shape}<title>${state}</title></g>`}).join("");
         root.querySelectorAll(".india-state").forEach(g=>g.addEventListener("click",()=>{const match=stateNames.find(s=>s.toLowerCase()===g.dataset.state.toLowerCase());if(match){chooseState(match);showScreen("map-state");}}));
         const pins=root.querySelector("#india-map-pins"); const agg={};activeCentres.forEach(c=>agg[c.city]=(agg[c.city]||0)+1);
-        pins.innerHTML=Object.entries(agg).map(([city,count])=>{const [lat,lon]=cityCoords[city], [x,y]=project([lon,lat]);return `<g class="city-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" data-city="${city}" role="button" tabindex="0"><circle r="3.5"/><circle class="pin-pulse" r="7"/><text x="5" y="-5">${city} · ${count}</text></g>`}).join("");
+        pins.innerHTML=Object.entries(agg).map(([city,count])=>{const [lat,lon]=cityCoords[city], [x,y]=project([lon,lat]);return `<g class="city-pin" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" data-city="${city}" role="button" tabindex="0" aria-label="${city} · ${count} centres"><title>${city} · ${count} centres</title><circle r="3.5"/><circle class="pin-pulse" r="7"/><text x="5" y="-5">${city} · ${count}</text></g>`}).join("");
         pins.querySelectorAll(".city-pin").forEach(pin=>{const c=activeCentres.find(x=>x.city===pin.dataset.city);const go=()=>{if(c){chooseState(c.state);showScreen("map-state");}};pin.addEventListener("click",go);pin.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}})});
         renderStateList();
+        if(selectedState)chooseState(selectedState);
       } catch(e) { target.innerHTML='<text x="28" y="128" fill="#536277" font-size="11">Map needs an internet connection.</text>'; }
     }
     const stateData = Object.fromEntries(stateNames.map(state=>[state,{centers:activeCentres.filter(c=>c.state===state)}]));
     let selectedCentre=activeCentres[0];
+    let selectedState=null;
+    chooseState(stateNames[0]);
     function chooseCentre(name, centre) {
       selectedCentre=centre||activeCentres.find(c=>c.name===name)||selectedCentre;
       if(selectedCentre){root.querySelectorAll("[data-centre-field]").forEach(input=>{const f=input.dataset.centreField;input.value=f==="code"?(selectedCentre.code||""):f==="name"?selectedCentre.name:f==="city"?`${selectedCentre.city}, ${selectedCentre.state}`:input.value;});}
@@ -178,10 +308,21 @@
       root.querySelector(".selected-centre").textContent = name.toUpperCase();
       const query=centre?googleMapUrl(centre):"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(name);
       root.querySelectorAll(".map-search-link").forEach(a=>a.href=query);
-      const sub=root.querySelector("[data-screen=map-centre] .subhead");if(sub&&centre)sub.textContent=`${centre.code||"No centre code listed"} · ${centre.city}, ${centre.state} · ${centre.pinSeeded?"DPR seed location; confirm building entrance":"city level only; confirm exact building pin"}`;
+      const sub=root.querySelector("[data-screen=map-centre] .subhead");
+      if(sub&&centre){
+        const centreAssets=assetCatalog.filter(a=>a.centreId===centre.id);
+        const verified=centreAssets.filter(a=>a.statusClass==="status-ok").length;
+        const dueSoon=centreAssets.filter(a=>a.status==="Not seen this cycle").length;
+        const unmatched=centreAssets.length-verified-dueSoon;
+        const verifiedEl=root.querySelector("#centre-stat-verified");if(verifiedEl)verifiedEl.textContent=verified;
+        const dueEl=root.querySelector("#centre-stat-due");if(dueEl)dueEl.textContent=dueSoon;
+        const unmatchedEl=root.querySelector("#centre-stat-unmatched");if(unmatchedEl)unmatchedEl.textContent=unmatched;
+        sub.textContent=`${centreAssets.length} recorded assets · ${centre.code||"No centre code listed"} · ${centre.city}, ${centre.state} · ${centre.pinSeeded?"DPR seed location; confirm building entrance":"city level only; confirm exact building pin"}`;
+      }
     }
     function chooseState(name) {
       const data=stateData[name]; if(!data)return;
+      selectedState=name;
       root.querySelector(".selected-state-title").textContent=name;root.querySelector(".selected-state").textContent=name.toUpperCase();renderStateCentres(name);
       const group=root.querySelector(`#india-state-boundaries .india-state[data-state="${CSS.escape(name)}"]`);const shape=root.querySelector("#selected-state-shape");
       if(group&&shape){shape.innerHTML=group.innerHTML;const box=group.getBBox();shape.setAttribute("viewBox",`${box.x-4} ${box.y-4} ${box.width+8} ${box.height+8}`);}
@@ -194,6 +335,13 @@
       if (button.dataset.state) chooseState(button.dataset.state);
       if (button.classList.contains("centre-card")) chooseCentre(button.querySelector("strong").textContent);
       showScreen(button.dataset.go);
+    });
+    root.addEventListener("keydown", (event) => {
+      const button = event.target.closest("[data-go]");
+      if (!button) return;
+      if (button.getAttribute("role") === "button" && button.tagName !== "BUTTON" && button.tagName !== "A") {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); button.click(); }
+      }
     });
     function announce(message){let toast=root.querySelector(".prototype-toast");if(!toast){toast=document.createElement("div");toast.className="prototype-toast";toast.setAttribute("role","status");toast.setAttribute("aria-live","polite");root.querySelector(".prototype-phone").appendChild(toast);}toast.textContent=message;toast.classList.add("show");window.clearTimeout(toast._timer);toast._timer=window.setTimeout(()=>toast.classList.remove("show"),3200);}
     root.querySelectorAll(".report-type").forEach(button=>button.addEventListener("click",()=>{root.querySelectorAll(".report-type").forEach(b=>b.classList.toggle("is-selected",b===button));}));
@@ -290,6 +438,29 @@
         scanFab.classList.remove("is-scanning");
         root.querySelector(".scan-live").textContent = "";
       }, 1200);
+    });
+    root.querySelectorAll(".camera-switch").forEach((btn) => {
+      let facingBack = true;
+      const toggle = () => {
+        facingBack = !facingBack;
+        announce(`Switched to ${facingBack ? "back" : "front"} camera`);
+      };
+      btn.addEventListener("click", toggle);
+      btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
+    });
+    const purchaseShutter = root.querySelector(".purchase-shutter");
+    purchaseShutter?.addEventListener("click", () => {
+      purchaseShutter.classList.add("is-captured");
+      const tile = root.querySelector(".evidence-tile:not(.done)");
+      if (tile) {
+        tile.classList.add("done");
+        const icon = tile.querySelector("i"); if (icon) icon.setAttribute("data-lucide", "file-check-2");
+        const small = tile.querySelector("small"); if (small) small.textContent = "SN · captured just now";
+        const em = tile.querySelector("em"); if (em) em.textContent = "Serial matched to invoice";
+        if (window.lucide) window.lucide.createIcons();
+      }
+      announce("Product photo captured · serial matched to invoice");
+      window.setTimeout(() => purchaseShutter.classList.remove("is-captured"), 260);
     });
     const printerDevices = {
       wifi: [
