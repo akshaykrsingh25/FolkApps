@@ -1,7 +1,7 @@
     const root = document.getElementById("asset-register-prototype");
     // A local SVG icon set keeps the interface complete without a network dependency.
     const iconMarkup = {
-      'arrow-left':'<path d="M19 12H5M12 19l-7-7 7-7"/>','arrow-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>','arrow-down':'<path d="M12 5v14m7-7-7 7-7-7"/>','arrow-up-right':'<path d="M7 17 17 7M7 7h10v10"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>','chevron-right':'<path d="m9 18 6-6-6-6"/>','plus':'<path d="M12 5v14M5 12h14"/>','check':'<path d="m5 12 4 4L19 6"/>','circle-check':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','check-circle-2':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','search':'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>','camera':'<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13.5" r="4.2"/><path d="M12 7v1"/>','map-pin':'<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>','map-pin-off':'<path d="m3 3 18 18M10 10a2 2 0 0 0 3 2m5-2c0 2-1.5 4.2-3.2 6.3M9 18.5C6.5 15.8 4 12.8 4 10a8 8 0 0 1 13.7-5.7"/>','map':'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15m6-12v15M5.5 14l2 1.5 2-2m6-3 2 1.5 2-2"/>','house':'<path d="M3 10.5 12 3l9 7.5v10H3z"/><path d="M9 20v-6h6v6M6 10h2m8 0h2"/>','boxes':'<path d="m12 3 8 4-8 4-8-4zM4 7v9l8 5 8-5V7M12 11v10"/><path d="M7 7.5v3m10-3v3"/>','package-open':'<path d="m12 3 8 4-8 4-8-4zM4 7v9l8 5 8-5V7m-8 4v10m-4-9 8-4"/>','building':'<path d="M4 21V5l8-3 8 3v16M2 21h20"/><path d="M8 7h2m4 0h2M8 11h2m4 0h2M8 15h2m4 0h2M10 21v-3h4v3"/>','building-2':'<path d="M3 21h18M5 21V4h9v17m0-10h5v10M8 7h3m-3 4h3m-3 4h3m6-1h2m-2 4h2"/>','bell':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4"/>','bell-ring':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4M2 8l2 1m18-1-2 1M5 3l2 2m10-2-2 2"/>','qr-code':'<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zm4 0h2m-6 4h2m2-2v4"/>','barcode':'<path d="M4 5v14m2-14v14m4-14v14m2-14v14m4-14v14m2-14v14m2-14v14"/><path d="M8 5v8m8 2v4"/>','scan-line':'<path d="M4 8V5h4m8 0h4v3M4 16v3h4m8 0h4v-3"/><path d="M3 12h18"/><circle cx="12" cy="12" r="1.3"/>','scan-search':'<path d="M4 7V5a1 1 0 0 1 1-1h2m10 0h2a1 1 0 0 1 1 1v2M4 17v2a1 1 0 0 0 1 1h2m10 0h2a1 1 0 0 0 1-1v-2"/><circle cx="11" cy="11" r="3"/><path d="m20 20-3-3"/>','clipboard-check':'<path d="M7 4h10v3H7zM5 6H4v15h16V6h-1"/><path d="M8 12h4m-4 4h3m3-3 1.5 1.5L18 12"/><path d="M6.5 9h2v2h-2z"/>','clipboard-list':'<path d="M7 4h10v3H7zM5 6H4v15h16V6h-1"/><path d="M9 11h7m-7 4h7m-7 4h4M6.5 10h1v2h-1z"/>','clipboard-plus':'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5h6V7H9zm3 6v6m-3-3h6"/>','calendar-check':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 5 2 2 4-4"/>','calendar-check-2':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 5 2 2 4-4"/>','calendar-clock':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><circle cx="15" cy="15" r="3"/><path d="M15 13v2l1 1"/>','calendar-plus':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m9 4v6m-3-3h6"/>','clock-3':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5h5"/>','cloud-check':'<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 20 11a4 4 0 0 1-1 7h-3m-8-3 2 2 4-4"/>','shield-check':'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/>','shield-alert':'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="M12 8v5m0 3h.01"/>','wrench':'<path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18l3 3 5.3-5.3a5 5 0 0 0 6.4-6.4L15 12l-3-3z"/>','triangle-alert':'<path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/>','ban':'<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>','image-off':'<path d="m2 2 20 20M10.6 10.6a2 2 0 0 0 2.8 2.8M9 4h10a2 2 0 0 1 2 2v10M5 5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11"/>','users':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-7.5a4 4 0 0 1 0 7.7M20 21v-2a4 4 0 0 0-3-3.9"/>','users-round':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-7.5a4 4 0 0 1 0 7.7M20 21v-2a4 4 0 0 0-3-3.9"/>','user-plus':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm9-3v6m-3-3h6"/>','sparkles':'<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Zm7 12 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>','file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6m-12 4h8m-8 4h8m-8 4h5"/>','file-check-2':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6m-12 5 2 2 4-4"/>','printer':'<path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2m-12-4h12v8H6z"/>','settings-2':'<path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M2 14h4m4-6h4m4 8h4"/>','history':'<path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5m4-1v5l3 2"/>','key-round':'<circle cx="8" cy="15" r="5"/><path d="m21 2-9 9m5-5 3 3m-6-1 3 3"/>','lock-keyhole':'<rect x="4" y="10" width="16" height="12" rx="2"/><path d="M8 10V6a4 4 0 1 1 8 0v4m-4 5v3"/>','locate-fixed':'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="8"/>','move-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>','inside-outside':'<path d="M4 4h16v16H4zM8 8v8h8V8z"/>','layers-2':'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5m-18 5 9 5 9-5"/>','layers-3':'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5m-18 5 9 5 9-5"/>','store':'<path d="M3 10V5l2-3h14l2 3v5M5 10v11h14V10M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M9 21v-6h6v6"/>','copy-check':'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3m2-2 2 2 4-4"/>','armchair':'<path d="M5 12V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v4m-16 0h18v6H3zm3 6v3m12-3v3"/>','badge-check':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','circle-help':'<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.3 1.8c-1.2 1-1.9 1.4-1.9 3m0 3h.01"/>','info':'<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>','images':'<rect x="3" y="3" width="14" height="14" rx="2"/><path d="m7 13 3-3 3 3 2-2 5 5M8 21h11a2 2 0 0 0 2-2V8"/>','zap':'<path d="m13 2-3 8h7l-6 12 2-9H6z"/>','send':'<path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/>','list-filter':'<path d="M4 6h16M7 12h10m-7 6h4"/>','git-branch':'<path d="M6 3v12m0-8h7a4 4 0 0 1 4 4v1m0 3v6M6 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm11 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>','switch-camera':'<path d="m16 3 4 4-4 4M20 7H9a6 6 0 0 0-6 6m4 8-4-4 4-4m-4 4h11a6 6 0 0 0 6-6"/>'
+      'arrow-left':'<path d="M19 12H5M12 19l-7-7 7-7"/>','arrow-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>','arrow-down':'<path d="M12 5v14m7-7-7 7-7-7"/>','arrow-up-right':'<path d="M7 17 17 7M7 7h10v10"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>','chevron-right':'<path d="m9 18 6-6-6-6"/>','plus':'<path d="M12 5v14M5 12h14"/>','check':'<path d="m5 12 4 4L19 6"/>','circle-check':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','check-circle-2':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','search':'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>','camera':'<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13.5" r="4.2"/><path d="M12 7v1"/>','map-pin':'<path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>','map-pin-off':'<path d="m3 3 18 18M10 10a2 2 0 0 0 3 2m5-2c0 2-1.5 4.2-3.2 6.3M9 18.5C6.5 15.8 4 12.8 4 10a8 8 0 0 1 13.7-5.7"/>','map':'<path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15m6-12v15M5.5 14l2 1.5 2-2m6-3 2 1.5 2-2"/>','house':'<path d="M3 10.5 12 3l9 7.5v10H3z"/><path d="M9 20v-6h6v6M6 10h2m8 0h2"/>','boxes':'<path d="m12 3 8 4-8 4-8-4zM4 7v9l8 5 8-5V7M12 11v10"/><path d="M7 7.5v3m10-3v3"/>','package-open':'<path d="m12 3 8 4-8 4-8-4zM4 7v9l8 5 8-5V7m-8 4v10m-4-9 8-4"/>','building':'<path d="M4 21V5l8-3 8 3v16M2 21h20"/><path d="M8 7h2m4 0h2M8 11h2m4 0h2M8 15h2m4 0h2M10 21v-3h4v3"/>','building-2':'<path d="M3 21h18M5 21V4h9v17m0-10h5v10M8 7h3m-3 4h3m-3 4h3m6-1h2m-2 4h2"/>','bell':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4"/>','bell-ring':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9m-8 12h4M2 8l2 1m18-1-2 1M5 3l2 2m10-2-2 2"/>','qr-code':'<path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4z"/><path d="M14 14h2v2h-2zm4 0h2m-6 4h2m2-2v4"/>','barcode':'<path d="M4 5v14m2-14v14m4-14v14m2-14v14m4-14v14m2-14v14m2-14v14"/><path d="M8 5v8m8 2v4"/>','scan-line':'<path d="M4 8V5h4m8 0h4v3M4 16v3h4m8 0h4v-3"/><path d="M3 12h18"/><circle cx="12" cy="12" r="1.3"/>','scan-search':'<path d="M4 7V5a1 1 0 0 1 1-1h2m10 0h2a1 1 0 0 1 1 1v2M4 17v2a1 1 0 0 0 1 1h2m10 0h2a1 1 0 0 0 1-1v-2"/><circle cx="11" cy="11" r="3"/><path d="m20 20-3-3"/>','clipboard-check':'<path d="M7 4h10v3H7zM5 6H4v15h16V6h-1"/><path d="M8 12h4m-4 4h3m3-3 1.5 1.5L18 12"/><path d="M6.5 9h2v2h-2z"/>','clipboard-list':'<path d="M7 4h10v3H7zM5 6H4v15h16V6h-1"/><path d="M9 11h7m-7 4h7m-7 4h4M6.5 10h1v2h-1z"/>','clipboard-plus':'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5h6V7H9zm3 6v6m-3-3h6"/>','calendar-check':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 5 2 2 4-4"/>','calendar-check-2':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m-13 5 2 2 4-4"/>','calendar-clock':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><circle cx="15" cy="15" r="3"/><path d="M15 13v2l1 1"/>','calendar-plus':'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18m9 4v6m-3-3h6"/>','clock-3':'<circle cx="12" cy="12" r="9"/><path d="M12 7v5h5"/>','cloud-check':'<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 20 11a4 4 0 0 1-1 7h-3m-8-3 2 2 4-4"/>','shield-check':'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/>','shield-alert':'<path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="M12 8v5m0 3h.01"/>','wrench':'<path d="M14.7 6.3a5 5 0 0 0-6.4 6.4L3 18l3 3 5.3-5.3a5 5 0 0 0 6.4-6.4L15 12l-3-3z"/>','triangle-alert':'<path d="m10.3 3.9-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3.1l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/>','ban':'<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>','image-off':'<path d="m2 2 20 20M10.6 10.6a2 2 0 0 0 2.8 2.8M9 4h10a2 2 0 0 1 2 2v10M5 5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h11"/>','users':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-7.5a4 4 0 0 1 0 7.7M20 21v-2a4 4 0 0 0-3-3.9"/>','users-round':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm7-7.5a4 4 0 0 1 0 7.7M20 21v-2a4 4 0 0 0-3-3.9"/>','user-plus':'<path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m6-10a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm9-3v6m-3-3h6"/>','sparkles':'<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Zm7 12 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>','file-text':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6m-12 4h8m-8 4h8m-8 4h5"/>','file-check-2':'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6m-12 5 2 2 4-4"/>','printer':'<path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2m-12-4h12v8H6z"/>','settings-2':'<path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M2 14h4m4-6h4m4 8h4"/>','history':'<path d="M3 12a9 9 0 1 0 3-6.7L3 8m0-5v5h5m4-1v5l3 2"/>','key-round':'<circle cx="8" cy="15" r="5"/><path d="m21 2-9 9m5-5 3 3m-6-1 3 3"/>','lock-keyhole':'<rect x="4" y="10" width="16" height="12" rx="2"/><path d="M8 10V6a4 4 0 1 1 8 0v4m-4 5v3"/>','locate-fixed':'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/><circle cx="12" cy="12" r="8"/>','move-right':'<path d="M5 12h14m-7-7 7 7-7 7"/>','inside-outside':'<path d="M4 4h16v16H4zM8 8v8h8V8z"/>','layers-2':'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5m-18 5 9 5 9-5"/>','layers-3':'<path d="m12 3 9 5-9 5-9-5 9-5Zm-9 9 9 5 9-5m-18 5 9 5 9-5"/>','store':'<path d="M3 10V5l2-3h14l2 3v5M5 10v11h14V10M3 10a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M9 21v-6h6v6"/>','copy-check':'<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3m2-2 2 2 4-4"/>','armchair':'<path d="M5 12V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v4m-16 0h18v6H3zm3 6v3m12-3v3"/>','badge-check':'<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/>','circle-help':'<circle cx="12" cy="12" r="9"/><path d="M9.6 9a2.5 2.5 0 1 1 4.3 1.8c-1.2 1-1.9 1.4-1.9 3m0 3h.01"/>','info':'<circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/>','images':'<rect x="3" y="3" width="14" height="14" rx="2"/><path d="m7 13 3-3 3 3 2-2 5 5M8 21h11a2 2 0 0 0 2-2V8"/>','zap':'<path d="m13 2-3 8h7l-6 12 2-9H6z"/>','send':'<path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/>','list-filter':'<path d="M4 6h16M7 12h10m-7 6h4"/>','git-branch':'<path d="M6 3v12m0-8h7a4 4 0 0 1 4 4v1m0 3v6M6 7a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm11 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/>','switch-camera':'<path d="m16 3 4 4-4 4M20 7H9a6 6 0 0 0-6 6m4 8-4-4 4-4m-4 4h11a6 6 0 0 0 6-6"/>','rfid':'<rect x="3" y="7" width="12" height="10" rx="2"/><circle cx="9" cy="12" r="1.4"/><path d="M19 9a4.2 4.2 0 0 1 0 6m2.6-9a8.2 8.2 0 0 1 0 12"/>','wifi':'<path d="M2 8.8a16 16 0 0 1 20 0M5.3 12.6a11.3 11.3 0 0 1 13.4 0M8.7 16.3a6.6 6.6 0 0 1 6.6 0"/><path d="M12 20h.01"/>','bluetooth':'<path d="M7 7l10 10-5 5V2l5 5L7 17"/>'
     };
     function renderIcons(){root.querySelectorAll('i[data-lucide]').forEach((node)=>{const name=node.getAttribute('data-lucide');const body=iconMarkup[name]||'<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8 12h8m-4-4v8"/>';const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');svg.setAttribute('data-lucide-icon',name);svg.innerHTML=body;node.replaceChildren(svg);});}
     window.lucide={createIcons:renderIcons};
@@ -25,13 +25,49 @@
       if (stack) stack.scrollTop = 0;
       picker.value = name;
       root.querySelectorAll(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.go === name || (name === "asset-detail" && tab.dataset.go === "inventory") || (name === "scanner" && tab.dataset.go === "home") || (name.startsWith("map-") && tab.dataset.go === "map-india") || (name === "unused-map" && tab.dataset.go === "map-india") || (name === "asset-report" && tab.dataset.go === "reports") || (name === "missing-assets" && tab.dataset.go === "verification")));
+      if (name === "add-asset") {
+        pendingBatch = [];
+      }
       if (name === "scanner") {
         const camera = root.querySelector(".camera-view");
         camera.classList.add("is-scanning");
         window.setTimeout(() => camera.classList.remove("is-scanning"), 1150);
+        const banner = root.querySelector("#camera-permission-banner");
+        if (banner) {
+          let granted = false;
+          try { granted = localStorage.getItem("incuasset-camera-granted") === "1"; } catch (e) {}
+          banner.hidden = granted;
+        }
       }
-      if (name === "qr-label" && root.querySelector("#auto-print-toggle")?.checked) {
-        window.setTimeout(() => window.print(), 300);
+      if (name === "qr-label") {
+        syncPrinterConnectUI();
+        const isBatch = pendingBatch.length > 1;
+        const eyebrow = root.querySelector("#qr-label-eyebrow");
+        const title = root.querySelector("#qr-label-title");
+        const subhead = root.querySelector("#qr-label-subhead");
+        const statusTitle = root.querySelector("#qr-status-title");
+        const statusSub = root.querySelector("#qr-status-sub");
+        if (isBatch && eyebrow) {
+          eyebrow.textContent = `${pendingBatch.length} ASSETS SAVED · LABELS READY`;
+          title.innerHTML = `Give them<br>scan-to-find tags.`;
+          subhead.textContent = `Every label below opens its own asset record and keeps its history attached.`;
+          statusTitle.textContent = `${pendingBatch.length} QR codes generated and linked`;
+          statusSub.textContent = pendingBatch.slice(0, 3).join(", ") + (pendingBatch.length > 3 ? `, +${pendingBatch.length - 3} more` : "");
+          root.querySelector("#qr-label-name").textContent = pendingBatch[0];
+        } else if (eyebrow) {
+          eyebrow.textContent = "ASSET SAVED · LABEL READY";
+          title.innerHTML = "Give it a<br>scan-to-find tag.";
+          subhead.textContent = "This label opens the asset record and keeps its history attached.";
+          statusTitle.textContent = "QR generated and linked";
+          statusSub.textContent = "Asset code: IT-00482 · unique record ID attached";
+        }
+        if (root.querySelector("#auto-print-toggle")?.checked) {
+          window.setTimeout(() => root.querySelector("[data-print-label]")?.click(), 300);
+        }
+      }
+      if (name === "printer-connect") {
+        root.querySelectorAll(".printer-mode-tabs button").forEach((b, i) => { b.classList.toggle("is-selected", i === 0); b.setAttribute("aria-pressed", String(i === 0)); });
+        renderPrinterDevices("wifi");
       }
     }
     picker.addEventListener("change", () => showScreen(picker.value));
@@ -179,12 +215,70 @@
         mode.setAttribute("aria-pressed", String(active));
       });
     }));
+    const sessionCaptures = [];
+    const sessionNames = ["Network switch","Office chair","Desktop monitor","Projector","Whiteboard","Fire extinguisher","Printer","Router"];
+    function syncCaptureSessionUI() {
+      const pill = root.querySelector("#camera-session-pill");
+      const countEl = root.querySelector("#camera-session-count");
+      const strip = root.querySelector("#capture-thumbstrip");
+      const primaryAction = root.querySelector("#scanner-primary-action");
+      if (countEl) countEl.textContent = sessionCaptures.length;
+      if (pill) pill.hidden = sessionCaptures.length === 0;
+      if (strip) {
+        strip.hidden = sessionCaptures.length === 0;
+        strip.innerHTML = sessionCaptures.map(() => `<img data-shared-photo="concept-photo-0" alt="Captured asset photo">`).join("");
+        strip.querySelectorAll("[data-shared-photo]").forEach((img) => { img.src = root.querySelector("#" + img.dataset.sharedPhoto).src; });
+      }
+      if (primaryAction && sessionCaptures.length > 0) {
+        primaryAction.innerHTML = `Review &amp; save ${sessionCaptures.length} asset${sessionCaptures.length > 1 ? "s" : ""} <i data-lucide="arrow-right" aria-hidden="true"></i>`;
+        primaryAction.dataset.go = sessionCaptures.length > 1 ? "batch-review" : "add-asset";
+        if (window.lucide) window.lucide.createIcons();
+      }
+    }
     const shutter = root.querySelector(".capture-shutter");
     shutter.addEventListener("click", () => {
       shutter.classList.add("is-captured");
-      const photoMode = [...root.querySelectorAll(".capture-mode")].some((mode) => mode.classList.contains("active") && mode.textContent.trim() === "Photo");
-      announce(photoMode ? "Photo captured · reviewing smart match" : "Code captured · opening the matching asset");
-      window.setTimeout(() => { shutter.classList.remove("is-captured"); showScreen(photoMode ? "camera-match" : "asset-detail"); }, 260);
+      const activeModeLabel = [...root.querySelectorAll(".capture-mode")].find((mode) => mode.classList.contains("active"))?.textContent.trim();
+      window.setTimeout(() => { shutter.classList.remove("is-captured"); }, 260);
+      if (activeModeLabel === "Photo") {
+        sessionCaptures.push({ name: sessionNames[sessionCaptures.length % sessionNames.length] });
+        announce(`Captured · ${sessionCaptures.length} asset${sessionCaptures.length > 1 ? "s" : ""} ready to review. Keep capturing or review & save.`);
+        syncCaptureSessionUI();
+      } else if (activeModeLabel === "RFID") {
+        announce("RFID tag read · opening the matching asset");
+        window.setTimeout(() => showScreen("asset-detail"), 260);
+      } else {
+        announce("Code captured · opening the matching asset");
+        window.setTimeout(() => showScreen("asset-detail"), 260);
+      }
+    });
+    root.querySelectorAll("[data-action='grant-camera']").forEach((button) => button.addEventListener("click", () => {
+      try { localStorage.setItem("incuasset-camera-granted", "1"); } catch (e) {}
+      const banner = root.querySelector("#camera-permission-banner");
+      if (banner) banner.hidden = true;
+    }));
+    let pendingBatch = [];
+    function renderBatchReview() {
+      const list = root.querySelector("#batch-review-list");
+      if (!list) return;
+      root.querySelector("#batch-count-label").textContent = sessionCaptures.length;
+      root.querySelector("#batch-generate-count").textContent = sessionCaptures.length;
+      list.innerHTML = sessionCaptures.map((item, i) => `<div class="batch-review-row"><img data-shared-photo="concept-photo-0" alt="Captured asset photo"><div><input value="${item.name}" data-batch-index="${i}" aria-label="Asset name"><small>Building A · Floor 4 · auto-located</small></div></div>`).join("");
+      list.querySelectorAll("[data-shared-photo]").forEach((img) => { img.src = root.querySelector("#" + img.dataset.sharedPhoto).src; });
+    }
+    root.querySelector("#scanner-primary-action")?.addEventListener("click", () => {
+      if (sessionCaptures.length > 1) renderBatchReview();
+      sessionCaptures.length = 0;
+      syncCaptureSessionUI();
+    });
+    root.querySelector("[data-action='generate-batch-labels']")?.addEventListener("click", () => {
+      root.querySelectorAll("#batch-review-list [data-batch-index]").forEach((input) => {
+        const row = input.closest(".batch-review-row");
+        row.dataset.name = input.value.trim() || "Untitled asset";
+      });
+      pendingBatch = [...root.querySelectorAll("#batch-review-list .batch-review-row")].map((row) => row.dataset.name);
+      announce(`${pendingBatch.length} QR labels generated · ready to print`);
+      showScreen("qr-label");
     });
     const scanFab = root.querySelector(".scan-fab");
     scanFab.addEventListener("click", () => {
@@ -197,7 +291,70 @@
         root.querySelector(".scan-live").textContent = "";
       }, 1200);
     });
-    root.querySelectorAll("[data-print-label]").forEach((button) => button.addEventListener("click", () => window.print()));
+    const printerDevices = {
+      wifi: [
+        { name: "Zebra ZD230 · Floor 4 IT store", meta: "192.168.1.42 · ready" },
+        { name: "Brother QL-820NWB · Admin desk", meta: "192.168.1.58 · ready" },
+      ],
+      bluetooth: [
+        { name: "Zebra ZQ511", meta: "Paired nearby · strong signal" },
+        { name: "Brother PT-P710BT", meta: "Paired nearby · moderate signal" },
+      ],
+      other: [
+        { name: "Shared IT print queue", meta: "Floor 4 · network queue" },
+        { name: "USB print station", meta: "Front desk · wired" },
+      ],
+    };
+    function getConnectedPrinter() {
+      try { return JSON.parse(localStorage.getItem("incuasset-printer") || "null"); } catch (e) { return null; }
+    }
+    function syncPrinterConnectUI() {
+      const printer = getConnectedPrinter();
+      const label = root.querySelector("#printer-connect-label");
+      const printBtnText = root.querySelector("#qr-print-btn-text");
+      if (label) label.textContent = printer ? `Connected · ${printer.name}` : "Printer: not connected · connect over Wi-Fi or Bluetooth";
+      if (printBtnText) printBtnText.textContent = printer ? `Print via ${printer.name}` : "Print label";
+    }
+    function renderPrinterDevices(mode) {
+      const list = root.querySelector("#printer-device-list");
+      const status = root.querySelector(".printer-scan-status");
+      const statusText = root.querySelector("#printer-scan-text");
+      if (!list) return;
+      list.innerHTML = "";
+      if (status) status.classList.remove("is-done");
+      const modeLabel = mode === "wifi" ? "Wi-Fi" : mode === "bluetooth" ? "Bluetooth" : "shared/USB";
+      if (statusText) statusText.textContent = `Searching for ${modeLabel} printers…`;
+      window.setTimeout(() => {
+        if (status) status.classList.add("is-done");
+        if (statusText) statusText.textContent = `${printerDevices[mode].length} ${modeLabel} printer${printerDevices[mode].length === 1 ? "" : "s"} found`;
+        const icon = mode === "bluetooth" ? "bluetooth" : mode === "wifi" ? "wifi" : "printer";
+        list.innerHTML = printerDevices[mode].map((d) => `<div class="printer-device-row"><i data-lucide="${icon}" aria-hidden="true"></i><span><strong>${d.name}</strong><small>${d.meta}</small></span><button class="secondary-button" data-connect-printer="${d.name.replace(/"/g, "&quot;")}" data-connect-mode="${mode}">Connect</button></div>`).join("");
+        if (window.lucide) window.lucide.createIcons();
+        list.querySelectorAll("[data-connect-printer]").forEach((btn) => btn.addEventListener("click", () => {
+          const name = btn.dataset.connectPrinter;
+          try { localStorage.setItem("incuasset-printer", JSON.stringify({ name, mode: btn.dataset.connectMode })); } catch (e) {}
+          announce(`Connected to ${name}`);
+          syncPrinterConnectUI();
+          showScreen("qr-label");
+        }));
+      }, 900);
+    }
+    root.querySelectorAll(".printer-mode-tabs button").forEach((tab) => tab.addEventListener("click", () => {
+      root.querySelectorAll(".printer-mode-tabs button").forEach((b) => { b.classList.toggle("is-selected", b === tab); b.setAttribute("aria-pressed", String(b === tab)); });
+      renderPrinterDevices(tab.dataset.printerMode);
+    }));
+    root.querySelectorAll("[data-print-label]").forEach((button) => button.addEventListener("click", () => {
+      const printer = getConnectedPrinter();
+      if (printer) {
+        button.classList.add("action-done");
+        const original = button.querySelector("#qr-print-btn-text")?.textContent;
+        announce(`Print command sent to ${printer.name}`);
+        const label = button.querySelector("#qr-print-btn-text");
+        if (label) { label.textContent = "Sent to printer ✓"; window.setTimeout(() => { label.textContent = original; button.classList.remove("action-done"); }, 1800); }
+      } else {
+        window.print();
+      }
+    }));
     const labelSizeSelect = root.querySelector("#label-size-select");
     const labelSizeCmd = root.querySelector("#label-size-cmd");
     if (labelSizeSelect && labelSizeCmd) {

@@ -20,6 +20,8 @@
       <option value="move-to-space">Move assets · into a space</option>
       <option value="scanner">Scan & capture</option>
       <option value="add-asset">Review new asset</option>
+      <option value="batch-review">Batch review · multiple captures</option>
+      <option value="printer-connect">Connect a label printer</option>
       <option value="inventory">Inventory</option>
       <option value="asset-detail">Asset details</option>
       <option value="locations">Locations</option>
@@ -121,16 +123,24 @@
         </div>
         <button class="primary-button full" data-action="move-assets" disabled><i data-lucide="move-right" aria-hidden="true"></i><span>Move <span id="move-count">0</span> asset<span id="move-plural">s</span> here</span></button>
       </section>
-      <section class="screen" data-screen="scanner" aria-label="Scan and capture" hidden>
-        <button class="back-link" data-go="home"><i data-lucide="arrow-left" aria-hidden="true"></i>Floor walk</button>
+      <section class="screen camera-screen" data-screen="scanner" aria-label="Scan and capture" hidden>
+        <div class="camera-view full">
+          <img data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div>
+          <button class="back-link on-camera" data-go="home" aria-label="Back to floor walk"><i data-lucide="arrow-left" aria-hidden="true"></i></button>
+          <span class="camera-session-pill" id="camera-session-pill" hidden><i data-lucide="images" aria-hidden="true"></i><span id="camera-session-count">0</span> captured</span>
+          <span class="camera-switch" role="button" tabindex="0" aria-label="Switch camera"><i data-lucide="switch-camera" aria-hidden="true"></i></span>
+          <span class="camera-hint"><i data-lucide="scan-line" aria-hidden="true"></i> Aim at a QR or barcode</span>
+          <div class="camera-permission-banner" id="camera-permission-banner" hidden><i data-lucide="lock-keyhole" aria-hidden="true"></i><span>Camera access is needed to scan and capture assets. Asked once — not on every visit.</span><button class="secondary-button" data-action="grant-camera">Allow camera</button></div>
+          <div class="capture-dock">
+            <div class="capture-controls three"><button class="capture-mode active" aria-pressed="true"><i data-lucide="qr-code" aria-hidden="true"></i>Scan code</button><button class="capture-mode" aria-pressed="false"><i data-lucide="rfid" aria-hidden="true"></i>RFID</button><button class="capture-mode" aria-pressed="false"><i data-lucide="camera" aria-hidden="true"></i>Photo</button><button class="capture-shutter" aria-label="Capture asset"><i data-lucide="camera" aria-hidden="true"></i></button></div>
+          </div>
+        </div>
         <p class="eyebrow">NEW ASSET · CAMERA</p><h1 class="page-title">Capture it as you find it.</h1>
-        <p class="subhead">Scan a registered tag to find it, or photograph a new item to identify it.</p>
-        <div class="camera-meta"><span><i data-lucide="camera" aria-hidden="true"></i>Back camera</span><span><i data-lucide="zap" aria-hidden="true"></i>Flash auto</span><span class="camera-switch" role="button" tabindex="0" aria-label="Switch camera"><i data-lucide="switch-camera" aria-hidden="true"></i></span></div>
-        <div class="camera-view"><img data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div><span class="camera-hint"><i data-lucide="scan-line" aria-hidden="true"></i> Aim at a QR or barcode</span></div>
-        <div class="capture-controls"><button class="capture-mode active" aria-pressed="true"><i data-lucide="qr-code" aria-hidden="true"></i>Scan code</button><button class="capture-mode" aria-pressed="false"><i data-lucide="camera" aria-hidden="true"></i>Photo</button><button class="capture-shutter" aria-label="Capture asset"><i data-lucide="camera" aria-hidden="true"></i></button></div>
+        <p class="subhead">Scan a registered tag to find it, or photograph new items one after another — review and save them all together.</p>
+        <div id="capture-thumbstrip" class="capture-thumbstrip" hidden></div>
         <div class="permission-note"><i data-lucide="map-pin" aria-hidden="true"></i><span><strong>Building A · Floor 4</strong><small>Location saved with this capture · adjust indoors</small></span><i data-lucide="check" aria-hidden="true"></i></div>
         <p class="capture-storage"><i data-lucide="lock-keyhole" aria-hidden="true"></i>Photos are saved on this device and queued to sync when online.</p>
-        <button class="primary-button full" data-go="asset-detail">Open scanned asset <i data-lucide="arrow-right" aria-hidden="true"></i></button><button class="text-action full-action" data-go="purchase-capture"><i data-lucide="plus"></i>New purchase · bill &amp; product photo</button>
+        <button class="primary-button full" id="scanner-primary-action" data-go="asset-detail">Open scanned asset <i data-lucide="arrow-right" aria-hidden="true"></i></button><button class="text-action full-action" data-go="purchase-capture"><i data-lucide="plus"></i>New purchase · bill &amp; product photo</button>
       </section>
       <section class="screen" data-screen="add-asset" aria-label="Review new asset" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
@@ -138,7 +148,8 @@
         <div class="capture-strip"><img data-shared-photo="concept-photo-0" alt="Captured photo of a network switch"><div><strong>3 captures attached</strong><small>Asset photo · invoice · QR / product label</small></div><button class="icon-button small" aria-label="Add another capture" data-go="scanner"><i data-lucide="plus" aria-hidden="true"></i></button></div>
         <label class="field-label">Asset name<input value="Network switch" /></label>
         <div class="two-fields"><label class="field-label">Asset code<input value="IT-00482" /></label><label class="field-label">Category<input value="IT equipment" /></label></div>
-        <label class="field-label">QR / barcode<input value="QR-IT-00482" /></label>
+        <div class="two-fields"><label class="field-label">QR / barcode<input value="QR-IT-00482" /></label><label class="field-label">RFID tag <small>(optional)</small><input placeholder="Scan RFID or leave blank" /></label></div>
+        <p class="quiet-note">RFID speeds up bulk scanning once tagged, but the printed label is always a QR code — RFID chips can't be printed from this device.</p>
         <label class="field-label">Record type<div class="segmented"><button class="is-selected" aria-pressed="true">Tracked item</button><button aria-pressed="false">Bulk quantity</button></div></label>
         <div class="two-fields"><label class="field-label">Condition · 1–10<input type="number" min="1" max="10" value="8" /></label><label class="field-label">Quantity<input type="number" min="1" value="1" /></label></div>
         <label class="field-label">Custodian<input value="A. Sharma" /></label>
@@ -147,6 +158,14 @@
         <label class="reuse-toggle"><span><strong>Reusable asset</strong><small>Can be checked out again</small></span><input type="checkbox" checked aria-label="Reusable asset"></label>
         <div class="coverage-detected"><i data-lucide="shield-check"></i><span><strong>Coverage detected on invoice</strong><small>3-year manufacturer warranty · confirm after review</small></span><button data-go="warranty-detail">Review</button></div>
         <button class="primary-button full" data-go="qr-label">Save asset & generate QR <i data-lucide="qr-code" aria-hidden="true"></i></button>
+      </section>
+      <section class="screen" data-screen="batch-review" aria-label="Review captured assets" hidden>
+        <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
+        <p class="eyebrow">BATCH REVIEW · <span id="batch-count-label">0</span> CAPTURED</p>
+        <h1 class="page-title">Quick-check each one, then save together.</h1>
+        <p class="subhead">Names are suggested from what's in frame — edit any that need it, then generate every QR label in one go.</p>
+        <div id="batch-review-list" class="batch-review-list"></div>
+        <button class="primary-button full" data-action="generate-batch-labels"><i data-lucide="qr-code" aria-hidden="true"></i>Generate &amp; print <span id="batch-generate-count">0</span> QR labels</button>
       </section>
       <section class="screen map-screen" data-screen="missing-assets" aria-label="Organization missing asset watch" hidden>
         <button class="back-link" data-go="verification"><i data-lucide="arrow-left"></i>Verification cycle</button>
@@ -411,11 +430,21 @@
         <p class="quiet-note">Photo matching is a helper. Asset identity is confirmed by the person recording it, the barcode/serial, and the purchase bill.</p>
       </section>
       <section class="screen map-screen" data-screen="qr-label" aria-label="Generated asset QR label and print options" hidden>
-        <button class="back-link" data-go="add-asset"><i data-lucide="arrow-left"></i>Asset details</button><p class="eyebrow">ASSET SAVED · LABEL READY</p><h1 class="page-title">Give it a<br>scan-to-find tag.</h1><p class="subhead">This label opens the asset record and keeps its history attached.</p>
-        <div class="qr-label-preview"><div class="qr-sample" role="img" aria-label="QR code preview"><span class="finder one"></span><span class="finder two"></span><span class="finder three"></span><i></i></div><div class="qr-label-copy"><strong>Network switch</strong><b>IT-00482</b><small>Building A · Floor 4</small><span>INCUASSET · ASSET RECORD</span></div></div>
-        <div class="qr-status"><i data-lucide="circle-check"></i><span><strong>QR generated and linked</strong><small>Asset code: IT-00482 · unique record ID attached</small></span></div>
-        <div class="label-options"><div><span><strong>Label size</strong><small id="label-size-cmd">Printer command: 50 × 30 mm</small></span><select aria-label="Label size" id="label-size-select"><option data-cmd="Printer command: 50 × 30 mm" selected>50 × 30 mm · recommended</option><option data-cmd="Printer command: 1.5in × 1.5in (38 × 38 mm)">1.5 × 1.5 in · square QR tag</option><option data-cmd="Printer command: 40 × 25 mm">40 × 25 mm</option><option data-cmd="Printer command: A4, 24-up">A4 sheet · 24 labels</option></select></div><div><span><strong>Number of copies</strong><small>One per tracked asset</small></span><div class="quantity-stepper"><button aria-label="Decrease copies">−</button><b>1</b><button aria-label="Increase copies">+</button></div></div><label><input type="checkbox" checked> Include asset name and code below QR</label><label><input type="checkbox" id="auto-print-toggle"> Auto-print label as soon as the asset is saved · one click, one print</label></div>
-        <button class="primary-button full" data-print-label><i data-lucide="printer"></i>Print label</button><button class="secondary-button full" data-go="asset-detail">Done · open asset record <i data-lucide="arrow-right"></i></button><p class="quiet-note">For bulk records, print one batch label per quantity group or individual tags when each unit needs its own tracking history.</p>
+        <button class="back-link" data-go="add-asset"><i data-lucide="arrow-left"></i>Asset details</button><p class="eyebrow" id="qr-label-eyebrow">ASSET SAVED · LABEL READY</p><h1 class="page-title" id="qr-label-title">Give it a<br>scan-to-find tag.</h1><p class="subhead" id="qr-label-subhead">This label opens the asset record and keeps its history attached.</p>
+        <div class="qr-label-preview"><div class="qr-sample" role="img" aria-label="QR code preview"><span class="finder one"></span><span class="finder two"></span><span class="finder three"></span><i></i></div><div class="qr-label-copy"><strong id="qr-label-name">Network switch</strong><b id="qr-label-code">IT-00482</b><small>Building A · Floor 4</small><span>INCUASSET · ASSET RECORD</span></div></div>
+        <div class="qr-status"><i data-lucide="circle-check"></i><span><strong id="qr-status-title">QR generated and linked</strong><small id="qr-status-sub">Asset code: IT-00482 · unique record ID attached</small></span></div>
+        <div class="label-options"><div><span><strong>Label size</strong><small id="label-size-cmd">Printer command: 50 × 30 mm</small></span><select aria-label="Label size" id="label-size-select"><option data-cmd="Printer command: 50 × 30 mm" selected>50 × 30 mm · recommended</option><option data-cmd="Printer command: 1.5in × 1.5in (38 × 38 mm)">1.5 × 1.5 in · square QR tag</option><option data-cmd="Printer command: 1in × 1in (25 × 25 mm)">1 × 1 in · small asset tag</option><option data-cmd="Printer command: 2in × 1in (51 × 25 mm)">2 × 1 in · wide label</option><option data-cmd="Printer command: 40 × 25 mm">40 × 25 mm</option><option data-cmd="Printer command: A4, 24-up">A4 sheet · 24 labels</option></select></div><div><span><strong>Number of copies</strong><small>One per tracked asset</small></span><div class="quantity-stepper"><button aria-label="Decrease copies">−</button><b>1</b><button aria-label="Increase copies">+</button></div></div><label><input type="checkbox" checked> Include asset name and code below QR</label><label><input type="checkbox" id="auto-print-toggle"> Auto-print label as soon as the asset is saved · one click, one print</label></div>
+        <button class="secondary-button full" id="printer-connect-row" data-go="printer-connect"><i data-lucide="printer" aria-hidden="true"></i><span id="printer-connect-label">Printer: not connected · connect over Wi-Fi or Bluetooth</span><i data-lucide="chevron-right" aria-hidden="true"></i></button>
+        <button class="primary-button full" data-print-label><i data-lucide="printer"></i><span id="qr-print-btn-text">Print label</span></button><button class="secondary-button full" data-go="asset-detail">Done · open asset record <i data-lucide="arrow-right"></i></button><p class="quiet-note">For bulk records, print one batch label per quantity group or individual tags when each unit needs its own tracking history.</p>
+      </section>
+      <section class="screen" data-screen="printer-connect" aria-label="Connect a label printer" hidden>
+        <button class="back-link" data-go="qr-label"><i data-lucide="arrow-left" aria-hidden="true"></i>QR label</button>
+        <p class="eyebrow">LABEL PRINTER</p><h1 class="page-title">Connect a printer.</h1>
+        <p class="subhead">Pick how this device reaches your label printer. Once connected, printing sends a direct print command instead of opening a print dialog each time.</p>
+        <div class="segmented printer-mode-tabs"><button class="is-selected" aria-pressed="true" data-printer-mode="wifi"><i data-lucide="wifi" aria-hidden="true"></i>Wi-Fi</button><button aria-pressed="false" data-printer-mode="bluetooth"><i data-lucide="bluetooth" aria-hidden="true"></i>Bluetooth</button><button aria-pressed="false" data-printer-mode="other"><i data-lucide="printer" aria-hidden="true"></i>Other</button></div>
+        <div class="printer-scan-status"><i data-lucide="scan-search" aria-hidden="true"></i><span id="printer-scan-text">Searching for Wi-Fi printers on this network…</span></div>
+        <div id="printer-device-list" class="printer-device-list"></div>
+        <p class="quiet-note">Other options cover USB-connected print stations and shared network print queues set up by your IT admin.</p>
       </section>
       <section class="screen map-screen" data-screen="access-scope" aria-label="State and centre access" hidden>
         <button class="back-link" data-go="roles"><i data-lucide="arrow-left"></i>People & access</button><p class="eyebrow">ACCESS BY RESPONSIBILITY</p><h1 class="page-title">The right view<br>for each leader.</h1><p class="subhead">Head Office sets the rules; state and centre heads see their own scope.</p>
