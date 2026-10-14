@@ -101,16 +101,20 @@
     }
     function renderBuildingFloors(c){
       const stack=root.querySelector("#building-floor-stack");if(!stack)return;
+      const listView=root.querySelector("#floor-list-view");
       const floors=floorsForCentre(c);
+      const current=floors.some(f=>f.num===4)?4:floors[0].num;
       const statusWord={"is-verified":"Verified","is-due":"Due","is-overdue":"Overdue"};
-      stack.innerHTML=floors.map(f=>`<button class="iso-floor ${f.status}" data-floor="${f.num}"><span><strong>Floor ${f.num}</strong><small>${f.scanned} of ${f.assets} scanned</small></span><span class="iso-status">${statusWord[f.status]}</span></button>`).join("")+'<div class="iso-roof"></div>';
-      if(window.lucide)window.lucide.createIcons();
-      stack.querySelectorAll(".iso-floor").forEach(btn=>btn.addEventListener("click",()=>{
-        const n=btn.dataset.floor;
+      const goToFloor=(n)=>{
         root.querySelectorAll(".selected-floor").forEach(el=>{el.textContent=`FLOOR ${n}`;});
         root.querySelectorAll(".selected-floor-title").forEach(el=>{el.textContent=`Floor ${n}`;});
         showScreen("map-area");
-      }));
+      };
+      stack.innerHTML=floors.map(f=>`<button class="iso-floor ${f.status}${f.num===current?" is-current":""}" data-floor="${f.num}"><span><strong>Floor ${f.num}</strong><small>${f.scanned} of ${f.assets} scanned</small></span><span class="iso-status">${statusWord[f.status]}</span></button>`).join("")+'<div class="iso-roof"></div><div class="iso-depth" aria-hidden="true"></div>';
+      if(listView)listView.innerHTML=floors.map(f=>`<button class="floor-list-row ${f.status}${f.num===current?" is-current":""}" data-floor="${f.num}"><i data-lucide="map-pin"></i><span><strong>Floor ${f.num}${f.num===current?" · Main building":""}</strong><small>${f.scanned} of ${f.assets} scanned</small></span><span class="iso-status">${statusWord[f.status]}</span></button>`).join("");
+      if(window.lucide)window.lucide.createIcons();
+      stack.querySelectorAll(".iso-floor").forEach(btn=>btn.addEventListener("click",()=>goToFloor(btn.dataset.floor)));
+      if(listView)listView.querySelectorAll(".floor-list-row").forEach(btn=>btn.addEventListener("click",()=>goToFloor(btn.dataset.floor)));
     }
     async function loadIndiaBoundaries(){
       const target=root.querySelector("#india-state-boundaries"); if(!target)return;
@@ -230,5 +234,12 @@
     });
     root.addEventListener("change", (event) => {
       if (event.target.closest("#move-asset-list")) updateMoveButton();
+    });
+    root.addEventListener("click", (event) => {
+      const toggleBtn = event.target.closest(".view-toggle button");
+      if (!toggleBtn) return;
+      const isBuilding = toggleBtn.textContent.trim() === "Building";
+      root.querySelector("#building-view-wrap").hidden = !isBuilding;
+      root.querySelector("#floor-list-view").hidden = isBuilding;
     });
   

@@ -1102,7 +1102,7 @@ body { background:var(--primary-soft); }
 
     /* Building → floor stack (3D-styled) */
     #asset-register-prototype .iso-stage { display:flex; justify-content:center; padding:16px 0 10px; perspective:900px; }
-    #asset-register-prototype .iso-building { display:flex; flex-direction:column-reverse; align-items:center; width:fit-content; margin:0 auto; }
+    #asset-register-prototype .iso-building { position:relative; display:flex; flex-direction:column-reverse; align-items:center; width:fit-content; margin:0 auto; }
     #asset-register-prototype .iso-roof { width:236px; height:20px; background:linear-gradient(135deg,var(--primary),var(--accent)); clip-path:polygon(0 100%,50% 0,100% 100%); margin-bottom:-1px; box-shadow:0 3px 10px -4px rgba(0,0,0,.35); }
     #asset-register-prototype .iso-floor { position:relative; width:220px; height:38px; margin-top:-1px; border:1px solid var(--divider); border-left:6px solid var(--divider); background:linear-gradient(90deg,var(--surface),var(--surface-low)); display:flex; align-items:center; justify-content:space-between; padding:0 14px; cursor:pointer; transition:background .15s ease, transform .15s ease; }
     #asset-register-prototype .iso-floor:first-child { border-radius:0 0 10px 10px; }
@@ -1222,3 +1222,17 @@ body { background:var(--primary-soft); }
     #asset-register-prototype .move-asset-row strong { font-size:12px; }
     #asset-register-prototype .move-asset-row small { font-size:10.5px; color:var(--muted); }
     #asset-register-prototype .move-asset-row.is-moved small { color:var(--secondary); font-weight:600; }
+    /* True isometric building: flat-top parallelogram roof + a persistent right-side
+       depth panel, so the stack reads as a 3D volume instead of flat bars with a cap. */
+    #asset-register-prototype .view-toggle { max-width:220px; margin:4px 0 6px; }
+    #asset-register-prototype .iso-stage { padding-right:18px; }
+    #asset-register-prototype .iso-roof { clip-path:polygon(0 100%, 18% 0, 100% 0, 82% 100%); }
+    #asset-register-prototype .iso-depth { position:absolute; top:0; right:-15px; bottom:0; width:15px; background:linear-gradient(180deg,var(--accent),var(--primary)); clip-path:polygon(0 14px, 100% 0, 100% 100%, 0 calc(100% - 14px)); opacity:.92; }
+    #asset-register-prototype .floor-list-row { display:flex; align-items:center; gap:10px; width:100%; margin:7px 0; padding:12px; border:1px solid var(--divider); border-radius:14px; background:var(--surface); text-align:left; cursor:pointer; }
+    #asset-register-prototype .floor-list-row.is-current { background:var(--primary-soft); border-color:var(--primary); }
+    #asset-register-prototype .floor-list-row > i { flex:none; width:16px; height:16px; color:var(--muted); }
+    #asset-register-prototype .floor-list-row.is-current > i { color:var(--primary); }
+    #asset-register-prototype .floor-list-row span { flex:1; display:grid; gap:2px; min-width:0; }
+    #asset-register-prototype .floor-list-row strong { font-size:12.5px; }
+    #asset-register-prototype .floor-list-row small { font-size:10.5px; color:var(--muted); }
+    #asset-register-prototype .floor-list-row .iso-status { flex:none; font-size:10px; font-weight:700; text-transform:uppercase; }

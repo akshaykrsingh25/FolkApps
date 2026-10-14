@@ -321,8 +321,12 @@
         <div class="crumbs"><span class="selected-state">GUJARAT</span> <i data-lucide="chevron-right"></i> <span class="selected-city">AHMEDABAD</span> <i data-lucide="chevron-right"></i> <b class="selected-centre">—</b></div>
         <p class="eyebrow">BUILDING VIEW · 3D</p><h1 class="page-title selected-centre-title">—</h1>
         <p class="subhead">Tap a floor to open its walk-verified floor chart.</p>
-        <div class="iso-stage"><div id="building-floor-stack" class="iso-building"></div></div>
-        <div class="map-legend building-legend"><span><i class="legend-dot green"></i>Verified</span><span><i class="legend-dot amber"></i>Due</span><span><i class="legend-dot red"></i>Overdue</span></div>
+        <div class="segmented view-toggle" role="group" aria-label="Floor view"><button class="is-selected" aria-pressed="true">Building</button><button aria-pressed="false">List</button></div>
+        <div id="building-view-wrap">
+          <div class="iso-stage"><div id="building-floor-stack" class="iso-building"></div></div>
+          <div class="map-legend building-legend"><span><i class="legend-dot green"></i>Verified</span><span><i class="legend-dot amber"></i>Due</span><span><i class="legend-dot red"></i>Overdue</span></div>
+        </div>
+        <div id="floor-list-view" hidden></div>
         <button class="text-action full-action" data-go="map-centre"><i data-lucide="building-2"></i>View building overview & stats</button>
       </section>
       <section class="screen map-screen" data-screen="map-centre" aria-label="Centre floor map" hidden>
