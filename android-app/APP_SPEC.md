@@ -341,10 +341,18 @@ nobody assumes they already work:
   are simulated; no real print job is ever sent to a real label printer.
   Real printing would need a native Android print/Bluetooth-SPP or
   network-socket bridge exposed to the WebView via `addJavascriptInterface`.
-- **Data persistence** — everything except the one auto-print toggle resets
-  on reload. No real database (local SQLite/Room, or a backend like
-  Supabase) is wired up yet. This was discussed and intentionally paused —
-  resume only when explicitly asked.
+- **Data persistence — now real, on-device.** Saving an asset (single or
+  batch) builds a real record from the entered fields + captured photo and
+  persists it to IndexedDB (`vendor`-free, built into the browser/WebView),
+  so it survives a reload or app restart instead of resetting to the seed
+  data. There's still no backend: this is per-device only, nothing syncs
+  between phones, and no real login sits in front of it yet.
+- **OCR for invoice/bill capture — now real.** The `purchase-capture`
+  screen's invoice tile opens the device camera/gallery and runs Tesseract.js
+  (vendored locally — the wasm core, worker script, and English trained
+  data all ship inside the app, ~8.6MB) fully on-device to read the bill,
+  then pulls out an amount and a date with a couple of regexes and shows the
+  full recognized text. No cloud OCR API, no network call.
 - **Login/accounts** — `sign-in` screen exists visually; there's no real
   authentication, session, or per-user identity behind it.
 - **Multi-device sync** — since there's no backend, nothing captured on one

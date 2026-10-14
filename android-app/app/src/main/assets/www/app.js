@@ -695,7 +695,7 @@
     const purchaseShutter = root.querySelector(".purchase-shutter");
     purchaseShutter?.addEventListener("click", () => {
       purchaseShutter.classList.add("is-captured");
-      const tile = root.querySelector(".evidence-tile:not(.done)");
+      const tile = root.querySelector("#product-serial-tile");
       if (tile) {
         tile.classList.add("done");
         const icon = tile.querySelector("i"); if (icon) icon.setAttribute("data-lucide", "file-check-2");
@@ -705,6 +705,81 @@
       }
       announce("Product photo captured · serial matched to invoice");
       window.setTimeout(() => purchaseShutter.classList.remove("is-captured"), 260);
+    });
+
+    // --- Real OCR for invoice/bill capture: Tesseract.js runs fully on-device,
+    // vendored locally (vendor/ocr/) so it needs no network, ever.
+    let ocrWorkerPromise = null;
+    function getOcrWorker() {
+      if (!ocrWorkerPromise) {
+        ocrWorkerPromise = typeof window.Tesseract === "undefined"
+          ? Promise.reject(new Error("OCR engine not loaded"))
+          : window.Tesseract.createWorker("eng", 1, {
+              workerPath: "./vendor/ocr/worker.min.js",
+              corePath: "./vendor/ocr/tesseract-core-lstm.wasm.js",
+              langPath: "./vendor/ocr/",
+              gzip: true,
+            });
+      }
+      return ocrWorkerPromise;
+    }
+    function extractInvoiceAmount(text) {
+      const match = text.match(/(?:₹|Rs\.?|INR)\s?[\d,]+(?:\.\d{1,2})?/i);
+      return match ? match[0].trim() : null;
+    }
+    function extractInvoiceDate(text) {
+      const match = text.match(/\b\d{1,2}[/\-. ][A-Za-z]{3,9}[/\-. ]\d{2,4}\b|\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b/);
+      return match ? match[0] : null;
+    }
+    const invoiceTile = root.querySelector("#invoice-evidence-tile");
+    const invoiceFileInput = root.querySelector("#invoice-file-input");
+    invoiceTile?.addEventListener("click", () => invoiceFileInput?.click());
+    invoiceFileInput?.addEventListener("change", async () => {
+      const file = invoiceFileInput.files && invoiceFileInput.files[0];
+      invoiceFileInput.value = "";
+      if (!file) return;
+      const extract = root.querySelector("#invoice-scan-extract");
+      const statusEl = root.querySelector("#invoice-scan-status");
+      const sub = root.querySelector("#invoice-evidence-sub");
+      const em = root.querySelector("#invoice-evidence-em");
+      const amountLine = root.querySelector("#invoice-amount-line");
+      const dateLine = root.querySelector("#invoice-date-line");
+      const rawWrap = root.querySelector("#invoice-raw-text-wrap");
+      invoiceTile.classList.remove("done", "ocr-empty");
+      extract.hidden = false;
+      amountLine.hidden = true;
+      dateLine.hidden = true;
+      rawWrap.hidden = true;
+      statusEl.textContent = "Reading bill…";
+      sub.textContent = "Scanning on-device…";
+      try {
+        const worker = await getOcrWorker();
+        const { data } = await worker.recognize(file);
+        const text = (data && data.text ? data.text : "").trim();
+        if (text) {
+          const amount = extractInvoiceAmount(text);
+          const date = extractInvoiceDate(text);
+          invoiceTile.classList.add("done");
+          sub.textContent = "Scanned on-device just now";
+          em.textContent = "Text recognized";
+          statusEl.textContent = "Details found on bill";
+          if (amount) { root.querySelector("#invoice-amount-value").textContent = amount; amountLine.hidden = false; }
+          if (date) { root.querySelector("#invoice-date-value").textContent = date; dateLine.hidden = false; }
+          root.querySelector("#invoice-raw-text").textContent = text;
+          rawWrap.hidden = false;
+        } else {
+          invoiceTile.classList.add("ocr-empty");
+          sub.textContent = "No legible text found — try a clearer, flatter photo";
+          em.textContent = "No text recognized";
+          statusEl.textContent = "Couldn't read any text on this photo";
+        }
+      } catch (err) {
+        invoiceTile.classList.add("ocr-empty");
+        sub.textContent = "On-device text recognition isn't available right now";
+        em.textContent = "Scan failed";
+        statusEl.textContent = "Couldn't run text recognition on this device";
+      }
+      if (window.lucide) window.lucide.createIcons();
     });
     const printerDevices = {
       wifi: [

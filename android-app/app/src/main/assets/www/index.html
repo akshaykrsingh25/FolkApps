@@ -399,8 +399,12 @@
       <section class="screen map-screen" data-screen="purchase-capture" aria-label="Purchase bill and product capture" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left"></i>Back to capture</button><p class="eyebrow">NEW PURCHASE · EVIDENCE</p><h1 class="page-title">Bill, product,<br>one record.</h1><p class="subhead">Capture both; review details before they enter the register.</p>
         <div class="purchase-camera"><img data-shared-photo="concept-photo-0" alt="Sample office equipment purchase"><div><span class="live-pill"><i></i> CAMERA READY</span><strong>Product photo</strong><small>Back camera · tap to capture</small></div><button class="purchase-shutter" aria-label="Capture product"><i data-lucide="camera"></i></button></div>
-        <div class="purchase-evidence"><div class="evidence-tile done"><span><i data-lucide="file-check-2"></i></span><strong>Invoice captured</strong><small>INV-8821 · 2 pages</small><em>Vendor details found</em></div><div class="evidence-tile"><span><i data-lucide="barcode"></i></span><strong>Product / serial</strong><small>Scan label or type</small><em>Not captured yet</em></div></div>
-        <div class="scan-extract"><span><i data-lucide="sparkles"></i>Details found on bill</span><p>Seller · TechSource India</p><p>Purchased · 6 Oct 2026</p><p>Amount · ₹48,500</p></div>
+        <div class="purchase-evidence">
+          <button class="evidence-tile" id="invoice-evidence-tile" type="button"><span><i data-lucide="file-check-2"></i></span><strong>Invoice / bill</strong><small id="invoice-evidence-sub">Tap to scan — reads the bill on-device</small><em id="invoice-evidence-em">Not captured yet</em></button>
+          <div class="evidence-tile" id="product-serial-tile"><span><i data-lucide="barcode"></i></span><strong>Product / serial</strong><small>Scan label or type</small><em>Not captured yet</em></div>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="invoice-file-input" hidden>
+        <div class="scan-extract" id="invoice-scan-extract" hidden><span><i data-lucide="sparkles"></i><span id="invoice-scan-status">Reading bill…</span></span><p id="invoice-amount-line" hidden>Amount detected · <strong id="invoice-amount-value"></strong></p><p id="invoice-date-line" hidden>Date detected · <strong id="invoice-date-value"></strong></p><details id="invoice-raw-text-wrap" hidden><summary>Full recognized text</summary><p class="invoice-raw-text" id="invoice-raw-text"></p></details></div>
         <button class="primary-button full" data-go="camera-match">Analyze product photo <i data-lucide="sparkles"></i></button><p class="quiet-note">Images stay on device until saved or synced.</p>
       </section>
       <section class="screen map-screen" data-screen="warranties" aria-label="Warranty and guarantee tracker" hidden>
@@ -470,6 +474,7 @@
 </div>
 <script src="./vendor/jsQR.js" defer></script>
 <script src="./vendor/india-states-geojson.js" defer></script>
+<script src="./vendor/ocr/tesseract.min.js" defer></script>
 <script src="./app.js" defer></script>
 <script>
   if ("serviceWorker" in navigator) {
