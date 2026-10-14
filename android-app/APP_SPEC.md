@@ -325,12 +325,18 @@ Everything below is simulated for the prototype and intentionally **not**
 built — call these out explicitly if briefing anyone else on the project, so
 nobody assumes they already work:
 
-- **Camera/QR/RFID capture** — UI-complete, but doesn't actually access the
-  device camera or decode a real QR/barcode/RFID signal. Wiring real
-  `getUserMedia()` + a JS QR decoder (e.g. a bundled `jsQR`/`zxing-js`) would
-  work inside the existing WebView with no native code changes, since camera
-  permission grant is already wired in `MainActivity`. Real RFID needs the
-  native NFC bridge mentioned above.
+- **Camera & QR/barcode capture — now real.** The `scanner` screen uses a real
+  `getUserMedia()` video feed (front/back switchable) and a bundled `jsQR`
+  decoder (`vendor/jsQR.js`, vendored from npm so it still works fully
+  offline). In **Scan code** mode it continuously decodes frames and, on a
+  match, auto-fills the asset's QR/barcode field and opens the matching
+  record. In **Photo** mode the shutter captures a real frame from the live
+  video (not a placeholder) and attaches it to the new-asset capture. If the
+  browser/WebView denies camera access (or there's no camera), it falls back
+  to the static concept image and shows the "Allow camera" banner — same UX,
+  just not live. **RFID is still simulated** — real RFID needs a native NFC
+  bridge (`android.permission.NFC` + `NfcAdapter`, exposed to the WebView via
+  `addJavascriptInterface`), which is a native change, not a web one.
 - **Printer connection** — the Wi-Fi/Bluetooth/USB device list and "printing"
   are simulated; no real print job is ever sent to a real label printer.
   Real printing would need a native Android print/Bluetooth-SPP or

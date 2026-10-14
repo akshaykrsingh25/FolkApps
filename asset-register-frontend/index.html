@@ -128,7 +128,9 @@
       </section>
       <section class="screen camera-screen" data-screen="scanner" aria-label="Scan and capture" hidden>
         <div class="camera-view full">
-          <img data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div>
+          <video id="camera-live-feed" class="camera-live-feed" autoplay playsinline muted hidden></video>
+          <canvas id="camera-capture-canvas" hidden></canvas>
+          <img id="camera-fallback-image" data-shared-photo="concept-photo-0" alt="Example asset in a server cabinet"><div class="camera-shade"></div><span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span><div class="scan-line"></div>
           <button class="back-link on-camera" data-go="home" aria-label="Back to floor walk"><i data-lucide="arrow-left" aria-hidden="true"></i></button>
           <span class="camera-session-pill" id="camera-session-pill" hidden><i data-lucide="images" aria-hidden="true"></i><span id="camera-session-count">0</span> captured</span>
           <span class="camera-switch" role="button" tabindex="0" aria-label="Switch camera"><i data-lucide="switch-camera" aria-hidden="true"></i></span>
@@ -148,10 +150,10 @@
       <section class="screen" data-screen="add-asset" aria-label="Review new asset" hidden>
         <button class="back-link" data-go="scanner"><i data-lucide="arrow-left" aria-hidden="true"></i>Capture more</button>
         <p class="eyebrow">SUGGESTED DETAILS · REVIEW BEFORE SAVE</p><h1 class="page-title">Add to the register.</h1>
-        <div class="capture-strip"><img data-shared-photo="concept-photo-0" alt="Captured photo of a network switch"><div><strong>3 captures attached</strong><small>Asset photo · invoice · QR / product label</small></div><button class="icon-button small" aria-label="Add another capture" data-go="scanner"><i data-lucide="plus" aria-hidden="true"></i></button></div>
+        <div class="capture-strip"><img id="add-asset-photo" data-shared-photo="concept-photo-0" alt="Captured photo of a network switch"><div><strong id="add-asset-capture-count">3 captures attached</strong><small>Asset photo · invoice · QR / product label</small></div><button class="icon-button small" aria-label="Add another capture" data-go="scanner"><i data-lucide="plus" aria-hidden="true"></i></button></div>
         <label class="field-label">Asset name<input value="Network switch" /></label>
         <div class="two-fields"><label class="field-label">Asset code<input value="IT-00482" /></label><label class="field-label">Category<input value="IT equipment" /></label></div>
-        <div class="two-fields"><label class="field-label">QR / barcode<input value="QR-IT-00482" /></label><label class="field-label">RFID tag <small>(optional)</small><input placeholder="Scan RFID or leave blank" /></label></div>
+        <div class="two-fields"><label class="field-label">QR / barcode<input id="add-asset-qr-field" value="QR-IT-00482" /></label><label class="field-label">RFID tag <small>(optional)</small><input placeholder="Scan RFID or leave blank" /></label></div>
         <p class="quiet-note">RFID speeds up bulk scanning once tagged, but the printed label is always a QR code — RFID chips can't be printed from this device.</p>
         <label class="field-label">Record type<div class="segmented"><button class="is-selected" aria-pressed="true">Tracked item</button><button aria-pressed="false">Bulk quantity</button></div></label>
         <div class="two-fields"><label class="field-label">Condition · 1–10<input type="number" min="1" max="10" value="8" /></label><label class="field-label">Quantity<input type="number" min="1" value="1" /></label></div>
@@ -466,6 +468,7 @@
   <p class="image-note">Concept imagery is included in the records. Live images can come from Pexels with photographer credits.</p>
   
 </div>
+<script src="./vendor/jsQR.js" defer></script>
 <script src="./app.js" defer></script>
 <script>
   if ("serviceWorker" in navigator) {

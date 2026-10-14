@@ -27,17 +27,16 @@
       root.querySelectorAll(".nav-tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.go === name || (name === "asset-detail" && tab.dataset.go === "inventory") || (name === "scanner" && tab.dataset.go === "home") || (name.startsWith("map-") && tab.dataset.go === "map-india") || (name === "unused-map" && tab.dataset.go === "map-india") || (name === "asset-report" && tab.dataset.go === "reports") || (name === "missing-assets" && tab.dataset.go === "verification")));
       if (name === "add-asset") {
         pendingBatch = [];
+        const photoEl = root.querySelector("#add-asset-photo");
+        if (photoEl && lastSingleCapturePhoto) photoEl.src = lastSingleCapturePhoto;
       }
       if (name === "scanner") {
         const camera = root.querySelector(".camera-view");
         camera.classList.add("is-scanning");
         window.setTimeout(() => camera.classList.remove("is-scanning"), 1150);
-        const banner = root.querySelector("#camera-permission-banner");
-        if (banner) {
-          let granted = false;
-          try { granted = localStorage.getItem("incuasset-camera-granted") === "1"; } catch (e) {}
-          banner.hidden = granted;
-        }
+        startCamera();
+      } else {
+        stopCamera();
       }
       if (name === "qr-label") {
         syncPrinterConnectUI();
@@ -362,8 +361,135 @@
         mode.classList.toggle("active", active);
         mode.setAttribute("aria-pressed", String(active));
       });
+      if (button.textContent.trim() === "Scan code") startScanLoop();
+      else stopScanLoop();
     }));
+    // --- Real camera: live preview, QR/barcode decode (jsQR), and photo capture ---
+    let cameraStream = null;
+    let scanLoopId = null;
+    let currentFacingMode = "environment";
+    let lastDecodedText = "";
+    let lastDecodedAt = 0;
+    const cameraVideo = root.querySelector("#camera-live-feed");
+    const cameraCanvas = root.querySelector("#camera-capture-canvas");
+    const cameraFallbackImage = root.querySelector("#camera-fallback-image");
+
+    function activeCaptureMode() {
+      return root.querySelector(".capture-mode.active")?.textContent.trim() || "Scan code";
+    }
+
+    async function startCamera() {
+      const banner = root.querySelector("#camera-permission-banner");
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (banner) banner.hidden = false;
+        return;
+      }
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacingMode },
+          audio: false,
+        });
+        if (cameraVideo) {
+          cameraVideo.srcObject = cameraStream;
+          cameraVideo.hidden = false;
+          await cameraVideo.play().catch(() => {});
+        }
+        if (cameraFallbackImage) cameraFallbackImage.hidden = true;
+        if (banner) banner.hidden = true;
+        try { localStorage.setItem("incuasset-camera-granted", "1"); } catch (e) {}
+        if (activeCaptureMode() === "Scan code") startScanLoop();
+      } catch (err) {
+        // Denied, no camera hardware, or insecure context — fall back to the
+        // static concept image so the rest of the prototype still works.
+        if (banner) banner.hidden = false;
+        if (cameraFallbackImage) cameraFallbackImage.hidden = false;
+        if (cameraVideo) cameraVideo.hidden = true;
+      }
+    }
+
+    function stopCamera() {
+      stopScanLoop();
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((track) => track.stop());
+        cameraStream = null;
+      }
+      if (cameraVideo) {
+        cameraVideo.pause();
+        cameraVideo.srcObject = null;
+        cameraVideo.hidden = true;
+      }
+      if (cameraFallbackImage) cameraFallbackImage.hidden = false;
+    }
+
+    async function restartCamera() {
+      stopCamera();
+      await startCamera();
+    }
+
+    function startScanLoop() {
+      if (scanLoopId || !cameraVideo || !cameraCanvas || typeof window.jsQR !== "function") return;
+      const ctx = cameraCanvas.getContext("2d", { willReadFrequently: true });
+      function tick() {
+        if (cameraVideo.readyState === cameraVideo.HAVE_ENOUGH_DATA && cameraVideo.videoWidth) {
+          cameraCanvas.width = cameraVideo.videoWidth;
+          cameraCanvas.height = cameraVideo.videoHeight;
+          ctx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+          const imageData = ctx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
+          const result = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+          if (result && result.data) {
+            const now = Date.now();
+            if (result.data !== lastDecodedText || now - lastDecodedAt > 2500) {
+              lastDecodedText = result.data;
+              lastDecodedAt = now;
+              onCodeDecoded(result.data);
+            }
+          }
+        }
+        scanLoopId = window.requestAnimationFrame(tick);
+      }
+      scanLoopId = window.requestAnimationFrame(tick);
+    }
+
+    function stopScanLoop() {
+      if (scanLoopId) {
+        window.cancelAnimationFrame(scanLoopId);
+        scanLoopId = null;
+      }
+    }
+
+    function onCodeDecoded(text) {
+      if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+      const qrField = root.querySelector("#add-asset-qr-field");
+      if (qrField) qrField.value = text;
+      announce(`Code scanned: ${text} · opening the matching asset`);
+      window.setTimeout(() => showScreen("asset-detail"), 260);
+    }
+
+    // Attempts one decode from the current frame right now (used as a manual
+    // fallback when the user taps the shutter instead of waiting for the
+    // continuous scan loop to find a code).
+    function decodeCurrentFrame() {
+      if (!cameraVideo || !cameraCanvas || !cameraVideo.videoWidth || typeof window.jsQR !== "function") return null;
+      cameraCanvas.width = cameraVideo.videoWidth;
+      cameraCanvas.height = cameraVideo.videoHeight;
+      const ctx = cameraCanvas.getContext("2d");
+      ctx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+      const imageData = ctx.getImageData(0, 0, cameraCanvas.width, cameraCanvas.height);
+      const result = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+      return result ? result.data : null;
+    }
+
+    function capturePhotoFrame() {
+      if (!cameraVideo || !cameraCanvas || !cameraVideo.videoWidth) return null;
+      cameraCanvas.width = cameraVideo.videoWidth;
+      cameraCanvas.height = cameraVideo.videoHeight;
+      const ctx = cameraCanvas.getContext("2d");
+      ctx.drawImage(cameraVideo, 0, 0, cameraCanvas.width, cameraCanvas.height);
+      try { return cameraCanvas.toDataURL("image/jpeg", 0.85); } catch (e) { return null; }
+    }
+
     const sessionCaptures = [];
+    let lastSingleCapturePhoto = null;
     const sessionNames = ["Network switch","Office chair","Desktop monitor","Projector","Whiteboard","Fire extinguisher","Printer","Router"];
     function syncCaptureSessionUI() {
       const pill = root.querySelector("#camera-session-pill");
@@ -374,7 +500,9 @@
       if (pill) pill.hidden = sessionCaptures.length === 0;
       if (strip) {
         strip.hidden = sessionCaptures.length === 0;
-        strip.innerHTML = sessionCaptures.map(() => `<img data-shared-photo="concept-photo-0" alt="Captured asset photo">`).join("");
+        strip.innerHTML = sessionCaptures.map((item) => item.photo
+          ? `<img src="${item.photo}" alt="Captured asset photo">`
+          : `<img data-shared-photo="concept-photo-0" alt="Captured asset photo">`).join("");
         strip.querySelectorAll("[data-shared-photo]").forEach((img) => { img.src = root.querySelector("#" + img.dataset.sharedPhoto).src; });
       }
       if (primaryAction && sessionCaptures.length > 0) {
@@ -389,21 +517,29 @@
       const activeModeLabel = [...root.querySelectorAll(".capture-mode")].find((mode) => mode.classList.contains("active"))?.textContent.trim();
       window.setTimeout(() => { shutter.classList.remove("is-captured"); }, 260);
       if (activeModeLabel === "Photo") {
-        sessionCaptures.push({ name: sessionNames[sessionCaptures.length % sessionNames.length] });
+        const photo = capturePhotoFrame();
+        sessionCaptures.push({ name: sessionNames[sessionCaptures.length % sessionNames.length], photo });
         announce(`Captured · ${sessionCaptures.length} asset${sessionCaptures.length > 1 ? "s" : ""} ready to review. Keep capturing or review & save.`);
         syncCaptureSessionUI();
       } else if (activeModeLabel === "RFID") {
+        // Real RFID needs a native NFC bridge (not available to a plain WebView) —
+        // this stays a simulated read until that's built.
         announce("RFID tag read · opening the matching asset");
         window.setTimeout(() => showScreen("asset-detail"), 260);
       } else {
-        announce("Code captured · opening the matching asset");
-        window.setTimeout(() => showScreen("asset-detail"), 260);
+        const decoded = decodeCurrentFrame();
+        if (decoded) {
+          onCodeDecoded(decoded);
+        } else {
+          announce(cameraStream ? "No code in frame — hold steady and try again" : "Code captured · opening the matching asset");
+          if (!cameraStream) window.setTimeout(() => showScreen("asset-detail"), 260);
+        }
       }
     });
     root.querySelectorAll("[data-action='grant-camera']").forEach((button) => button.addEventListener("click", () => {
-      try { localStorage.setItem("incuasset-camera-granted", "1"); } catch (e) {}
-      const banner = root.querySelector("#camera-permission-banner");
-      if (banner) banner.hidden = true;
+      // startCamera() itself shows/hides the banner based on whether the
+      // browser actually grants access — don't force-hide it here.
+      restartCamera();
     }));
     let pendingBatch = [];
     function renderBatchReview() {
@@ -411,11 +547,15 @@
       if (!list) return;
       root.querySelector("#batch-count-label").textContent = sessionCaptures.length;
       root.querySelector("#batch-generate-count").textContent = sessionCaptures.length;
-      list.innerHTML = sessionCaptures.map((item, i) => `<div class="batch-review-row"><img data-shared-photo="concept-photo-0" alt="Captured asset photo"><div><input value="${item.name}" data-batch-index="${i}" aria-label="Asset name"><small>Building A · Floor 4 · auto-located</small></div></div>`).join("");
+      list.innerHTML = sessionCaptures.map((item, i) => `<div class="batch-review-row">${item.photo ? `<img src="${item.photo}" alt="Captured asset photo">` : `<img data-shared-photo="concept-photo-0" alt="Captured asset photo">`}<div><input value="${item.name}" data-batch-index="${i}" aria-label="Asset name"><small>Building A · Floor 4 · auto-located</small></div></div>`).join("");
       list.querySelectorAll("[data-shared-photo]").forEach((img) => { img.src = root.querySelector("#" + img.dataset.sharedPhoto).src; });
     }
     root.querySelector("#scanner-primary-action")?.addEventListener("click", () => {
-      if (sessionCaptures.length > 1) renderBatchReview();
+      if (sessionCaptures.length > 1) {
+        renderBatchReview();
+      } else if (sessionCaptures.length === 1) {
+        lastSingleCapturePhoto = sessionCaptures[0].photo || null;
+      }
       sessionCaptures.length = 0;
       syncCaptureSessionUI();
     });
@@ -440,10 +580,10 @@
       }, 1200);
     });
     root.querySelectorAll(".camera-switch").forEach((btn) => {
-      let facingBack = true;
       const toggle = () => {
-        facingBack = !facingBack;
-        announce(`Switched to ${facingBack ? "back" : "front"} camera`);
+        currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+        announce(`Switched to ${currentFacingMode === "environment" ? "back" : "front"} camera`);
+        if (cameraStream) restartCamera();
       };
       btn.addEventListener("click", toggle);
       btn.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } });
